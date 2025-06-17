@@ -4,6 +4,7 @@ import { ArrowLeft, HelpCircle, MessageSquare, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
+import TavusVideoCall from '../components/TavusVideoCall';
 
 const GameModePage: React.FC = () => {
   const navigate = useNavigate();
@@ -104,6 +105,10 @@ const GameModePage: React.FC = () => {
     }
   };
 
+  const handleLeaveCall = () => {
+    endConversation();
+  };
+
   // Cleanup conversation on component unmount
   useEffect(() => {
     return () => {
@@ -113,7 +118,7 @@ const GameModePage: React.FC = () => {
     };
   }, [conversationId, userId]);
 
-  // If conversation is active, show the iframe
+  // If conversation is active, show the Daily.js video call
   if (conversationUrl) {
     return (
       <div className="min-h-screen bg-primary">
@@ -121,42 +126,29 @@ const GameModePage: React.FC = () => {
           <header className="glass-panel border-0 border-b silver-border">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
               <div className="flex justify-between items-center py-4">
-                <motion.button
-                  onClick={handleBack}
-                  className="glass-panel p-2 rounded-full glass-panel-hover"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <ArrowLeft className="w-5 h-5 text-secondary" />
-                </motion.button>
-                <h1 className="text-lg font-semibold text-primary">
-                  RiddleMeThis - Game Mode
-                </h1>
                 <div className="flex items-center space-x-4">
-                  <button
-                    onClick={endConversation}
-                    className="glass-panel px-4 py-2 rounded-lg glass-panel-hover text-secondary hover:text-primary"
+                  <motion.button
+                    onClick={handleBack}
+                    className="glass-panel p-2 rounded-full glass-panel-hover"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
                   >
-                    End Game
-                  </button>
-                  <ThemeToggle />
+                    <ArrowLeft className="w-5 h-5 text-secondary" />
+                  </motion.button>
+                  <h1 className="text-lg font-semibold text-primary">
+                    RiddleMeThis - Game Mode
+                  </h1>
                 </div>
+                <ThemeToggle />
               </div>
             </div>
           </header>
 
-          <main className="flex-1 p-4">
-            <div className="h-full max-w-6xl mx-auto">
-              <iframe
-                src={conversationUrl}
-                width="100%"
-                height="100%"
-                allow="camera; microphone; autoplay; fullscreen; display-capture"
-                allowFullScreen
-                className="border-0 rounded-xl w-full h-full glass-panel"
-                title="Riddle Game Conversation"
-              />
-            </div>
+          <main className="flex-1">
+            <TavusVideoCall 
+              meetingUrl={conversationUrl} 
+              onLeave={handleLeaveCall}
+            />
           </main>
         </div>
       </div>
