@@ -58,6 +58,7 @@ app.post('/api/create-riddle-conversation', async (req, res) => {
     });
 
     const data = await response.json();
+    console.log(TAVUS_API_KEY);
     console.log('Tavus API response:', response.status, data);
 
     if (response.ok) {
