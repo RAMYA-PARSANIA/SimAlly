@@ -126,6 +126,19 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
     onLeave();
   };
 
+  const getGameTheme = () => {
+    // Determine game theme based on URL or other context
+    // For now, we'll use a generic game theme that works for all games
+    return {
+      title: '🎮 GameMode',
+      loadingText: 'Summoning your game companion...',
+      waitingText: 'Prepare for an amazing gaming experience!',
+      participantName: 'Game Master'
+    };
+  };
+
+  const theme = getGameTheme();
+
   if (error) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -149,7 +162,7 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
         <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
           <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
           <h3 className="text-xl font-bold text-primary mb-2">Connecting to Game...</h3>
-          <p className="text-secondary">Please wait while we set up your riddle session</p>
+          <p className="text-secondary">{theme.loadingText}</p>
         </div>
       </div>
     );
@@ -195,10 +208,11 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
                   <div className="absolute top-10 right-10 w-16 h-16 border border-purple-500/30 rotate-45 animate-spin-slow"></div>
                   <div className="absolute bottom-10 left-10 w-12 h-12 border border-cyan-500/30 rotate-12 animate-pulse-slow"></div>
                   
-                  {/* Question Mark Symbols */}
+                  {/* Game Symbols */}
                   <div className="absolute top-20 left-20 text-4xl text-purple-500/20 animate-bounce-slow">?</div>
-                  <div className="absolute bottom-20 right-20 text-3xl text-blue-500/20 animate-bounce-slow" style={{ animationDelay: '1s' }}>?</div>
-                  <div className="absolute top-1/2 right-10 text-2xl text-cyan-500/20 animate-bounce-slow" style={{ animationDelay: '2s' }}>?</div>
+                  <div className="absolute bottom-20 right-20 text-3xl text-blue-500/20 animate-bounce-slow" style={{ animationDelay: '1s' }}>🎮</div>
+                  <div className="absolute top-1/2 right-10 text-2xl text-cyan-500/20 animate-bounce-slow" style={{ animationDelay: '2s' }}>💭</div>
+                  <div className="absolute bottom-1/3 left-1/4 text-2xl text-green-500/20 animate-bounce-slow" style={{ animationDelay: '3s' }}>🎯</div>
                 </div>
 
                 {/* Video Element */}
@@ -217,13 +231,13 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
                 <div className="absolute bottom-4 left-4 glass-panel px-4 py-2 rounded-lg z-20">
                   <span className="text-primary font-medium flex items-center">
                     <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                    {p.user_name || 'Riddle Master'}
+                    {p.user_name || theme.participantName}
                   </span>
                 </div>
 
                 {/* Game Theme Overlay */}
                 <div className="absolute top-4 right-4 glass-panel px-3 py-2 rounded-lg z-20">
-                  <span className="text-sm gradient-gold-silver font-semibold">🎮 RiddleMeThis</span>
+                  <span className="text-sm gradient-gold-silver font-semibold">{theme.title}</span>
                 </div>
               </div>
             ))}
@@ -253,10 +267,10 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
                 
                 <div className="text-center z-10">
                   <div className="animate-pulse w-20 h-20 bg-gradient-gold-silver rounded-full mx-auto mb-6 flex items-center justify-center">
-                    <span className="text-2xl">🎭</span>
+                    <span className="text-2xl">🎮</span>
                   </div>
-                  <p className="text-primary font-medium text-lg mb-2">Summoning the Riddle Master...</p>
-                  <p className="text-secondary text-sm">Prepare your wits for the challenge ahead!</p>
+                  <p className="text-primary font-medium text-lg mb-2">{theme.loadingText}</p>
+                  <p className="text-secondary text-sm">{theme.waitingText}</p>
                 </div>
               </div>
             )}
