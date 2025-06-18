@@ -165,29 +165,98 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
             {Object.entries(remoteParticipants).map(([id, p]: [string, any]) => (
               <div
                 key={id}
-                className="relative glass-panel rounded-2xl overflow-hidden aspect-video bg-gradient-to-br from-purple-500/10 to-blue-500/10"
+                className="relative glass-panel rounded-2xl overflow-hidden aspect-video"
+                style={{
+                  background: `
+                    linear-gradient(135deg, 
+                      rgba(139, 92, 246, 0.1) 0%, 
+                      rgba(59, 130, 246, 0.1) 25%,
+                      rgba(6, 182, 212, 0.1) 50%,
+                      rgba(16, 185, 129, 0.1) 75%,
+                      rgba(139, 92, 246, 0.1) 100%
+                    ),
+                    radial-gradient(circle at 30% 70%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+                    radial-gradient(circle at 70% 30%, rgba(59, 130, 246, 0.2) 0%, transparent 50%),
+                    linear-gradient(45deg, 
+                      rgba(16, 185, 129, 0.05) 0%, 
+                      rgba(6, 182, 212, 0.05) 100%
+                    )
+                  `
+                }}
               >
+                {/* Animated Background Elements */}
+                <div className="absolute inset-0 overflow-hidden">
+                  {/* Floating Orbs */}
+                  <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-full blur-xl animate-float"></div>
+                  <div className="absolute top-3/4 right-1/4 w-24 h-24 bg-gradient-to-r from-cyan-500/20 to-green-500/20 rounded-full blur-xl animate-float-delayed"></div>
+                  <div className="absolute top-1/2 left-3/4 w-20 h-20 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-full blur-xl animate-float-slow"></div>
+                  
+                  {/* Geometric Patterns */}
+                  <div className="absolute top-10 right-10 w-16 h-16 border border-purple-500/30 rotate-45 animate-spin-slow"></div>
+                  <div className="absolute bottom-10 left-10 w-12 h-12 border border-cyan-500/30 rotate-12 animate-pulse-slow"></div>
+                  
+                  {/* Question Mark Symbols */}
+                  <div className="absolute top-20 left-20 text-4xl text-purple-500/20 animate-bounce-slow">?</div>
+                  <div className="absolute bottom-20 right-20 text-3xl text-blue-500/20 animate-bounce-slow" style={{ animationDelay: '1s' }}>?</div>
+                  <div className="absolute top-1/2 right-10 text-2xl text-cyan-500/20 animate-bounce-slow" style={{ animationDelay: '2s' }}>?</div>
+                </div>
+
+                {/* Video Element */}
                 <video
                   id={`remote-video-${id}`}
                   autoPlay
                   playsInline
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover relative z-10"
+                  style={{
+                    mixBlendMode: 'normal'
+                  }}
                 />
                 <audio id={`remote-audio-${id}`} autoPlay playsInline />
-                <div className="absolute bottom-4 left-4 glass-panel px-3 py-2 rounded-lg">
-                  <span className="text-primary font-medium">
+                
+                {/* Participant Info */}
+                <div className="absolute bottom-4 left-4 glass-panel px-4 py-2 rounded-lg z-20">
+                  <span className="text-primary font-medium flex items-center">
+                    <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
                     {p.user_name || 'Riddle Master'}
                   </span>
+                </div>
+
+                {/* Game Theme Overlay */}
+                <div className="absolute top-4 right-4 glass-panel px-3 py-2 rounded-lg z-20">
+                  <span className="text-sm gradient-gold-silver font-semibold">🎮 RiddleMeThis</span>
                 </div>
               </div>
             ))}
             
-            {/* Show placeholder if no remote participants yet */}
+            {/* Show themed placeholder if no remote participants yet */}
             {Object.keys(remoteParticipants).length === 0 && (
-              <div className="relative glass-panel rounded-2xl overflow-hidden aspect-video bg-gradient-to-br from-purple-500/10 to-blue-500/10 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="animate-pulse w-16 h-16 bg-gradient-gold-silver rounded-full mx-auto mb-4"></div>
-                  <p className="text-primary font-medium">Waiting for Riddle Master...</p>
+              <div 
+                className="relative glass-panel rounded-2xl overflow-hidden aspect-video flex items-center justify-center"
+                style={{
+                  background: `
+                    linear-gradient(135deg, 
+                      rgba(139, 92, 246, 0.1) 0%, 
+                      rgba(59, 130, 246, 0.1) 25%,
+                      rgba(6, 182, 212, 0.1) 50%,
+                      rgba(16, 185, 129, 0.1) 75%,
+                      rgba(139, 92, 246, 0.1) 100%
+                    ),
+                    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.2) 0%, transparent 70%)
+                  `
+                }}
+              >
+                {/* Animated Background for Loading */}
+                <div className="absolute inset-0">
+                  <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-full blur-xl animate-float"></div>
+                  <div className="absolute top-3/4 right-1/4 w-24 h-24 bg-gradient-to-r from-cyan-500/20 to-green-500/20 rounded-full blur-xl animate-float-delayed"></div>
+                </div>
+                
+                <div className="text-center z-10">
+                  <div className="animate-pulse w-20 h-20 bg-gradient-gold-silver rounded-full mx-auto mb-6 flex items-center justify-center">
+                    <span className="text-2xl">🎭</span>
+                  </div>
+                  <p className="text-primary font-medium text-lg mb-2">Summoning the Riddle Master...</p>
+                  <p className="text-secondary text-sm">Prepare your wits for the challenge ahead!</p>
                 </div>
               </div>
             )}
