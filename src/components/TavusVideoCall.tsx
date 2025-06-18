@@ -32,6 +32,11 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
     // Join meeting
     const joinMeeting = async () => {
       try {
+        // Leave any previous meeting before joining a new one
+        if (call.meetingState() !== 'left') {
+          await call.leave();
+        }
+
         await call.join({ url: meetingUrl });
         setIsConnected(true);
       } catch (err) {

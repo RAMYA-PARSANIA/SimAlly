@@ -43,6 +43,9 @@ const GameModePage: React.FC = () => {
   const createRiddleConversation = async () => {
     setIsLoading(true);
     setError(null);
+    setConversationUrl(null);
+    setConversationId(null);
+    setUserId(null);
 
     try {
       const response = await fetch('http://localhost:8000/api/create-riddle-conversation', {
@@ -87,16 +90,19 @@ const GameModePage: React.FC = () => {
           user_id: userId
         })
       });
-
+    } catch (err) {
+      console.error('Error ending conversation:', err);
+    } finally {
       setConversationUrl(null);
       setConversationId(null);
       setUserId(null);
-    } catch (err) {
-      console.error('Error ending conversation:', err);
     }
   };
 
-  const handleSelectGame = (gameId: string) => {
+  const handleSelectGame = async (gameId: string) => {
+    if (conversationId && userId) {
+      await endConversation();
+    }
     if (gameId === 'riddle') {
       createRiddleConversation();
     } else {
@@ -118,7 +124,7 @@ const GameModePage: React.FC = () => {
     };
   }, [conversationId, userId]);
 
-  // If conversation is active, show the Daily.js video call
+  // Always join the meeting if conversationUrl is present, no waiting UI
   if (conversationUrl) {
     return (
       <div className="min-h-screen bg-primary">
@@ -150,6 +156,17 @@ const GameModePage: React.FC = () => {
               onLeave={handleLeaveCall}
             />
           </main>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading && !conversationUrl) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-primary">
+        <div className="glass-panel p-8 rounded-xl flex flex-col items-center">
+          <Loader2 className="w-10 h-10 animate-spin mb-4 text-secondary" />
+          <p className="text-lg font-semibold text-primary">Connecting to game...</p>
         </div>
       </div>
     );
