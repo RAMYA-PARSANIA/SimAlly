@@ -64,7 +64,7 @@ const createConversation = async (gameType, userId) => {
       participant_absent_timeout: 300,
       enable_recording: true,
       enable_closed_captions: true,
-      apply_greenscreen: true,
+      apply_greenscreen: false,
       language: "english",
       recording_s3_bucket_name: "conversation-recordings",
       recording_s3_bucket_region: "us-east-1",
