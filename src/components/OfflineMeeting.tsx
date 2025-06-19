@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ArrowLeft, Copy, Users, Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MessageSquare, Send } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import ThemeToggle from './ThemeToggle';
 import Button from './ui/Button';
 
@@ -40,32 +41,27 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
   
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideosRef = useRef<{ [id: string]: HTMLVideoElement }>({});
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
   
-  // WebRTC state (for future P2P connections)
+  // WebRTC state
   const peerConnections = useRef<{ [id: string]: RTCPeerConnection }>({});
   const dataChannels = useRef<{ [id: string]: RTCDataChannel }>({});
 
-  // Initialize local media
+  // Initialize connection and media
   useEffect(() => {
+    initializeConnection();
     initializeMedia();
-    
-    // Add self as first participant
-    const selfParticipant: Participant = {
-      id: 'local',
-      name: displayName,
-      isLocal: true
-    };
-    setParticipants([selfParticipant]);
     
     return () => {
       cleanup();
     };
-  }, [displayName]);
+  }, [meetingId, displayName]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -73,6 +69,256 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, showChat]);
+
+  const initializeConnection = () => {
+    try {
+      // Connect to WebRTC signaling server
+      socketRef.current = io('http://localhost:5001', {
+        transports: ['websocket', 'polling']
+      });
+
+      const socket = socketRef.current;
+
+      socket.on('connect', () => {
+        console.log('Connected to signaling server');
+        setIsConnected(true);
+        
+        // Join the meeting room
+        socket.emit('join-room', {
+          roomId: meetingId,
+          displayName: displayName
+        });
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Disconnected from signaling server');
+        setIsConnected(false);
+      });
+
+      socket.on('existing-participants', (existingParticipants: any[]) => {
+        console.log('Existing participants:', existingParticipants);
+        
+        // Create peer connections for existing participants
+        existingParticipants.forEach(participant => {
+          if (participant.id !== socket.id) {
+            createPeerConnection(participant.id, participant.displayName, true);
+          }
+        });
+      });
+
+      socket.on('participant-joined', (participant: any) => {
+        console.log('New participant joined:', participant);
+        addChatMessage('System', `${participant.displayName} joined the meeting`);
+        
+        // Create peer connection for new participant
+        createPeerConnection(participant.id, participant.displayName, false);
+      });
+
+      socket.on('participant-left', (data: any) => {
+        console.log('Participant left:', data);
+        addChatMessage('System', `${data.displayName} left the meeting`);
+        
+        // Remove participant
+        setParticipants(prev => prev.filter(p => p.id !== data.participantId));
+        
+        // Clean up peer connection
+        if (peerConnections.current[data.participantId]) {
+          peerConnections.current[data.participantId].close();
+          delete peerConnections.current[data.participantId];
+        }
+        
+        if (dataChannels.current[data.participantId]) {
+          dataChannels.current[data.participantId].close();
+          delete dataChannels.current[data.participantId];
+        }
+      });
+
+      socket.on('webrtc-offer', async (data: any) => {
+        console.log('Received offer from:', data.from);
+        await handleOffer(data.from, data.offer, data.fromUser);
+      });
+
+      socket.on('webrtc-answer', async (data: any) => {
+        console.log('Received answer from:', data.from);
+        await handleAnswer(data.from, data.answer);
+      });
+
+      socket.on('webrtc-ice-candidate', async (data: any) => {
+        console.log('Received ICE candidate from:', data.from);
+        await handleIceCandidate(data.from, data.candidate);
+      });
+
+      socket.on('chat-message', (message: any) => {
+        const chatMessage: ChatMessage = {
+          id: message.id,
+          sender: message.sender,
+          message: message.message,
+          timestamp: new Date(message.timestamp)
+        };
+        setChatMessages(prev => [...prev, chatMessage]);
+      });
+
+      socket.on('participant-media-change', (data: any) => {
+        console.log('Participant media change:', data);
+        // Handle remote participant media state changes
+      });
+
+    } catch (error) {
+      console.error('Failed to initialize connection:', error);
+      setError('Failed to connect to meeting server');
+      setIsLoading(false);
+    }
+  };
+
+  const createPeerConnection = async (participantId: string, participantName: string, isInitiator: boolean) => {
+    try {
+      const peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      peerConnections.current[participantId] = peerConnection;
+
+      // Add local stream to peer connection
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
+      }
+
+      // Handle remote stream
+      peerConnection.ontrack = (event) => {
+        console.log('Received remote stream from:', participantId);
+        const remoteStream = event.streams[0];
+        
+        setParticipants(prev => {
+          const existing = prev.find(p => p.id === participantId);
+          if (existing) {
+            return prev.map(p => 
+              p.id === participantId 
+                ? { ...p, stream: remoteStream }
+                : p
+            );
+          } else {
+            return [...prev, {
+              id: participantId,
+              name: participantName,
+              stream: remoteStream,
+              isLocal: false
+            }];
+          }
+        });
+      };
+
+      // Handle ICE candidates
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && socketRef.current) {
+          socketRef.current.emit('webrtc-ice-candidate', {
+            to: participantId,
+            candidate: event.candidate
+          });
+        }
+      };
+
+      // Create data channel for chat
+      if (isInitiator) {
+        const dataChannel = peerConnection.createDataChannel('chat');
+        dataChannels.current[participantId] = dataChannel;
+        
+        dataChannel.onopen = () => {
+          console.log('Data channel opened with:', participantId);
+        };
+        
+        dataChannel.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          setChatMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: message.sender,
+            message: message.message,
+            timestamp: new Date()
+          }]);
+        };
+      }
+
+      peerConnection.ondatachannel = (event) => {
+        const dataChannel = event.channel;
+        dataChannels.current[participantId] = dataChannel;
+        
+        dataChannel.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          setChatMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            sender: message.sender,
+            message: message.message,
+            timestamp: new Date()
+          }]);
+        };
+      };
+
+      // Create offer if initiator
+      if (isInitiator) {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        if (socketRef.current) {
+          socketRef.current.emit('webrtc-offer', {
+            to: participantId,
+            offer: offer
+          });
+        }
+      }
+
+    } catch (error) {
+      console.error('Failed to create peer connection:', error);
+    }
+  };
+
+  const handleOffer = async (fromId: string, offer: RTCSessionDescriptionInit, fromUser: any) => {
+    try {
+      if (!peerConnections.current[fromId]) {
+        await createPeerConnection(fromId, fromUser.displayName, false);
+      }
+
+      const peerConnection = peerConnections.current[fromId];
+      await peerConnection.setRemoteDescription(offer);
+      
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      
+      if (socketRef.current) {
+        socketRef.current.emit('webrtc-answer', {
+          to: fromId,
+          answer: answer
+        });
+      }
+    } catch (error) {
+      console.error('Failed to handle offer:', error);
+    }
+  };
+
+  const handleAnswer = async (fromId: string, answer: RTCSessionDescriptionInit) => {
+    try {
+      const peerConnection = peerConnections.current[fromId];
+      if (peerConnection) {
+        await peerConnection.setRemoteDescription(answer);
+      }
+    } catch (error) {
+      console.error('Failed to handle answer:', error);
+    }
+  };
+
+  const handleIceCandidate = async (fromId: string, candidate: RTCIceCandidateInit) => {
+    try {
+      const peerConnection = peerConnections.current[fromId];
+      if (peerConnection) {
+        await peerConnection.addIceCandidate(candidate);
+      }
+    } catch (error) {
+      console.error('Failed to handle ICE candidate:', error);
+    }
+  };
 
   const initializeMedia = async () => {
     try {
@@ -98,8 +344,14 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
         localVideoRef.current.srcObject = stream;
       }
 
-      // Add welcome message
-      addChatMessage('System', `${displayName} joined the meeting`);
+      // Add self as first participant
+      const selfParticipant: Participant = {
+        id: 'local',
+        name: displayName,
+        stream: stream,
+        isLocal: true
+      };
+      setParticipants([selfParticipant]);
       
       setIsLoading(false);
     } catch (error) {
@@ -126,6 +378,12 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
     Object.values(dataChannels.current).forEach(dc => {
       dc.close();
     });
+
+    // Disconnect socket
+    if (socketRef.current) {
+      socketRef.current.emit('leave-room');
+      socketRef.current.disconnect();
+    }
   };
 
   const handleLeave = () => {
@@ -157,6 +415,13 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
         setIsMuted(!audioTrack.enabled);
         
         addChatMessage('System', `${displayName} ${audioTrack.enabled ? 'unmuted' : 'muted'} their microphone`);
+        
+        // Notify other participants
+        if (socketRef.current) {
+          socketRef.current.emit('media-state-change', {
+            audio: audioTrack.enabled
+          });
+        }
       }
     }
   };
@@ -169,6 +434,13 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
         setIsVideoOff(!videoTrack.enabled);
         
         addChatMessage('System', `${displayName} ${videoTrack.enabled ? 'turned on' : 'turned off'} their camera`);
+        
+        // Notify other participants
+        if (socketRef.current) {
+          socketRef.current.emit('media-state-change', {
+            video: videoTrack.enabled
+          });
+        }
       }
     }
   };
@@ -186,37 +458,67 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
           audio: true
         });
 
-        // Replace video track
-        if (localStream && localVideoRef.current) {
-          const videoTrack = screenStream.getVideoTracks()[0];
-          const sender = peerConnections.current['local']?.getSenders().find(s => 
+        // Replace video track in all peer connections
+        const videoTrack = screenStream.getVideoTracks()[0];
+        
+        Object.values(peerConnections.current).forEach(async (pc) => {
+          const sender = pc.getSenders().find(s => 
             s.track && s.track.kind === 'video'
           );
           
           if (sender) {
             await sender.replaceTrack(videoTrack);
           }
-          
-          // Update local video
+        });
+        
+        // Update local video
+        if (localVideoRef.current) {
           localVideoRef.current.srcObject = screenStream;
-          
-          // Handle screen share end
-          videoTrack.onended = () => {
-            setIsScreenSharing(false);
-            // Switch back to camera
-            if (localStream) {
-              localVideoRef.current!.srcObject = localStream;
-            }
-            addChatMessage('System', `${displayName} stopped screen sharing`);
-          };
         }
+        
+        // Handle screen share end
+        videoTrack.onended = () => {
+          setIsScreenSharing(false);
+          // Switch back to camera
+          if (localStream) {
+            const cameraTrack = localStream.getVideoTracks()[0];
+            Object.values(peerConnections.current).forEach(async (pc) => {
+              const sender = pc.getSenders().find(s => 
+                s.track && s.track.kind === 'video'
+              );
+              
+              if (sender && cameraTrack) {
+                await sender.replaceTrack(cameraTrack);
+              }
+            });
+            
+            if (localVideoRef.current) {
+              localVideoRef.current.srcObject = localStream;
+            }
+          }
+          addChatMessage('System', `${displayName} stopped screen sharing`);
+        };
         
         setIsScreenSharing(true);
         addChatMessage('System', `${displayName} started screen sharing`);
       } else {
         // Stop screen sharing - switch back to camera
-        if (localStream && localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream;
+        if (localStream) {
+          const cameraTrack = localStream.getVideoTracks()[0];
+          
+          Object.values(peerConnections.current).forEach(async (pc) => {
+            const sender = pc.getSenders().find(s => 
+              s.track && s.track.kind === 'video'
+            );
+            
+            if (sender && cameraTrack) {
+              await sender.replaceTrack(cameraTrack);
+            }
+          });
+          
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = localStream;
+          }
         }
         setIsScreenSharing(false);
         addChatMessage('System', `${displayName} stopped screen sharing`);
@@ -243,7 +545,25 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
 
   const sendChatMessage = () => {
     if (newMessage.trim()) {
-      addChatMessage(displayName, newMessage.trim());
+      const message = {
+        sender: displayName,
+        message: newMessage.trim()
+      };
+      
+      // Send via socket for all participants
+      if (socketRef.current) {
+        socketRef.current.emit('chat-message', {
+          message: newMessage.trim()
+        });
+      }
+      
+      // Send via data channels for P2P
+      Object.values(dataChannels.current).forEach(dc => {
+        if (dc.readyState === 'open') {
+          dc.send(JSON.stringify(message));
+        }
+      });
+      
       setNewMessage('');
     }
   };
@@ -253,17 +573,6 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
       e.preventDefault();
       sendChatMessage();
     }
-  };
-
-  // Simulate adding a remote participant (for demo purposes)
-  const addDemoParticipant = () => {
-    const demoParticipant: Participant = {
-      id: `demo-${Date.now()}`,
-      name: `Participant ${participants.length}`,
-      isLocal: false
-    };
-    setParticipants(prev => [...prev, demoParticipant]);
-    addChatMessage('System', `${demoParticipant.name} joined the meeting`);
   };
 
   if (error) {
@@ -308,10 +617,11 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
               </button>
               <div>
                 <h1 className="text-lg font-bold gradient-gold-silver">
-                  SimAlly Meeting (Offline)
+                  SimAlly Meeting
                 </h1>
                 <p className="text-sm text-secondary">
                   Room: {meetingId} • {participants.length} participant{participants.length !== 1 ? 's' : ''}
+                  {isConnected ? ' • Connected' : ' • Connecting...'}
                 </p>
               </div>
             </div>
@@ -379,21 +689,12 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
                 <Copy className="w-4 h-4" />
                 <span>Copy Link</span>
               </Button>
-
-              {/* Demo button for testing */}
-              <Button
-                onClick={addDemoParticipant}
-                variant="secondary"
-                size="sm"
-                className="flex items-center space-x-2"
-              >
-                <Users className="w-4 h-4" />
-                <span>Add Demo User</span>
-              </Button>
               
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-xs text-secondary">Offline Mode</span>
+                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                <span className="text-xs text-secondary">
+                  {isConnected ? 'P2P WebRTC' : 'Connecting...'}
+                </span>
               </div>
               
               <ThemeToggle />
@@ -408,7 +709,7 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
           <div className="glass-panel p-8 rounded-xl text-center">
             <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
             <h3 className="text-xl font-bold text-primary mb-2">Setting up your camera...</h3>
-            <p className="text-secondary">Initializing offline video meeting</p>
+            <p className="text-secondary">Initializing secure P2P video meeting</p>
           </div>
         </div>
       )}
@@ -453,17 +754,31 @@ const OfflineMeeting: React.FC<OfflineMeetingProps> = ({ meetingId, displayName,
               .filter(p => !p.isLocal)
               .map((participant) => (
                 <div key={participant.id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
-                    <div className="text-center">
-                      <div className="w-16 h-16 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-3">
-                        <span className="text-white text-xl font-bold">
-                          {participant.name.charAt(0).toUpperCase()}
-                        </span>
+                  {participant.stream ? (
+                    <video
+                      ref={el => {
+                        if (el && participant.stream) {
+                          el.srcObject = participant.stream;
+                          remoteVideosRef.current[participant.id] = el;
+                        }
+                      }}
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-blue-500/20">
+                      <div className="text-center">
+                        <div className="w-16 h-16 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-3">
+                          <span className="text-white text-xl font-bold">
+                            {participant.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-primary font-medium">{participant.name}</p>
+                        <p className="text-xs text-secondary mt-1">Connecting...</p>
                       </div>
-                      <p className="text-primary font-medium">{participant.name}</p>
-                      <p className="text-xs text-secondary mt-1">Waiting for connection...</p>
                     </div>
-                  </div>
+                  )}
                   <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                     <span className="text-primary text-sm font-medium">
                       {participant.name}
