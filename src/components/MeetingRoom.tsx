@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import OfflineMeeting from './OfflineMeeting';
+import JitsiMeeting from './JitsiMeeting';
 import Button from './ui/Button';
 
 const MeetingRoom: React.FC = () => {
@@ -51,9 +51,9 @@ const MeetingRoom: React.FC = () => {
             <div className="w-16 h-16 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">🎥</span>
             </div>
-            <h2 className="text-xl font-bold mb-2 text-primary">Join Offline Meeting</h2>
+            <h2 className="text-xl font-bold mb-2 text-primary">Join Meeting</h2>
             <p className="text-sm text-secondary">
-              Enter your name to join the completely offline video conference
+              Enter your name to join the free video conference
             </p>
           </div>
           
@@ -95,11 +95,9 @@ const MeetingRoom: React.FC = () => {
           
           <div className="mt-6 p-3 glass-panel rounded-lg">
             <p className="text-xs text-secondary">
-              ✅ 100% Offline • No external servers required
+              ✅ Free video conferencing powered by Jitsi Meet
               <br />
-              🔒 Complete privacy • Works without internet
-              <br />
-              📱 Screen sharing • Chat • Full HD video
+              🔒 No registration required • End-to-end encryption
             </p>
           </div>
         </div>
@@ -108,7 +106,7 @@ const MeetingRoom: React.FC = () => {
   }
 
   return (
-    <OfflineMeeting
+    <JitsiMeeting
       meetingId={meetingId}
       displayName={displayName}
       onLeave={handleLeave}
