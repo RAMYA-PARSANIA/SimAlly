@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Brain, BookOpen, Gamepad2, LogOut, Settings, User } from 'lucide-react';
+import { Bot, Gamepad2, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
@@ -20,22 +20,8 @@ const Dashboard: React.FC = () => {
       id: 'assistant',
       icon: Bot,
       title: 'AI Assistant',
-      description: 'Professional productivity support, coding assistance, and intelligent task management for your daily workflow.',
+      description: 'Professional productivity support with Gmail management, Zoom integration, and intelligent assistance for your daily workflow.',
       route: '/assistant',
-    },
-    {
-      id: 'wellness',
-      icon: Brain,
-      title: 'Wellness Coach',
-      description: 'Personalized emotional support, mindfulness guidance, and mental health resources with professional care.',
-      route: '/wellness',
-    },
-    {
-      id: 'study-coach',
-      icon: BookOpen,
-      title: 'Study Mentor',
-      description: 'Structured learning experiences with curated resources, progress tracking, and personalized guidance.',
-      route: '/study-coach',
     },
     {
       id: 'game-mode',
@@ -103,12 +89,12 @@ const Dashboard: React.FC = () => {
               Your Professional Dashboard
             </h1>
             <p className="text-lg text-secondary max-w-2xl mx-auto">
-              Choose from four specialized AI modes, each designed to excel in specific professional domains.
+              Choose from specialized AI modes, each designed to excel in specific professional domains.
             </p>
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}

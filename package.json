@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "backend": "cd server && npm run dev"
+    "backend": "cd server && npm run dev",
+    "backend:ai": "cd server && npm run dev:ai",
+    "backend:all": "cd server && npm run dev:all"
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.55.0",

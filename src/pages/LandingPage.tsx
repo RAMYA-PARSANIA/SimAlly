@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Brain, BookOpen, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap } from 'lucide-react';
+import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthModal from '../components/AuthModal';
@@ -19,25 +19,13 @@ const LandingPage: React.FC = () => {
     {
       icon: Bot,
       title: 'AI Assistant',
-      description: 'Professional productivity and coding assistance for your daily workflow.',
-      color: 'gold-text',
-    },
-    {
-      icon: Brain,
-      title: 'Wellness Coach',
-      description: 'Thoughtful emotional support and mindfulness guidance when you need it.',
-      color: 'silver-text',
-    },
-    {
-      icon: BookOpen,
-      title: 'Study Mentor',
-      description: 'Structured learning with curated resources and personalized guidance.',
+      description: 'Professional productivity with Gmail management, Zoom integration, and intelligent assistance for your daily workflow.',
       color: 'gold-text',
     },
     {
       icon: Gamepad2,
       title: 'Interactive Games',
-      description: 'Engaging entertainment and mental exercises with intelligent gameplay.',
+      description: 'Engaging entertainment and mental exercises with intelligent gameplay including riddles and 20 questions.',
       color: 'silver-text',
     },
   ];
@@ -110,7 +98,7 @@ const LandingPage: React.FC = () => {
             
             <p className="text-base text-secondary max-w-2xl mx-auto mb-12 leading-relaxed">
               Experience premium AI assistance designed for professionals. From productivity enhancement 
-              to wellness support, learning guidance, and intelligent entertainment.
+              with Gmail and Zoom integration to intelligent entertainment.
             </p>
 
             <Button
@@ -131,14 +119,14 @@ const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold gradient-gold-silver mb-6">
-              Four Professional Modes
+              Two Professional Modes
             </h2>
             <p className="text-lg text-secondary max-w-2xl mx-auto">
               Each mode is carefully crafted to excel in specific professional and personal domains.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {features.map((feature, index) => (
               <GlassCard key={index} className="p-8" hover goldBorder>
                 <div className="flex items-start space-x-6">
@@ -192,7 +180,7 @@ const LandingPage: React.FC = () => {
               Ready for Professional AI Assistance?
             </h2>
             <p className="text-lg text-secondary mb-8 max-w-2xl mx-auto">
-              Join thousands of professionals who have elevated their productivity and well-being with SimAlly.
+              Join thousands of professionals who have elevated their productivity and entertainment with SimAlly.
             </p>
             <Button
               onClick={handleGetStarted}
