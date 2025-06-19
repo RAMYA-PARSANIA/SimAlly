@@ -8,8 +8,10 @@
     "dev": "nodemon app.js",
     "start:ai": "node ai-assistant.js",
     "dev:ai": "nodemon ai-assistant.js",
+    "start:webrtc": "node webrtc-signaling.js",
+    "dev:webrtc": "nodemon webrtc-signaling.js",
     "dev:signaling": "nodemon signaling.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:signaling\""
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:webrtc\""
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.56.0",
@@ -21,6 +23,7 @@
     "googleapis": "^126.0.1",
     "node-fetch": "^2.7.0",
     "simple-peer": "^9.11.1",
+    "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
@@ -31,10 +34,9 @@
     "simally",
     "backend",
     "express",
-    "tavus",
-    "gemini",
-    "gmail",
-    "zoom"
+    "webrtc",
+    "offline",
+    "video-conferencing"
   ],
   "author": "SimAlly Team",
   "license": "MIT"
