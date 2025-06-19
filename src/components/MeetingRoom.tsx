@@ -42,18 +42,19 @@ const MeetingRoom: React.FC = () => {
   const [meeting, setMeeting] = useState<any>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isHost, setIsHost] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'failed'>('connecting');
   
   // Media state
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
+  const [remoteStreams, setRemoteStreams] = useState<{ [id: string]: MediaStream }>({});
   
   // AI Assistant state
   const [aiEnabled, setAiEnabled] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [isRecording, setIsRecording] = useState(false);
-  const [remoteStreams, setRemoteStreams] = useState<{ [id: string]: MediaStream }>({});
 
   // UI state
   const [activeTab, setActiveTab] = useState<'participants' | 'transcript' | 'notes'>('participants');
@@ -63,27 +64,64 @@ const MeetingRoom: React.FC = () => {
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const recognitionRef = useRef<any>(null);
-  const remoteVideosRef = useRef<{ [key: string]: HTMLVideoElement }>({});
-  const peersRef = useRef<{ [id: string]: RTCPeerConnection }>({});
   const socketRef = useRef<any>(null);
+  const peersRef = useRef<{ [id: string]: SimplePeer.Instance }>({});
+  const isInitializedRef = useRef(false);
 
   // Initialize meeting
   useEffect(() => {
-    initializeMedia();
+    if (!isInitializedRef.current && meetingId && user?.id) {
+      isInitializedRef.current = true;
+      initializeMeeting();
+    }
+    
     return () => {
       cleanup();
     };
-  }, []);
+  }, [meetingId, user?.id]);
 
-  useEffect(() => {
-    if (meetingId && user?.id && localStream) {
-      joinMeeting();
+  const initializeMeeting = async () => {
+    try {
+      console.log('Initializing meeting...', { meetingId, userId: user?.id });
+      
+      // First get media
+      await initializeMedia();
+      
+      // Then join the meeting
+      await joinMeeting();
+      
+      // Finally connect to signaling server
+      connectToSignalingServer();
+      
+    } catch (error) {
+      console.error('Failed to initialize meeting:', error);
+      setConnectionStatus('failed');
     }
-    // eslint-disable-next-line
-  }, [meetingId, user?.id, localStream]);
+  };
+
+  const initializeMedia = async () => {
+    try {
+      console.log('Getting user media...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+      
+      setLocalStream(stream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+      console.log('Media initialized successfully');
+    } catch (error) {
+      console.error('Failed to get media:', error);
+      throw error;
+    }
+  };
 
   const joinMeeting = async () => {
     try {
+      console.log('Joining meeting via API...', { meetingId, userId: user?.id });
+      
       const response = await fetch('http://localhost:8001/api/meetings/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -95,75 +133,196 @@ const MeetingRoom: React.FC = () => {
       });
 
       const data = await response.json();
+      console.log('Join meeting response:', data);
+      
       if (data.success) {
         setMeeting(data.meeting);
         setIsHost(data.meeting.host === user?.id);
         setAiEnabled(data.meeting.aiEnabled);
         
         // Add self as participant
-        setParticipants([{
+        const selfParticipant: Participant = {
           id: user?.id || 'local',
           name: user?.name || 'You',
           isHost: data.meeting.host === user?.id,
           isMuted: false,
           isVideoOff: false
-        }]);
-
-        // Connect to signaling server
-        socketRef.current = io(SIGNALING_SERVER_URL);
-        socketRef.current.emit('join-room', meetingId, user.id);
-
-        socketRef.current.on('all-users', (users: string[]) => {
-          users.forEach((socketId) => {
-            const peer = createPeer(socketId, true);
-            peersRef.current[socketId] = peer;
-          });
-        });
-
-        socketRef.current.on('user-joined', (socketId: string) => {
-          const peer = createPeer(socketId, false);
-          peersRef.current[socketId] = peer;
-        });
-
-        socketRef.current.on('signal', async ({ from, signal }) => {
-          const peer = peersRef.current[from];
-          if (peer) {
-            peer.signal(signal);
-          }
-        });
-
-        socketRef.current.on('user-left', (socketId: string) => {
-          if (peersRef.current[socketId]) {
-            peersRef.current[socketId].destroy();
-            delete peersRef.current[socketId];
-            setRemoteStreams((prev) => {
-              const copy = { ...prev };
-              delete copy[socketId];
-              return copy;
-            });
-          }
-        });
+        };
+        
+        setParticipants([selfParticipant]);
+        console.log('Meeting joined successfully');
+      } else {
+        throw new Error(data.error || 'Failed to join meeting');
       }
     } catch (error) {
       console.error('Failed to join meeting:', error);
-      navigate('/assistant');
+      throw error;
     }
   };
 
-  const initializeMedia = async () => {
+  const connectToSignalingServer = () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+      console.log('Connecting to signaling server...', SIGNALING_SERVER_URL);
       
-      setLocalStream(stream);
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+      // Clean up existing socket
+      if (socketRef.current) {
+        socketRef.current.disconnect();
       }
+      
+      socketRef.current = io(SIGNALING_SERVER_URL, {
+        transports: ['websocket'],
+        timeout: 10000,
+        forceNew: true
+      });
+
+      socketRef.current.on('connect', () => {
+        console.log('Connected to signaling server');
+        setConnectionStatus('connected');
+        
+        // Join the room
+        console.log('Joining room:', meetingId, user?.id);
+        socketRef.current.emit('join-room', meetingId, user?.id);
+      });
+
+      socketRef.current.on('connect_error', (error: any) => {
+        console.error('Signaling server connection error:', error);
+        setConnectionStatus('failed');
+      });
+
+      socketRef.current.on('disconnect', (reason: string) => {
+        console.log('Disconnected from signaling server:', reason);
+        setConnectionStatus('connecting');
+      });
+
+      socketRef.current.on('all-users', (users: string[]) => {
+        console.log('Received all users:', users);
+        
+        // Filter out self
+        const otherUsers = users.filter(id => id !== socketRef.current.id);
+        console.log('Other users to connect to:', otherUsers);
+        
+        otherUsers.forEach((socketId) => {
+          if (!peersRef.current[socketId]) {
+            console.log('Creating peer connection to:', socketId);
+            const peer = createPeer(socketId, true);
+            peersRef.current[socketId] = peer;
+          }
+        });
+      });
+
+      socketRef.current.on('user-joined', (socketId: string) => {
+        console.log('User joined:', socketId);
+        
+        if (socketId !== socketRef.current.id && !peersRef.current[socketId]) {
+          console.log('Creating peer connection for new user:', socketId);
+          const peer = createPeer(socketId, false);
+          peersRef.current[socketId] = peer;
+        }
+      });
+
+      socketRef.current.on('signal', ({ from, signal }: { from: string; signal: any }) => {
+        console.log('Received signal from:', from);
+        
+        const peer = peersRef.current[from];
+        if (peer) {
+          try {
+            peer.signal(signal);
+          } catch (error) {
+            console.error('Error processing signal:', error);
+          }
+        } else {
+          console.warn('Received signal from unknown peer:', from);
+        }
+      });
+
+      socketRef.current.on('user-left', (socketId: string) => {
+        console.log('User left:', socketId);
+        
+        if (peersRef.current[socketId]) {
+          peersRef.current[socketId].destroy();
+          delete peersRef.current[socketId];
+          
+          setRemoteStreams((prev) => {
+            const copy = { ...prev };
+            delete copy[socketId];
+            return copy;
+          });
+          
+          // Update participants list
+          setParticipants(prev => prev.filter(p => p.id !== socketId));
+        }
+      });
+
     } catch (error) {
-      console.error('Failed to get media:', error);
+      console.error('Failed to connect to signaling server:', error);
+      setConnectionStatus('failed');
     }
+  };
+
+  const createPeer = (socketId: string, initiator: boolean): SimplePeer.Instance => {
+    console.log('Creating peer:', { socketId, initiator, hasLocalStream: !!localStream });
+    
+    const peer = new SimplePeer({
+      initiator,
+      trickle: false,
+      stream: localStream || undefined,
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      }
+    });
+
+    peer.on('signal', (signal: any) => {
+      console.log('Sending signal to:', socketId);
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit('signal', { to: socketId, signal });
+      }
+    });
+
+    peer.on('stream', (stream: MediaStream) => {
+      console.log('Received stream from:', socketId);
+      setRemoteStreams((prev) => ({ ...prev, [socketId]: stream }));
+      
+      // Add participant if not already added
+      setParticipants(prev => {
+        const exists = prev.find(p => p.id === socketId);
+        if (!exists) {
+          return [...prev, {
+            id: socketId,
+            name: `Participant ${socketId.slice(0, 6)}`,
+            isHost: false,
+            isMuted: false,
+            isVideoOff: false
+          }];
+        }
+        return prev;
+      });
+    });
+
+    peer.on('connect', () => {
+      console.log('Peer connected:', socketId);
+    });
+
+    peer.on('close', () => {
+      console.log('Peer connection closed:', socketId);
+      setRemoteStreams((prev) => {
+        const copy = { ...prev };
+        delete copy[socketId];
+        return copy;
+      });
+    });
+
+    peer.on('error', (err) => {
+      console.error('Peer error:', socketId, err);
+      // Clean up failed peer
+      if (peersRef.current[socketId]) {
+        delete peersRef.current[socketId];
+      }
+    });
+
+    return peer;
   };
 
   const initializeSpeechRecognition = () => {
@@ -222,15 +381,23 @@ const MeetingRoom: React.FC = () => {
 
   const startRecording = () => {
     if (recognitionRef.current && aiEnabled) {
-      recognitionRef.current.start();
-      setIsRecording(true);
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Failed to start recording:', error);
+      }
     }
   };
 
   const stopRecording = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
+      try {
+        recognitionRef.current.stop();
+        setIsRecording(false);
+      } catch (error) {
+        console.error('Failed to stop recording:', error);
+      }
     }
   };
 
@@ -323,12 +490,45 @@ const MeetingRoom: React.FC = () => {
   };
 
   const cleanup = () => {
+    console.log('Cleaning up meeting resources...');
+    
+    // Stop local stream
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped track:', track.kind);
+      });
     }
+    
+    // Stop speech recognition
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (error) {
+        console.error('Error stopping speech recognition:', error);
+      }
     }
+    
+    // Close all peer connections
+    Object.values(peersRef.current).forEach(peer => {
+      try {
+        peer.destroy();
+      } catch (error) {
+        console.error('Error destroying peer:', error);
+      }
+    });
+    peersRef.current = {};
+    
+    // Disconnect socket
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    
+    // Clear state
+    setRemoteStreams({});
+    setParticipants([]);
+    setLocalStream(null);
   };
 
   const copyTranscript = () => {
@@ -371,37 +571,6 @@ const MeetingRoom: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // --- WebRTC Peer Connection helpers ---
-  const createPeer = (socketId: string, initiator: boolean) => {
-    const peer = new SimplePeer({
-      initiator,
-      trickle: false,
-      stream: localStream!,
-    });
-
-    peer.on('signal', (signal: any) => {
-      socketRef.current.emit('signal', { to: socketId, signal });
-    });
-
-    peer.on('stream', (stream: MediaStream) => {
-      setRemoteStreams((prev) => ({ ...prev, [socketId]: stream }));
-    });
-
-    peer.on('close', () => {
-      setRemoteStreams((prev) => {
-        const copy = { ...prev };
-        delete copy[socketId];
-        return copy;
-      });
-    });
-
-    peer.on('error', (err) => {
-      console.error('Peer error', err);
-    });
-
-    return peer;
-  };
-
   useEffect(() => {
     initializeSpeechRecognition();
   }, []);
@@ -418,15 +587,53 @@ const MeetingRoom: React.FC = () => {
       recognitionRef.current.stop();
       setIsRecording(false);
     }
-    // eslint-disable-next-line
   }, [aiEnabled, localStream]);
 
-  if (!meeting) {
+  // Show loading state
+  if (connectionStatus === 'connecting' || !meeting) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
-        <div className="glass-panel p-8 rounded-xl">
+        <div className="glass-panel p-8 rounded-xl text-center">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
-          <p className="text-primary">Joining meeting...</p>
+          <p className="text-primary mb-2">
+            {!meeting ? 'Joining meeting...' : 'Connecting to other participants...'}
+          </p>
+          <p className="text-sm text-secondary">
+            Status: {connectionStatus}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (connectionStatus === 'failed') {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="glass-panel p-8 rounded-xl text-center max-w-md">
+          <h3 className="text-xl font-bold text-primary mb-4">Connection Failed</h3>
+          <p className="text-secondary mb-6">
+            Unable to connect to the meeting. Please check your internet connection and try again.
+          </p>
+          <div className="space-y-3">
+            <Button
+              onClick={() => {
+                setConnectionStatus('connecting');
+                initializeMeeting();
+              }}
+              variant="premium"
+              className="w-full"
+            >
+              Retry Connection
+            </Button>
+            <Button
+              onClick={() => navigate('/assistant')}
+              variant="secondary"
+              className="w-full"
+            >
+              Go Back
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -442,6 +649,7 @@ const MeetingRoom: React.FC = () => {
             <p className="text-sm text-secondary">
               {participants.length} participant{participants.length !== 1 ? 's' : ''}
               {aiEnabled && <span className="ml-2 text-green-400">• AI Assistant Active</span>}
+              <span className="ml-2 text-blue-400">• {connectionStatus}</span>
             </p>
           </div>
           
@@ -520,12 +728,14 @@ const MeetingRoom: React.FC = () => {
               )}
             </div>
 
-            {/* Remote participants would go here */}
+            {/* Remote Videos */}
             {Object.entries(remoteStreams).map(([id, stream]) => (
               <div key={id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
                 <video
                   ref={(el) => {
-                    if (el) el.srcObject = stream;
+                    if (el && el.srcObject !== stream) {
+                      el.srcObject = stream;
+                    }
                   }}
                   autoPlay
                   playsInline
@@ -533,7 +743,7 @@ const MeetingRoom: React.FC = () => {
                 />
                 <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                   <span className="text-primary text-sm font-medium">
-                    Participant
+                    {participants.find(p => p.id === id)?.name || `Participant ${id.slice(0, 6)}`}
                   </span>
                 </div>
               </div>
