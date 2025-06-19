@@ -1,10 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
 import { motion } from 'framer-motion';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, Settings, Bot, NutOff as BotOff, FileText, Download, Copy, Loader2 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
+import SimplePeer from 'simple-peer';
+
+const SIGNALING_SERVER_URL = 'http://localhost:5000';
 
 interface Participant {
   id: string;
@@ -49,7 +53,8 @@ const MeetingRoom: React.FC = () => {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [isRecording, setIsRecording] = useState(false);
-  
+  const [remoteStreams, setRemoteStreams] = useState<{ [id: string]: MediaStream }>({});
+
   // UI state
   const [activeTab, setActiveTab] = useState<'participants' | 'transcript' | 'notes'>('participants');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -59,19 +64,23 @@ const MeetingRoom: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const recognitionRef = useRef<any>(null);
   const remoteVideosRef = useRef<{ [key: string]: HTMLVideoElement }>({});
+  const peersRef = useRef<{ [id: string]: RTCPeerConnection }>({});
+  const socketRef = useRef<any>(null);
 
   // Initialize meeting
   useEffect(() => {
-    if (meetingId) {
-      joinMeeting();
-      initializeMedia();
-      initializeSpeechRecognition();
-    }
-
+    initializeMedia();
     return () => {
       cleanup();
     };
-  }, [meetingId]);
+  }, []);
+
+  useEffect(() => {
+    if (meetingId && user?.id && localStream) {
+      joinMeeting();
+    }
+    // eslint-disable-next-line
+  }, [meetingId, user?.id, localStream]);
 
   const joinMeeting = async () => {
     try {
@@ -99,6 +108,41 @@ const MeetingRoom: React.FC = () => {
           isMuted: false,
           isVideoOff: false
         }]);
+
+        // Connect to signaling server
+        socketRef.current = io(SIGNALING_SERVER_URL);
+        socketRef.current.emit('join-room', meetingId, user.id);
+
+        socketRef.current.on('all-users', (users: string[]) => {
+          users.forEach((socketId) => {
+            const peer = createPeer(socketId, true);
+            peersRef.current[socketId] = peer;
+          });
+        });
+
+        socketRef.current.on('user-joined', (socketId: string) => {
+          const peer = createPeer(socketId, false);
+          peersRef.current[socketId] = peer;
+        });
+
+        socketRef.current.on('signal', async ({ from, signal }) => {
+          const peer = peersRef.current[from];
+          if (peer) {
+            peer.signal(signal);
+          }
+        });
+
+        socketRef.current.on('user-left', (socketId: string) => {
+          if (peersRef.current[socketId]) {
+            peersRef.current[socketId].destroy();
+            delete peersRef.current[socketId];
+            setRemoteStreams((prev) => {
+              const copy = { ...prev };
+              delete copy[socketId];
+              return copy;
+            });
+          }
+        });
       }
     } catch (error) {
       console.error('Failed to join meeting:', error);
@@ -327,6 +371,56 @@ const MeetingRoom: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // --- WebRTC Peer Connection helpers ---
+  const createPeer = (socketId: string, initiator: boolean) => {
+    const peer = new SimplePeer({
+      initiator,
+      trickle: false,
+      stream: localStream!,
+    });
+
+    peer.on('signal', (signal: any) => {
+      socketRef.current.emit('signal', { to: socketId, signal });
+    });
+
+    peer.on('stream', (stream: MediaStream) => {
+      setRemoteStreams((prev) => ({ ...prev, [socketId]: stream }));
+    });
+
+    peer.on('close', () => {
+      setRemoteStreams((prev) => {
+        const copy = { ...prev };
+        delete copy[socketId];
+        return copy;
+      });
+    });
+
+    peer.on('error', (err) => {
+      console.error('Peer error', err);
+    });
+
+    return peer;
+  };
+
+  useEffect(() => {
+    initializeSpeechRecognition();
+  }, []);
+
+  useEffect(() => {
+    if (aiEnabled && recognitionRef.current && localStream) {
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (e) {
+        console.error('Speech recognition error:', e);
+      }
+    } else if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+    // eslint-disable-next-line
+  }, [aiEnabled, localStream]);
+
   if (!meeting) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -380,6 +474,18 @@ const MeetingRoom: React.FC = () => {
                 <span>Summary</span>
               </Button>
             )}
+
+            <Button
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/meeting/${meetingId}`);
+              }}
+              variant="secondary"
+              size="sm"
+              className="flex items-center space-x-2"
+            >
+              <Users className="w-4 h-4" />
+              <span>Copy Invite Link</span>
+            </Button>
           </div>
         </div>
       </header>
@@ -415,14 +521,19 @@ const MeetingRoom: React.FC = () => {
             </div>
 
             {/* Remote participants would go here */}
-            {participants.slice(1).map((participant) => (
-              <div key={participant.id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
-                <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                  <Users className="w-8 h-8 text-gray-400" />
-                </div>
+            {Object.entries(remoteStreams).map(([id, stream]) => (
+              <div key={id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
+                <video
+                  ref={(el) => {
+                    if (el) el.srcObject = stream;
+                  }}
+                  autoPlay
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
                 <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                   <span className="text-primary text-sm font-medium">
-                    {participant.name} {participant.isHost && '(Host)'}
+                    Participant
                   </span>
                 </div>
               </div>
