@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus, Copy, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -157,11 +157,22 @@ const AssistantPage: React.FC = () => {
 
   const detectIntent = async (userMessage: string): Promise<IntentResult> => {
     if (backendStatus !== 'online') {
+      // Handle basic meeting requests offline
+      const lowerMessage = userMessage.toLowerCase();
+      if (lowerMessage.includes('start') && lowerMessage.includes('meeting')) {
+        return {
+          intent: 'meeting_start',
+          confidence: 1.0,
+          parameters: { title: 'Quick Meeting' },
+          response: 'I\'ll start a meeting for you right away!'
+        };
+      }
+      
       return {
         intent: 'chat',
         confidence: 1.0,
         parameters: {},
-        response: 'I\'m currently in offline mode. The AI assistant backend is not available. You can still start meetings directly using the "Start Meeting" button.'
+        response: 'I\'m currently in offline mode. I can help you start meetings using Jitsi Meet (completely free), but other AI features require the backend to be running. Try saying "start a meeting" or use the Start Meeting button!'
       };
     }
 
@@ -193,6 +204,12 @@ const AssistantPage: React.FC = () => {
 
   const executeAction = async (intent: string, parameters: any): Promise<any> => {
     if (backendStatus !== 'online') {
+      if (intent === 'meeting_start') {
+        // Create meeting without backend using Jitsi
+        const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        navigate(`/meeting/${meetingId}`);
+        return { success: true, meetingId, offline: true, platform: 'Jitsi Meet' };
+      }
       return { error: 'Backend services not available' };
     }
 
@@ -288,10 +305,10 @@ const AssistantPage: React.FC = () => {
   // Meeting Actions
   const startMeeting = async (params: any) => {
     if (backendStatus !== 'online') {
-      // Create meeting without backend
-      const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Create meeting without backend using Jitsi
+      const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       navigate(`/meeting/${meetingId}`);
-      return { success: true, meetingId, offline: true };
+      return { success: true, meetingId, offline: true, platform: 'Jitsi Meet' };
     }
 
     const response = await fetch('http://localhost:8001/api/meetings/create', {
@@ -449,38 +466,20 @@ const AssistantPage: React.FC = () => {
   const handleStartMeeting = async () => {
     setIsCreatingMeeting(true);
     try {
-      if (backendStatus === 'online') {
-        const response = await fetch('http://localhost:8001/api/meetings/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            userId: user?.id,
-            title: 'Quick Meeting',
-            participants: []
-          })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-          loadActiveMeetings(); // Refresh meetings list
-          navigate(`/meeting/${data.meetingId}`);
-        } else {
-          throw new Error(data.error || 'Failed to create meeting');
-        }
-      } else {
-        // Create meeting without backend
-        const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        navigate(`/meeting/${meetingId}`);
-      }
+      // Always create meeting using Jitsi (works with or without backend)
+      const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      navigate(`/meeting/${meetingId}`);
     } catch (error) {
       console.error('Failed to create meeting:', error);
-      // Fallback: create meeting without backend
-      const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      navigate(`/meeting/${meetingId}`);
     } finally {
       setIsCreatingMeeting(false);
     }
+  };
+
+  const copyMeetingLink = (meetingId: string) => {
+    const link = `${window.location.origin}/meeting/${meetingId}`;
+    navigator.clipboard.writeText(link);
+    // You could add a toast notification here
   };
 
   const getIntentIcon = (intent?: string) => {
@@ -559,7 +558,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Gmail • Video Meetings • General Assistant
+                  Free Video Meetings • Gmail • AI Chat
                 </p>
               </div>
             </div>
@@ -587,12 +586,12 @@ const AssistantPage: React.FC = () => {
                 <span className="text-xs text-secondary">{getBackendStatusText()}</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-xs text-secondary">Gmail</span>
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-xs text-secondary">Jitsi Meet</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${activeMeetings.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-xs text-secondary">Meetings</span>
+                <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
+                <span className="text-xs text-secondary">Gmail</span>
               </div>
               
               <button
@@ -611,15 +610,15 @@ const AssistantPage: React.FC = () => {
 
       {/* Backend Status Banner */}
       {backendStatus === 'offline' && (
-        <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-6 py-2">
+        <div className="bg-blue-500/10 border-b border-blue-500/30 px-6 py-2">
           <div className="max-w-7xl mx-auto">
-            <p className="text-yellow-400 text-sm text-center">
-              ⚠️ AI Assistant backend is offline. Basic meeting functionality is available, but AI features are disabled.
+            <p className="text-blue-400 text-sm text-center">
+              ℹ️ Using free Jitsi Meet for video meetings. AI features available when backend is connected.
               <button 
                 onClick={checkBackendStatus}
                 className="ml-2 underline hover:no-underline"
               >
-                Retry Connection
+                Check Backend
               </button>
             </p>
           </div>
@@ -646,7 +645,7 @@ const AssistantPage: React.FC = () => {
                 <p className="text-secondary mb-8 max-w-2xl mx-auto">
                   {backendStatus === 'online' 
                     ? "I can help you with Gmail management, video meetings, and answer any questions you have. Just tell me what you need in natural language!"
-                    : "I'm currently in offline mode, but you can still start and join video meetings. AI features will be available when the backend is connected."
+                    : "I can help you start free video meetings using Jitsi Meet! AI features will be available when the backend is connected."
                   }
                 </p>
                 
@@ -667,7 +666,7 @@ const AssistantPage: React.FC = () => {
                     <Video className="w-8 h-8 text-green-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Meetings</h3>
                     <p className="text-xs text-secondary">
-                      "Start a meeting with my team"
+                      "Start a meeting" - Free with Jitsi Meet
                     </p>
                   </GlassCard>
                   
@@ -697,12 +696,12 @@ const AssistantPage: React.FC = () => {
                     ) : (
                       <Video className="w-5 h-5" />
                     )}
-                    <span>Start Quick Meeting</span>
+                    <span>Start Free Meeting</span>
                   </Button>
                   <p className="text-xs text-secondary mt-2">
                     {backendStatus === 'online' 
                       ? 'Or just say "Start a meeting" to create one with AI assistance'
-                      : 'Create a meeting instantly - no backend required'
+                      : 'Powered by Jitsi Meet - completely free and open source!'
                     }
                   </p>
                 </div>
@@ -715,17 +714,34 @@ const AssistantPage: React.FC = () => {
                       {activeMeetings.map((meeting) => (
                         <GlassCard 
                           key={meeting.id} 
-                          className="p-4 text-left cursor-pointer" 
+                          className="p-4 text-left" 
                           hover
-                          onClick={() => navigate(`/meeting/${meeting.id}`)}
                         >
-                          <div className="flex items-center space-x-3">
-                            <Users className="w-6 h-6 text-green-500" />
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-primary">{meeting.title}</h4>
-                              <p className="text-xs text-secondary">
-                                {meeting.participants} participants • AI {meeting.aiEnabled ? 'ON' : 'OFF'}
-                              </p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <Users className="w-6 h-6 text-green-500" />
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-primary">{meeting.title}</h4>
+                                <p className="text-xs text-secondary">
+                                  {meeting.participants} participants • AI {meeting.aiEnabled ? 'ON' : 'OFF'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => copyMeetingLink(meeting.id)}
+                                className="glass-panel p-2 rounded glass-panel-hover"
+                                title="Copy meeting link"
+                              >
+                                <Copy className="w-4 h-4 text-secondary" />
+                              </button>
+                              <button
+                                onClick={() => navigate(`/meeting/${meeting.id}`)}
+                                className="glass-panel p-2 rounded glass-panel-hover"
+                                title="Join meeting"
+                              >
+                                <ExternalLink className="w-4 h-4 text-secondary" />
+                              </button>
                             </div>
                           </div>
                         </GlassCard>
@@ -794,7 +810,9 @@ const AssistantPage: React.FC = () => {
                       {msg.action && msg.action.success && (
                         <div className="mt-3 p-3 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
                           <p className="text-green-400 text-sm font-medium">
-                            ✓ {msg.action.offline ? 'Meeting created (offline mode)' : 'Action completed successfully'}
+                            ✓ {msg.action.offline 
+                              ? `Meeting created using ${msg.action.platform || 'Jitsi Meet'} (free)` 
+                              : 'Action completed successfully'}
                           </p>
                         </div>
                       )}
@@ -848,7 +866,7 @@ const AssistantPage: React.FC = () => {
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={backendStatus === 'online' 
                     ? "Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
-                    : "Ask me to start a meeting or use the Start Meeting button above..."
+                    : "Try: 'Start a meeting' or use the Start Meeting button above for free video calls!"
                   }
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
