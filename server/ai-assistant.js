@@ -40,7 +40,7 @@ app.post('/api/chat/detect-intent', async (req, res) => {
   try {
     const { message, userId } = req.body;
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
@@ -118,7 +118,7 @@ const getChatResponse = async (message, userId) => {
     const userSession = userSessions.get(userId) || {};
     const conversationHistory = userSession.chatHistory || [];
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     // Build conversation context
     let conversationContext = '';
@@ -343,7 +343,7 @@ app.post('/api/gmail/unsubscribe', async (req, res) => {
     }
     
     // Use Gemini to find unsubscribe links
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `
       Analyze this email content and find any unsubscribe links or instructions:
       
@@ -370,7 +370,7 @@ app.post('/api/gmail/compose-help', async (req, res) => {
   try {
     const { prompt, context = '', tone = 'professional' } = req.body;
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const aiPrompt = `
       You are a professional email writing assistant. Help compose an email based on this request:
       
@@ -551,7 +551,7 @@ const generateAutoNotes = async (meetingId, text, speaker) => {
     const meeting = activeMeetings.get(meetingId);
     if (!meeting) return;
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `
       Analyze this meeting transcript segment and extract key points, action items, or important information:
       
@@ -617,7 +617,7 @@ app.post('/api/meetings/:meetingId/summary', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Meeting not found' });
     }
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     // Combine transcript for summary
     const fullTranscript = meeting.transcript
