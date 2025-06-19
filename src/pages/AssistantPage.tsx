@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -23,6 +23,15 @@ interface IntentResult {
   response: string;
 }
 
+interface Meeting {
+  id: string;
+  title: string;
+  host: string;
+  participants: number;
+  createdAt: string;
+  aiEnabled: boolean;
+}
+
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -31,7 +40,7 @@ const AssistantPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
-  const [activeZoomSession, setActiveZoomSession] = useState<string | null>(null);
+  const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -65,9 +74,10 @@ const AssistantPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history on mount
+  // Load chat history and active meetings on mount
   useEffect(() => {
     loadChatHistory();
+    loadActiveMeetings();
   }, []);
 
   const loadChatHistory = async () => {
@@ -88,6 +98,21 @@ const AssistantPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
+    }
+  };
+
+  const loadActiveMeetings = async () => {
+    try {
+      const response = await fetch(`http://localhost:8001/api/meetings/active?userId=${user?.id}`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        setActiveMeetings(data.meetings);
+      }
+    } catch (error) {
+      console.error('Failed to load active meetings:', error);
     }
   };
 
@@ -145,14 +170,16 @@ const AssistantPage: React.FC = () => {
           return await unsubscribeEmail(parameters);
         case 'gmail_compose_help':
           return await getComposeHelp(parameters);
-        case 'zoom_start':
-          return await startZoomSession(parameters);
-        case 'zoom_translate':
-          return await translateText(parameters);
-        case 'zoom_summary':
-          return await getZoomSummary(parameters);
-        case 'zoom_end':
-          return await endZoomSession(parameters);
+        case 'meeting_start':
+          return await startMeeting(parameters);
+        case 'meeting_join':
+          return await joinMeeting(parameters);
+        case 'meeting_transcribe':
+          return await toggleTranscription(parameters);
+        case 'meeting_notes':
+          return await getMeetingNotes(parameters);
+        case 'meeting_summary':
+          return await getMeetingSummary(parameters);
         default:
           return null;
       }
@@ -220,75 +247,64 @@ const AssistantPage: React.FC = () => {
     return await response.json();
   };
 
-  // Zoom Actions
-  const startZoomSession = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/zoom/start-session', {
+  // Meeting Actions
+  const startMeeting = async (params: any) => {
+    const response = await fetch('http://localhost:8001/api/meetings/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         userId: user?.id,
-        meetingId: params.meetingId || 'default'
+        title: params.title || 'New Meeting',
+        participants: params.participants || []
       })
     });
     const data = await response.json();
     if (data.success) {
-      setActiveZoomSession(data.sessionId);
+      loadActiveMeetings(); // Refresh meetings list
+      // Navigate to meeting room
+      navigate(`/meeting/${data.meetingId}`);
     }
     return data;
   };
 
-  const translateText = async (params: any) => {
-    if (!activeZoomSession) {
-      return { error: 'No active Zoom session' };
-    }
-    
-    const response = await fetch('http://localhost:8001/api/zoom/translate', {
+  const joinMeeting = async (params: any) => {
+    const response = await fetch('http://localhost:8001/api/meetings/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
-        sessionId: activeZoomSession,
-        text: params.text,
-        targetLanguage: params.language
+        meetingId: params.meetingId,
+        userId: user?.id
       })
+    });
+    const data = await response.json();
+    if (data.success) {
+      // Navigate to meeting room
+      navigate(`/meeting/${params.meetingId}`);
+    }
+    return data;
+  };
+
+  const toggleTranscription = async (params: any) => {
+    // This would be handled in the meeting room component
+    return { success: true, message: 'Transcription toggled' };
+  };
+
+  const getMeetingNotes = async (params: any) => {
+    const response = await fetch(`http://localhost:8001/api/meetings/${params.meetingId}/transcript`, {
+      credentials: 'include'
     });
     return await response.json();
   };
 
-  const getZoomSummary = async (params: any) => {
-    if (!activeZoomSession) {
-      return { error: 'No active Zoom session' };
-    }
-    
-    const response = await fetch('http://localhost:8001/api/zoom/summary', {
+  const getMeetingSummary = async (params: any) => {
+    const response = await fetch(`http://localhost:8001/api/meetings/${params.meetingId}/summary`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({
-        sessionId: activeZoomSession
-      })
+      body: JSON.stringify({})
     });
-    return await response.json();
-  };
-
-  const endZoomSession = async (params: any) => {
-    if (!activeZoomSession) {
-      return { error: 'No active Zoom session' };
-    }
-    
-    const response = await fetch('http://localhost:8001/api/zoom/end-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        sessionId: activeZoomSession
-      })
-    });
-    
-    if (response.ok) {
-      setActiveZoomSession(null);
-    }
     return await response.json();
   };
 
@@ -380,10 +396,11 @@ const AssistantPage: React.FC = () => {
       case 'gmail_unsubscribe':
       case 'gmail_compose_help':
         return <Mail className="w-4 h-4" />;
-      case 'zoom_start':
-      case 'zoom_translate':
-      case 'zoom_summary':
-      case 'zoom_end':
+      case 'meeting_start':
+      case 'meeting_join':
+      case 'meeting_transcribe':
+      case 'meeting_notes':
+      case 'meeting_summary':
         return <Video className="w-4 h-4" />;
       default:
         return <MessageSquare className="w-4 h-4" />;
@@ -398,10 +415,11 @@ const AssistantPage: React.FC = () => {
       case 'gmail_unsubscribe':
       case 'gmail_compose_help':
         return 'text-blue-500';
-      case 'zoom_start':
-      case 'zoom_translate':
-      case 'zoom_summary':
-      case 'zoom_end':
+      case 'meeting_start':
+      case 'meeting_join':
+      case 'meeting_transcribe':
+      case 'meeting_notes':
+      case 'meeting_summary':
         return 'text-green-500';
       default:
         return 'text-purple-500';
@@ -428,7 +446,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Just tell me what you need - I'll figure out how to help!
+                  Gmail • Video Meetings • General Assistant
                 </p>
               </div>
             </div>
@@ -440,8 +458,8 @@ const AssistantPage: React.FC = () => {
                 <span className="text-xs text-secondary">Gmail</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${activeZoomSession ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-xs text-secondary">Zoom</span>
+                <div className={`w-2 h-2 rounded-full ${activeMeetings.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`} />
+                <span className="text-xs text-secondary">Meetings</span>
               </div>
               
               <button
@@ -476,12 +494,12 @@ const AssistantPage: React.FC = () => {
                   Hello! I'm your AI Assistant
                 </h2>
                 <p className="text-secondary mb-8 max-w-2xl mx-auto">
-                  I can help you with Gmail management, Zoom meetings, and answer any questions you have. 
+                  I can help you with Gmail management, video meetings, and answer any questions you have. 
                   Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto mb-8">
                   <GlassCard className="p-4 text-center" hover>
                     <Mail className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Gmail</h3>
@@ -492,9 +510,9 @@ const AssistantPage: React.FC = () => {
                   
                   <GlassCard className="p-4 text-center" hover>
                     <Video className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Zoom</h3>
+                    <h3 className="font-semibold text-primary mb-1">Meetings</h3>
                     <p className="text-xs text-secondary">
-                      "Start a Zoom session for translation"
+                      "Start a meeting with my team"
                     </p>
                   </GlassCard>
                   
@@ -506,6 +524,28 @@ const AssistantPage: React.FC = () => {
                     </p>
                   </GlassCard>
                 </div>
+
+                {/* Active Meetings */}
+                {activeMeetings.length > 0 && (
+                  <div className="mb-8">
+                    <h3 className="text-lg font-semibold text-primary mb-4">Active Meetings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+                      {activeMeetings.map((meeting) => (
+                        <GlassCard key={meeting.id} className="p-4 text-left" hover>
+                          <div className="flex items-center space-x-3">
+                            <Users className="w-6 h-6 text-green-500" />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-primary">{meeting.title}</h4>
+                              <p className="text-xs text-secondary">
+                                {meeting.participants} participants • AI {meeting.aiEnabled ? 'ON' : 'OFF'}
+                              </p>
+                            </div>
+                          </div>
+                        </GlassCard>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 
                 {!isGmailConnected && (
                   <div className="mt-8">
@@ -617,7 +657,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you need... (e.g., 'Send an email to John about the project', 'Translate this to Spanish', 'What's the weather?')"
+                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
