@@ -68,31 +68,35 @@ const MeetingRoom: React.FC = () => {
   const peersRef = useRef<{ [id: string]: SimplePeer.Instance }>({});
   const isInitializedRef = useRef(false);
 
+  // New state for display name feature
+  const [displayName, setDisplayName] = useState<string>('');
+  const [hasEnteredName, setHasEnteredName] = useState(false);
+  const [userId, setUserId] = useState<string>(user?.id || '');
+
   // Initialize meeting
   useEffect(() => {
-    if (!isInitializedRef.current && meetingId && user?.id) {
+    if (!isInitializedRef.current && meetingId && userId && hasEnteredName) {
       isInitializedRef.current = true;
       initializeMeeting();
     }
-    
     return () => {
       cleanup();
     };
-  }, [meetingId, user?.id]);
+  }, [meetingId, userId, hasEnteredName]);
 
   const initializeMeeting = async () => {
     try {
       console.log('Initializing meeting...', { meetingId, userId: user?.id });
-      
-      // First get media
+
+      // Try to get media, but don't abort if it fails
       await initializeMedia();
-      
+
       // Then join the meeting
       await joinMeeting();
-      
+
       // Finally connect to signaling server
       connectToSignalingServer();
-      
+
     } catch (error) {
       console.error('Failed to initialize meeting:', error);
       setConnectionStatus('failed');
@@ -106,15 +110,20 @@ const MeetingRoom: React.FC = () => {
         video: true,
         audio: true
       });
-      
+
       setLocalStream(stream);
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
       console.log('Media initialized successfully');
     } catch (error) {
+      // Log the error, but do NOT throw
       console.error('Failed to get media:', error);
-      throw error;
+      setLocalStream(null);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      // Continue without throwing!
     }
   };
 
@@ -128,7 +137,8 @@ const MeetingRoom: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           meetingId,
-          userId: user?.id
+          userId,
+          name: displayName
         })
       });
 
@@ -142,9 +152,9 @@ const MeetingRoom: React.FC = () => {
         
         // Add self as participant
         const selfParticipant: Participant = {
-          id: user?.id || 'local',
-          name: user?.name || 'You',
-          isHost: data.meeting.host === user?.id,
+          id: userId || 'local',
+          name: displayName || user?.name || 'You',
+          isHost: data.meeting.host === userId,
           isMuted: false,
           isVideoOff: false
         };
@@ -208,6 +218,21 @@ const MeetingRoom: React.FC = () => {
             peersRef.current[socketId] = peer;
           }
         });
+
+        // Add participants for all users
+        setParticipants(prev => {
+          const existingIds = prev.map(p => p.id);
+          const newParticipants = users
+            .filter(id => id !== socketRef.current.id && !existingIds.includes(id))
+            .map(id => ({
+              id,
+              name: `Participant ${id.slice(0, 6)}`,
+              isHost: false,
+              isMuted: false,
+              isVideoOff: false
+            }));
+          return [...prev, ...newParticipants];
+        });
       });
 
       socketRef.current.on('user-joined', (socketId: string) => {
@@ -218,6 +243,22 @@ const MeetingRoom: React.FC = () => {
           const peer = createPeer(socketId, false);
           peersRef.current[socketId] = peer;
         }
+
+        setParticipants(prev => {
+          if (!prev.find(p => p.id === socketId)) {
+            return [
+              ...prev,
+              {
+                id: socketId,
+                name: `Participant ${socketId.slice(0, 6)}`,
+                isHost: false,
+                isMuted: false,
+                isVideoOff: false
+              }
+            ];
+          }
+          return prev;
+        });
       });
 
       socketRef.current.on('signal', ({ from, signal }: { from: string; signal: any }) => {
@@ -639,6 +680,36 @@ const MeetingRoom: React.FC = () => {
     );
   }
 
+  if (!hasEnteredName) {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="glass-panel p-8 rounded-xl text-center max-w-sm">
+          <h2 className="text-xl font-bold mb-4 text-primary">Enter your display name</h2>
+          <input
+            type="text"
+            className="w-full p-3 rounded-lg border border-gray-300 mb-4 text-black"
+            placeholder="Your name"
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+          />
+          <Button
+            onClick={() => {
+              if (displayName.trim().length > 0) {
+                setHasEnteredName(true);
+                if (!user?.id) setUserId(randomId());
+                else setUserId(user.id);
+              }
+            }}
+            variant="premium"
+            className="w-full"
+          >
+            Join Meeting
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-primary flex flex-col">
       {/* Header */}
@@ -685,7 +756,7 @@ const MeetingRoom: React.FC = () => {
 
             <Button
               onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/meeting/${meetingId}`);
+                navigator.clipboard.writeText(`${window.origin}/meeting/${meetingId}`);
               }}
               variant="secondary"
               size="sm"
@@ -713,7 +784,7 @@ const MeetingRoom: React.FC = () => {
               />
               <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                 <span className="text-primary text-sm font-medium">
-                  {user?.name || 'You'} {isHost && '(Host)'}
+                  {displayName || user?.name || 'You'} {isHost && '(Host)'}
                 </span>
               </div>
               {isMuted && (
@@ -728,29 +799,39 @@ const MeetingRoom: React.FC = () => {
               )}
             </div>
 
-            {/* Remote Videos */}
-            {Object.entries(remoteStreams).map(([id, stream]) => (
-              <div key={id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
-                <video
-                  ref={(el) => {
-                    if (el && el.srcObject !== stream) {
-                      el.srcObject = stream;
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
-                  <span className="text-primary text-sm font-medium">
-                    {participants.find(p => p.id === id)?.name || `Participant ${id.slice(0, 6)}`}
-                  </span>
-                </div>
-              </div>
-            ))}
+            {/* Show all participants except self */}
+            {participants
+              .filter(p => p.id !== user?.id)
+              .map((participant) => {
+                const stream = remoteStreams[participant.id];
+                return (
+                  <div key={participant.id} className="relative glass-panel rounded-xl overflow-hidden aspect-video">
+                    {stream ? (
+                      <video
+                        ref={el => {
+                          if (el && el.srcObject !== stream) {
+                            el.srcObject = stream;
+                          }
+                        }}
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                        <Users className="w-12 h-12 text-gray-600" />
+                      </div>
+                    )}
+                    <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
+                      <span className="text-primary text-sm font-medium">
+                        {participant.name || `Participant ${participant.id.slice(0, 6)}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </div>
-
         {/* Sidebar */}
         {aiEnabled && (
           <div className="w-80 glass-panel border-l silver-border flex flex-col">
@@ -950,3 +1031,7 @@ const MeetingRoom: React.FC = () => {
 };
 
 export default MeetingRoom;
+
+function randomId() {
+  return Math.random().toString(36).slice(2, 10);
+}
