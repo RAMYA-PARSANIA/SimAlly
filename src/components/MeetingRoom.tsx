@@ -1,10 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Mic, MicOff, Video, VideoOff, PhoneOff, Users, 
-  MessageSquare, Settings, Bot, BotOff, FileText, 
-  Download, Copy, Loader2 
-} from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, Settings, Bot, NutOff as BotOff, FileText, Download, Copy, Loader2 } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
