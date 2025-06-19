@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -41,6 +41,7 @@ const AssistantPage: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
+  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -388,6 +389,32 @@ const AssistantPage: React.FC = () => {
     }
   };
 
+  const handleStartMeeting = async () => {
+    setIsCreatingMeeting(true);
+    try {
+      const response = await fetch('http://localhost:8001/api/meetings/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user?.id,
+          title: 'Quick Meeting',
+          participants: []
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        loadActiveMeetings(); // Refresh meetings list
+        navigate(`/meeting/${data.meetingId}`);
+      }
+    } catch (error) {
+      console.error('Failed to create meeting:', error);
+    } finally {
+      setIsCreatingMeeting(false);
+    }
+  };
+
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
       case 'gmail_send':
@@ -452,6 +479,22 @@ const AssistantPage: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-3">
+              {/* Quick Start Meeting Button */}
+              <Button
+                onClick={handleStartMeeting}
+                disabled={isCreatingMeeting}
+                variant="premium"
+                size="sm"
+                className="flex items-center space-x-2"
+              >
+                {isCreatingMeeting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+                <span>Start Meeting</span>
+              </Button>
+
               {/* Status Indicators */}
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
@@ -525,13 +568,39 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                 </div>
 
+                {/* Quick Start Meeting Button */}
+                <div className="mb-8">
+                  <Button
+                    onClick={handleStartMeeting}
+                    disabled={isCreatingMeeting}
+                    variant="premium"
+                    size="lg"
+                    className="inline-flex items-center space-x-2"
+                  >
+                    {isCreatingMeeting ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Video className="w-5 h-5" />
+                    )}
+                    <span>Start Quick Meeting</span>
+                  </Button>
+                  <p className="text-xs text-secondary mt-2">
+                    Or just say "Start a meeting" to create one with AI assistance
+                  </p>
+                </div>
+
                 {/* Active Meetings */}
                 {activeMeetings.length > 0 && (
                   <div className="mb-8">
                     <h3 className="text-lg font-semibold text-primary mb-4">Active Meetings</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
                       {activeMeetings.map((meeting) => (
-                        <GlassCard key={meeting.id} className="p-4 text-left" hover>
+                        <GlassCard 
+                          key={meeting.id} 
+                          className="p-4 text-left cursor-pointer" 
+                          hover
+                          onClick={() => navigate(`/meeting/${meeting.id}`)}
+                        >
                           <div className="flex items-center space-x-3">
                             <Users className="w-6 h-6 text-green-500" />
                             <div className="flex-1">
@@ -551,7 +620,7 @@ const AssistantPage: React.FC = () => {
                   <div className="mt-8">
                     <Button
                       onClick={connectGmail}
-                      variant="premium"
+                      variant="secondary"
                       className="inline-flex items-center space-x-2"
                     >
                       <Mail className="w-4 h-4" />
