@@ -42,6 +42,7 @@ const AssistantPage: React.FC = () => {
   const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -75,13 +76,34 @@ const AssistantPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history and active meetings on mount
+  // Check backend status and load data on mount
   useEffect(() => {
-    loadChatHistory();
-    loadActiveMeetings();
+    checkBackendStatus();
   }, []);
 
+  const checkBackendStatus = async () => {
+    try {
+      const response = await fetch('http://localhost:8001/api/health', {
+        credentials: 'include',
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
+      
+      if (response.ok) {
+        setBackendStatus('online');
+        loadChatHistory();
+        loadActiveMeetings();
+      } else {
+        setBackendStatus('offline');
+      }
+    } catch (error) {
+      console.log('Backend not available, using offline mode');
+      setBackendStatus('offline');
+    }
+  };
+
   const loadChatHistory = async () => {
+    if (backendStatus !== 'online') return;
+    
     try {
       const response = await fetch(`http://localhost:8001/api/chat/history?userId=${user?.id}`, {
         credentials: 'include'
@@ -103,6 +125,8 @@ const AssistantPage: React.FC = () => {
   };
 
   const loadActiveMeetings = async () => {
+    if (backendStatus !== 'online') return;
+    
     try {
       const response = await fetch(`http://localhost:8001/api/meetings/active?userId=${user?.id}`, {
         credentials: 'include'
@@ -132,6 +156,15 @@ const AssistantPage: React.FC = () => {
   };
 
   const detectIntent = async (userMessage: string): Promise<IntentResult> => {
+    if (backendStatus !== 'online') {
+      return {
+        intent: 'chat',
+        confidence: 1.0,
+        parameters: {},
+        response: 'I\'m currently in offline mode. The AI assistant backend is not available. You can still start meetings directly using the "Start Meeting" button.'
+      };
+    }
+
     try {
       const response = await fetch('http://localhost:8001/api/chat/detect-intent', {
         method: 'POST',
@@ -153,12 +186,16 @@ const AssistantPage: React.FC = () => {
         intent: 'chat',
         confidence: 1.0,
         parameters: {},
-        response: 'I apologize, but I encountered an error. Please try again.'
+        response: 'I apologize, but I encountered an error. Please try again or use the direct meeting controls.'
       };
     }
   };
 
   const executeAction = async (intent: string, parameters: any): Promise<any> => {
+    if (backendStatus !== 'online') {
+      return { error: 'Backend services not available' };
+    }
+
     try {
       switch (intent) {
         case 'gmail_send':
@@ -250,6 +287,13 @@ const AssistantPage: React.FC = () => {
 
   // Meeting Actions
   const startMeeting = async (params: any) => {
+    if (backendStatus !== 'online') {
+      // Create meeting without backend
+      const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      navigate(`/meeting/${meetingId}`);
+      return { success: true, meetingId, offline: true };
+    }
+
     const response = await fetch('http://localhost:8001/api/meetings/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -270,6 +314,12 @@ const AssistantPage: React.FC = () => {
   };
 
   const joinMeeting = async (params: any) => {
+    if (backendStatus !== 'online') {
+      // Join meeting without backend
+      navigate(`/meeting/${params.meetingId}`);
+      return { success: true, offline: true };
+    }
+
     const response = await fetch('http://localhost:8001/api/meetings/join', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -359,20 +409,27 @@ const AssistantPage: React.FC = () => {
   };
 
   const clearChat = async () => {
-    try {
-      await fetch('http://localhost:8001/api/chat/history', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ userId: user?.id })
-      });
-      setMessages([]);
-    } catch (error) {
-      console.error('Failed to clear chat:', error);
+    if (backendStatus === 'online') {
+      try {
+        await fetch('http://localhost:8001/api/chat/history', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: user?.id })
+        });
+      } catch (error) {
+        console.error('Failed to clear chat:', error);
+      }
     }
+    setMessages([]);
   };
 
   const connectGmail = async () => {
+    if (backendStatus !== 'online') {
+      alert('Gmail integration requires the AI Assistant backend to be running.');
+      return;
+    }
+
     try {
       const response = await fetch('http://localhost:8001/api/gmail/auth-url', {
         credentials: 'include'
@@ -392,24 +449,35 @@ const AssistantPage: React.FC = () => {
   const handleStartMeeting = async () => {
     setIsCreatingMeeting(true);
     try {
-      const response = await fetch('http://localhost:8001/api/meetings/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user?.id,
-          title: 'Quick Meeting',
-          participants: []
-        })
-      });
+      if (backendStatus === 'online') {
+        const response = await fetch('http://localhost:8001/api/meetings/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            userId: user?.id,
+            title: 'Quick Meeting',
+            participants: []
+          })
+        });
 
-      const data = await response.json();
-      if (data.success) {
-        loadActiveMeetings(); // Refresh meetings list
-        navigate(`/meeting/${data.meetingId}`);
+        const data = await response.json();
+        if (data.success) {
+          loadActiveMeetings(); // Refresh meetings list
+          navigate(`/meeting/${data.meetingId}`);
+        } else {
+          throw new Error(data.error || 'Failed to create meeting');
+        }
+      } else {
+        // Create meeting without backend
+        const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        navigate(`/meeting/${meetingId}`);
       }
     } catch (error) {
       console.error('Failed to create meeting:', error);
+      // Fallback: create meeting without backend
+      const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      navigate(`/meeting/${meetingId}`);
     } finally {
       setIsCreatingMeeting(false);
     }
@@ -450,6 +518,24 @@ const AssistantPage: React.FC = () => {
         return 'text-green-500';
       default:
         return 'text-purple-500';
+    }
+  };
+
+  const getBackendStatusColor = () => {
+    switch (backendStatus) {
+      case 'online': return 'bg-green-500';
+      case 'offline': return 'bg-red-500';
+      case 'checking': return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const getBackendStatusText = () => {
+    switch (backendStatus) {
+      case 'online': return 'AI Backend Online';
+      case 'offline': return 'AI Backend Offline';
+      case 'checking': return 'Checking Backend...';
+      default: return 'Unknown Status';
     }
   };
 
@@ -497,6 +583,10 @@ const AssistantPage: React.FC = () => {
 
               {/* Status Indicators */}
               <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${getBackendStatusColor()}`} />
+                <span className="text-xs text-secondary">{getBackendStatusText()}</span>
+              </div>
+              <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
                 <span className="text-xs text-secondary">Gmail</span>
               </div>
@@ -519,6 +609,23 @@ const AssistantPage: React.FC = () => {
         </div>
       </header>
 
+      {/* Backend Status Banner */}
+      {backendStatus === 'offline' && (
+        <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-6 py-2">
+          <div className="max-w-7xl mx-auto">
+            <p className="text-yellow-400 text-sm text-center">
+              ⚠️ AI Assistant backend is offline. Basic meeting functionality is available, but AI features are disabled.
+              <button 
+                onClick={checkBackendStatus}
+                className="ml-2 underline hover:no-underline"
+              >
+                Retry Connection
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Chat Interface */}
       <main className="flex flex-col h-[calc(100vh-80px)]">
         {/* Messages Area */}
@@ -537,17 +644,22 @@ const AssistantPage: React.FC = () => {
                   Hello! I'm your AI Assistant
                 </h2>
                 <p className="text-secondary mb-8 max-w-2xl mx-auto">
-                  I can help you with Gmail management, video meetings, and answer any questions you have. 
-                  Just tell me what you need in natural language!
+                  {backendStatus === 'online' 
+                    ? "I can help you with Gmail management, video meetings, and answer any questions you have. Just tell me what you need in natural language!"
+                    : "I'm currently in offline mode, but you can still start and join video meetings. AI features will be available when the backend is connected."
+                  }
                 </p>
                 
                 {/* Quick Actions */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto mb-8">
-                  <GlassCard className="p-4 text-center" hover>
+                  <GlassCard className={`p-4 text-center ${backendStatus === 'offline' ? 'opacity-50' : ''}`} hover={backendStatus === 'online'}>
                     <Mail className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Gmail</h3>
                     <p className="text-xs text-secondary">
-                      "Send an email to John about the meeting"
+                      {backendStatus === 'online' 
+                        ? '"Send an email to John about the meeting"'
+                        : 'Requires AI backend'
+                      }
                     </p>
                   </GlassCard>
                   
@@ -559,11 +671,14 @@ const AssistantPage: React.FC = () => {
                     </p>
                   </GlassCard>
                   
-                  <GlassCard className="p-4 text-center" hover>
+                  <GlassCard className={`p-4 text-center ${backendStatus === 'offline' ? 'opacity-50' : ''}`} hover={backendStatus === 'online'}>
                     <MessageSquare className="w-8 h-8 text-purple-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Chat</h3>
                     <p className="text-xs text-secondary">
-                      "What's the weather like today?"
+                      {backendStatus === 'online' 
+                        ? '"What\'s the weather like today?"'
+                        : 'Requires AI backend'
+                      }
                     </p>
                   </GlassCard>
                 </div>
@@ -585,7 +700,10 @@ const AssistantPage: React.FC = () => {
                     <span>Start Quick Meeting</span>
                   </Button>
                   <p className="text-xs text-secondary mt-2">
-                    Or just say "Start a meeting" to create one with AI assistance
+                    {backendStatus === 'online' 
+                      ? 'Or just say "Start a meeting" to create one with AI assistance'
+                      : 'Create a meeting instantly - no backend required'
+                    }
                   </p>
                 </div>
 
@@ -616,7 +734,7 @@ const AssistantPage: React.FC = () => {
                   </div>
                 )}
                 
-                {!isGmailConnected && (
+                {backendStatus === 'online' && !isGmailConnected && (
                   <div className="mt-8">
                     <Button
                       onClick={connectGmail}
@@ -675,7 +793,9 @@ const AssistantPage: React.FC = () => {
                       {/* Action results */}
                       {msg.action && msg.action.success && (
                         <div className="mt-3 p-3 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
-                          <p className="text-green-400 text-sm font-medium">✓ Action completed successfully</p>
+                          <p className="text-green-400 text-sm font-medium">
+                            ✓ {msg.action.offline ? 'Meeting created (offline mode)' : 'Action completed successfully'}
+                          </p>
                         </div>
                       )}
                       
@@ -726,7 +846,10 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
+                  placeholder={backendStatus === 'online' 
+                    ? "Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
+                    : "Ask me to start a meeting or use the Start Meeting button above..."
+                  }
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -743,10 +866,11 @@ const AssistantPage: React.FC = () => {
                   onClick={toggleListening}
                   className={`glass-panel p-3 rounded-xl glass-panel-hover ${
                     isListening ? 'bg-red-500/20 border-red-500/50' : ''
-                  }`}
+                  } ${backendStatus === 'offline' ? 'opacity-50' : ''}`}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  disabled={isProcessing}
+                  disabled={isProcessing || backendStatus === 'offline'}
+                  title={backendStatus === 'offline' ? 'Voice input requires AI backend' : 'Voice input'}
                 >
                   {isListening ? (
                     <MicOff className="w-5 h-5 text-red-400" />
