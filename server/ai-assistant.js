@@ -29,6 +29,145 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
+// INTENT DETECTION & ROUTING
+// =============================================================================
+
+// Advanced intent detection with Gemini AI
+app.post('/api/chat/detect-intent', async (req, res) => {
+  try {
+    const { message, userId } = req.body;
+    
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    
+    const intentPrompt = `
+      You are an intelligent intent classifier for an AI assistant that can handle:
+      1. Gmail operations (send, read, delete, unsubscribe, compose help)
+      2. Zoom meeting assistance (start session, translate, get summary, end session)
+      3. General chat/questions
+      
+      Analyze this user message and determine the intent, extract parameters, and provide a helpful response.
+      
+      User message: "${message}"
+      
+      Respond in this exact JSON format:
+      {
+        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, zoom_start, zoom_translate, zoom_summary, zoom_end, chat",
+        "confidence": 0.0-1.0,
+        "parameters": {
+          // Extract relevant parameters based on intent
+          // For gmail_send: {"to": "email", "subject": "subject", "body": "body"}
+          // For gmail_read: {"count": number, "query": "search terms"}
+          // For gmail_delete: {"messageId": "id or description"}
+          // For zoom_translate: {"text": "text to translate", "language": "target language"}
+          // For zoom_start: {"meetingId": "meeting identifier"}
+          // For chat: {}
+        },
+        "response": "A helpful response to the user explaining what you'll do or asking for clarification"
+      }
+      
+      Examples:
+      - "Send an email to john@example.com about the meeting" → gmail_send intent
+      - "Check my latest emails" → gmail_read intent
+      - "Delete the spam email from yesterday" → gmail_delete intent
+      - "Help me write a professional email" → gmail_compose_help intent
+      - "Start a Zoom session" → zoom_start intent
+      - "Translate 'hello' to Spanish" → zoom_translate intent
+      - "What's the weather today?" → chat intent
+      
+      Be intelligent about parameter extraction and provide clear, helpful responses.
+    `;
+    
+    const result = await model.generateContent(intentPrompt);
+    const response = result.response.text();
+    
+    try {
+      const intentData = JSON.parse(response);
+      
+      // If it's a chat intent, get a proper chat response
+      if (intentData.intent === 'chat') {
+        const chatResponse = await getChatResponse(message, userId);
+        intentData.response = chatResponse;
+      }
+      
+      res.json(intentData);
+    } catch (parseError) {
+      console.error('Failed to parse intent response:', parseError);
+      // Fallback to chat
+      const chatResponse = await getChatResponse(message, userId);
+      res.json({
+        intent: 'chat',
+        confidence: 1.0,
+        parameters: {},
+        response: chatResponse
+      });
+    }
+  } catch (error) {
+    console.error('Intent detection error:', error);
+    res.status(500).json({
+      intent: 'chat',
+      confidence: 0.5,
+      parameters: {},
+      response: 'I apologize, but I encountered an error. Please try again.'
+    });
+  }
+});
+
+// Get chat response for general questions
+const getChatResponse = async (message, userId) => {
+  try {
+    const userSession = userSessions.get(userId) || {};
+    const conversationHistory = userSession.chatHistory || [];
+    
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    
+    // Build conversation context
+    let conversationContext = '';
+    if (conversationHistory.length > 0) {
+      conversationContext = conversationHistory
+        .slice(-10) // Keep last 10 messages for context
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n');
+    }
+    
+    const prompt = `
+      You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
+      You can help with Gmail management, Zoom meetings, and general questions.
+      
+      ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
+      
+      User: ${message}
+      
+      Provide a helpful, accurate, and professional response. Keep it concise but informative.
+    `;
+    
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    // Store conversation in user session
+    if (!userSession.chatHistory) {
+      userSession.chatHistory = [];
+    }
+    
+    userSession.chatHistory.push(
+      { role: 'user', content: message, timestamp: new Date() },
+      { role: 'assistant', content: response, timestamp: new Date() }
+    );
+    
+    // Keep only last 50 messages
+    if (userSession.chatHistory.length > 50) {
+      userSession.chatHistory = userSession.chatHistory.slice(-50);
+    }
+    
+    userSessions.set(userId, userSession);
+    
+    return response;
+  } catch (error) {
+    console.error('Chat response error:', error);
+    return 'I apologize, but I encountered an error processing your request. Please try again.';
+  }
+};
+
+// =============================================================================
 // GMAIL FUNCTIONALITY
 // =============================================================================
 
@@ -450,53 +589,11 @@ app.post('/api/zoom/end-session', (req, res) => {
 // GENERIC CHATBOT
 // =============================================================================
 
-// Chat with AI
+// Chat with AI (legacy endpoint for direct chat)
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, userId, conversationHistory = [] } = req.body;
-    
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
-    // Build conversation context
-    let conversationContext = '';
-    if (conversationHistory.length > 0) {
-      conversationContext = conversationHistory
-        .slice(-10) // Keep last 10 messages for context
-        .map(msg => `${msg.role}: ${msg.content}`)
-        .join('\n');
-    }
-    
-    const prompt = `
-      You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
-      
-      ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
-      
-      User: ${message}
-      
-      Provide a helpful, accurate, and professional response.
-    `;
-    
-    const result = await model.generateContent(prompt);
-    const response = result.response.text();
-    
-    // Store conversation in user session
-    const userSession = userSessions.get(userId) || {};
-    if (!userSession.chatHistory) {
-      userSession.chatHistory = [];
-    }
-    
-    userSession.chatHistory.push(
-      { role: 'user', content: message, timestamp: new Date() },
-      { role: 'assistant', content: response, timestamp: new Date() }
-    );
-    
-    // Keep only last 50 messages
-    if (userSession.chatHistory.length > 50) {
-      userSession.chatHistory = userSession.chatHistory.slice(-50);
-    }
-    
-    userSessions.set(userId, userSession);
-    
+    const response = await getChatResponse(message, userId);
     res.json({ success: true, response });
   } catch (error) {
     console.error('Chat error:', error);
@@ -548,7 +645,8 @@ app.get('/api/health', (req, res) => {
     services: {
       gmail: 'ready',
       zoom: 'ready',
-      chatbot: 'ready'
+      chatbot: 'ready',
+      intentDetection: 'ready'
     },
     activeSessions: userSessions.size,
     activeZoomSessions: zoomSessions.size
@@ -558,14 +656,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '1.0.0',
-    services: ['Gmail', 'Zoom', 'Chatbot']
+    version: '2.0.0',
+    services: ['Gmail', 'Zoom', 'Chatbot', 'Intent Detection']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log('Features: Intent Detection, Gmail, Zoom, Chatbot');
 });
 
 module.exports = app;
