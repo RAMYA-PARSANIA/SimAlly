@@ -43,7 +43,6 @@ const MeetingRoom: React.FC = () => {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isHost, setIsHost] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'failed'>('connecting');
-  const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   
   // Media state
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -74,45 +73,28 @@ const MeetingRoom: React.FC = () => {
   const [hasEnteredName, setHasEnteredName] = useState(false);
   const [userId, setUserId] = useState<string>(user?.id || '');
 
-  // Check backend availability
-  useEffect(() => {
-    checkBackendAvailability();
-  }, []);
-
-  const checkBackendAvailability = async () => {
-    try {
-      const response = await fetch('http://localhost:8001/api/health', {
-        signal: AbortSignal.timeout(3000)
-      });
-      setBackendAvailable(response.ok);
-    } catch (error) {
-      console.log('Backend not available, using offline mode');
-      setBackendAvailable(false);
-    }
-  };
-
   // Initialize meeting
   useEffect(() => {
-    if (!isInitializedRef.current && meetingId && userId && hasEnteredName && backendAvailable !== null) {
+    if (!isInitializedRef.current && meetingId && userId && hasEnteredName) {
       isInitializedRef.current = true;
       initializeMeeting();
     }
     return () => {
       cleanup();
     };
-  }, [meetingId, userId, hasEnteredName, backendAvailable]);
+  }, [meetingId, userId, hasEnteredName]);
 
   const initializeMeeting = async () => {
     try {
-      console.log('Initializing meeting...', { meetingId, userId, backendAvailable });
+      console.log('Initializing meeting...', { meetingId, userId: user?.id });
 
-      // Try to get media first
+      // Try to get media, but don't abort if it fails
       await initializeMedia();
 
-      // Join the meeting (with or without backend)
+      // Then join the meeting
       await joinMeeting();
 
-      // Connect to signaling server
+      // Finally connect to signaling server
       connectToSignalingServer();
 
     } catch (error) {
@@ -124,128 +106,67 @@ const MeetingRoom: React.FC = () => {
   const initializeMedia = async () => {
     try {
       console.log('Getting user media...');
-      
-      // Try different media constraints in order of preference
-      const constraints = [
-        { video: { width: 1280, height: 720 }, audio: true },
-        { video: { width: 640, height: 480 }, audio: true },
-        { video: true, audio: true },
-        { audio: true }, // Audio only fallback
-      ];
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
 
-      let stream = null;
-      for (const constraint of constraints) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia(constraint);
-          console.log('Media initialized with constraint:', constraint);
-          break;
-        } catch (err) {
-          console.log('Failed with constraint:', constraint, err);
-          continue;
-        }
+      setLocalStream(stream);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
       }
-
-      if (stream) {
-        setLocalStream(stream);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          // Ensure video plays
-          try {
-            await localVideoRef.current.play();
-          } catch (playError) {
-            console.log('Video autoplay failed, user interaction required');
-          }
-        }
-        console.log('Media initialized successfully');
-      } else {
-        console.warn('No media stream available, continuing without media');
-        setLocalStream(null);
-      }
+      console.log('Media initialized successfully');
     } catch (error) {
+      // Log the error, but do NOT throw
       console.error('Failed to get media:', error);
       setLocalStream(null);
-      // Continue without throwing - meeting can work without media
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      // Continue without throwing!
     }
   };
 
   const joinMeeting = async () => {
     try {
-      console.log('Joining meeting...', { meetingId, userId, backendAvailable });
+      console.log('Joining meeting via API...', { meetingId, userId: user?.id });
       
-      if (backendAvailable) {
-        // Try to join via backend API
-        const response = await fetch('http://localhost:8001/api/meetings/join', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            meetingId,
-            userId,
-            name: displayName
-          })
-        });
+      const response = await fetch('http://localhost:8001/api/meetings/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          meetingId,
+          userId,
+          name: displayName
+        })
+      });
 
-        const data = await response.json();
-        console.log('Join meeting response:', data);
+      const data = await response.json();
+      console.log('Join meeting response:', data);
+      
+      if (data.success) {
+        setMeeting(data.meeting);
+        setIsHost(data.meeting.host === user?.id);
+        setAiEnabled(data.meeting.aiEnabled);
         
-        if (data.success) {
-          setMeeting(data.meeting);
-          setIsHost(data.meeting.host === userId);
-          setAiEnabled(data.meeting.aiEnabled);
-        } else {
-          throw new Error(data.error || 'Failed to join meeting via backend');
-        }
-      } else {
-        // Create offline meeting
-        console.log('Creating offline meeting');
-        const offlineMeeting = {
-          id: meetingId,
-          title: 'Offline Meeting',
-          host: userId,
-          participants: [userId],
-          aiEnabled: false
+        // Add self as participant
+        const selfParticipant: Participant = {
+          id: userId || 'local',
+          name: displayName || user?.name || 'You',
+          isHost: data.meeting.host === userId,
+          isMuted: false,
+          isVideoOff: false
         };
         
-        setMeeting(offlineMeeting);
-        setIsHost(true);
-        setAiEnabled(false);
+        setParticipants([selfParticipant]);
+        console.log('Meeting joined successfully');
+      } else {
+        throw new Error(data.error || 'Failed to join meeting');
       }
-      
-      // Add self as participant
-      const selfParticipant: Participant = {
-        id: userId || 'local',
-        name: displayName || user?.name || 'You',
-        isHost: isHost,
-        isMuted: false,
-        isVideoOff: false
-      };
-      
-      setParticipants([selfParticipant]);
-      console.log('Meeting joined successfully');
     } catch (error) {
       console.error('Failed to join meeting:', error);
-      // Create fallback offline meeting
-      const fallbackMeeting = {
-        id: meetingId,
-        title: 'Meeting',
-        host: userId,
-        participants: [userId],
-        aiEnabled: false
-      };
-      
-      setMeeting(fallbackMeeting);
-      setIsHost(true);
-      setAiEnabled(false);
-      
-      const selfParticipant: Participant = {
-        id: userId || 'local',
-        name: displayName || user?.name || 'You',
-        isHost: true,
-        isMuted: false,
-        isVideoOff: false
-      };
-      
-      setParticipants([selfParticipant]);
+      throw error;
     }
   };
 
@@ -259,7 +180,7 @@ const MeetingRoom: React.FC = () => {
       }
       
       socketRef.current = io(SIGNALING_SERVER_URL, {
-        transports: ['websocket', 'polling'],
+        transports: ['websocket'],
         timeout: 10000,
         forceNew: true
       });
@@ -269,31 +190,18 @@ const MeetingRoom: React.FC = () => {
         setConnectionStatus('connected');
         
         // Join the room
-        console.log('Joining room:', meetingId, userId);
-        socketRef.current.emit('join-room', meetingId, userId);
+        console.log('Joining room:', meetingId, user?.id);
+        socketRef.current.emit('join-room', meetingId, user?.id);
       });
 
       socketRef.current.on('connect_error', (error: any) => {
         console.error('Signaling server connection error:', error);
-        // Don't set failed status immediately, allow for retries
-        setTimeout(() => {
-          if (socketRef.current && !socketRef.current.connected) {
-            setConnectionStatus('failed');
-          }
-        }, 5000);
+        setConnectionStatus('failed');
       });
 
       socketRef.current.on('disconnect', (reason: string) => {
         console.log('Disconnected from signaling server:', reason);
-        if (reason !== 'io client disconnect') {
-          setConnectionStatus('connecting');
-          // Auto-reconnect after a delay
-          setTimeout(() => {
-            if (socketRef.current && !socketRef.current.connected) {
-              socketRef.current.connect();
-            }
-          }, 2000);
-        }
+        setConnectionStatus('connecting');
       });
 
       socketRef.current.on('all-users', (users: string[]) => {
@@ -402,8 +310,7 @@ const MeetingRoom: React.FC = () => {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' }
         ]
       }
     });
@@ -460,8 +367,6 @@ const MeetingRoom: React.FC = () => {
   };
 
   const initializeSpeechRecognition = () => {
-    if (!backendAvailable) return;
-    
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
@@ -487,7 +392,7 @@ const MeetingRoom: React.FC = () => {
   };
 
   const toggleAI = async () => {
-    if (!isHost || !backendAvailable) return;
+    if (!isHost) return;
 
     try {
       const response = await fetch(`http://localhost:8001/api/meetings/${meetingId}/ai-toggle`, {
@@ -516,7 +421,7 @@ const MeetingRoom: React.FC = () => {
   };
 
   const startRecording = () => {
-    if (recognitionRef.current && aiEnabled && backendAvailable) {
+    if (recognitionRef.current && aiEnabled) {
       try {
         recognitionRef.current.start();
         setIsRecording(true);
@@ -538,7 +443,7 @@ const MeetingRoom: React.FC = () => {
   };
 
   const addTranscriptEntry = async (text: string, speaker: string) => {
-    if (!aiEnabled || !backendAvailable || text.trim().length < 10) return;
+    if (!aiEnabled || text.trim().length < 10) return;
 
     const entry: TranscriptEntry = {
       id: Date.now(),
@@ -567,8 +472,6 @@ const MeetingRoom: React.FC = () => {
   };
 
   const generateSummary = async () => {
-    if (!backendAvailable) return;
-    
     setIsGeneratingSummary(true);
     try {
       const response = await fetch(`http://localhost:8001/api/meetings/${meetingId}/summary`, {
@@ -611,7 +514,7 @@ const MeetingRoom: React.FC = () => {
 
   const leaveMeeting = async () => {
     try {
-      if (isHost && backendAvailable) {
+      if (isHost) {
         await fetch(`http://localhost:8001/api/meetings/${meetingId}/end`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -710,13 +613,11 @@ const MeetingRoom: React.FC = () => {
   };
 
   useEffect(() => {
-    if (backendAvailable) {
-      initializeSpeechRecognition();
-    }
-  }, [backendAvailable]);
+    initializeSpeechRecognition();
+  }, []);
 
   useEffect(() => {
-    if (aiEnabled && recognitionRef.current && localStream && backendAvailable) {
+    if (aiEnabled && recognitionRef.current && localStream) {
       try {
         recognitionRef.current.start();
         setIsRecording(true);
@@ -727,26 +628,20 @@ const MeetingRoom: React.FC = () => {
       recognitionRef.current.stop();
       setIsRecording(false);
     }
-  }, [aiEnabled, localStream, backendAvailable]);
+  }, [aiEnabled, localStream]);
 
   // Show loading state
-  if (connectionStatus === 'connecting' || !meeting || backendAvailable === null) {
+  if (connectionStatus === 'connecting' || !meeting) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
         <div className="glass-panel p-8 rounded-xl text-center">
           <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-secondary" />
           <p className="text-primary mb-2">
-            {backendAvailable === null ? 'Checking backend...' : 
-             !meeting ? 'Joining meeting...' : 'Connecting to other participants...'}
+            {!meeting ? 'Joining meeting...' : 'Connecting to other participants...'}
           </p>
           <p className="text-sm text-secondary">
             Status: {connectionStatus}
           </p>
-          {backendAvailable === false && (
-            <p className="text-xs text-yellow-400 mt-2">
-              Running in offline mode - AI features disabled
-            </p>
-          )}
         </div>
       </div>
     );
@@ -757,12 +652,9 @@ const MeetingRoom: React.FC = () => {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
         <div className="glass-panel p-8 rounded-xl text-center max-w-md">
-          <h3 className="text-xl font-bold text-primary mb-4">Connection Issues</h3>
+          <h3 className="text-xl font-bold text-primary mb-4">Connection Failed</h3>
           <p className="text-secondary mb-6">
-            {backendAvailable === false 
-              ? "Running in offline mode. Video calling may be limited without the signaling server."
-              : "Unable to connect to the meeting infrastructure. Please check your internet connection and try again."
-            }
+            Unable to connect to the meeting. Please check your internet connection and try again.
           </p>
           <div className="space-y-3">
             <Button
@@ -827,14 +719,13 @@ const MeetingRoom: React.FC = () => {
             <h1 className="text-lg font-bold text-primary">{meeting.title}</h1>
             <p className="text-sm text-secondary">
               {participants.length} participant{participants.length !== 1 ? 's' : ''}
-              {aiEnabled && backendAvailable && <span className="ml-2 text-green-400">• AI Assistant Active</span>}
-              {!backendAvailable && <span className="ml-2 text-yellow-400">• Offline Mode</span>}
+              {aiEnabled && <span className="ml-2 text-green-400">• AI Assistant Active</span>}
               <span className="ml-2 text-blue-400">• {connectionStatus}</span>
             </p>
           </div>
           
           <div className="flex items-center space-x-2">
-            {isHost && backendAvailable && (
+            {isHost && (
               <Button
                 onClick={toggleAI}
                 variant={aiEnabled ? 'premium' : 'secondary'}
@@ -846,7 +737,7 @@ const MeetingRoom: React.FC = () => {
               </Button>
             )}
             
-            {aiEnabled && backendAvailable && (
+            {aiEnabled && (
               <Button
                 onClick={generateSummary}
                 disabled={isGeneratingSummary || transcript.length === 0}
@@ -884,22 +775,13 @@ const MeetingRoom: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 h-full">
             {/* Local Video */}
             <div className="relative glass-panel rounded-xl overflow-hidden aspect-video">
-              {localStream ? (
-                <video
-                  ref={localVideoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                  <div className="text-center">
-                    <User className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                    <p className="text-gray-400 text-sm">No camera access</p>
-                  </div>
-                </div>
-              )}
+              <video
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
               <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                 <span className="text-primary text-sm font-medium">
                   {displayName || user?.name || 'You'} {isHost && '(Host)'}
@@ -910,16 +792,16 @@ const MeetingRoom: React.FC = () => {
                   <MicOff className="w-4 h-4 text-white" />
                 </div>
               )}
-              {(isVideoOff || !localStream) && (
+              {isVideoOff && (
                 <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
                   <VideoOff className="w-8 h-8 text-gray-400" />
                 </div>
               )}
             </div>
 
-            {/* Remote participants */}
+            {/* Show all participants except self */}
             {participants
-              .filter(p => p.id !== userId)
+              .filter(p => p.id !== user?.id)
               .map((participant) => {
                 const stream = remoteStreams[participant.id];
                 return (
@@ -937,10 +819,7 @@ const MeetingRoom: React.FC = () => {
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                        <div className="text-center">
-                          <Users className="w-12 h-12 text-gray-600 mx-auto mb-2" />
-                          <p className="text-gray-400 text-sm">Connecting...</p>
-                        </div>
+                        <Users className="w-12 h-12 text-gray-600" />
                       </div>
                     )}
                     <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
@@ -953,9 +832,8 @@ const MeetingRoom: React.FC = () => {
               })}
           </div>
         </div>
-        
-        {/* Sidebar - only show if AI is enabled and backend is available */}
-        {aiEnabled && backendAvailable && (
+        {/* Sidebar */}
+        {aiEnabled && (
           <div className="w-80 glass-panel border-l silver-border flex flex-col">
             {/* Tabs */}
             <div className="flex border-b silver-border">
@@ -1119,7 +997,6 @@ const MeetingRoom: React.FC = () => {
             className={`glass-panel p-4 rounded-full glass-panel-hover transition-all ${
               isMuted ? 'bg-red-500/20 border-red-500/50' : ''
             }`}
-            disabled={!localStream}
           >
             {isMuted ? (
               <MicOff className="w-6 h-6 text-red-400" />
@@ -1133,7 +1010,6 @@ const MeetingRoom: React.FC = () => {
             className={`glass-panel p-4 rounded-full glass-panel-hover transition-all ${
               isVideoOff ? 'bg-red-500/20 border-red-500/50' : ''
             }`}
-            disabled={!localStream}
           >
             {isVideoOff ? (
               <VideoOff className="w-6 h-6 text-red-400" />
