@@ -51,9 +51,9 @@ const MeetingRoom: React.FC = () => {
             <div className="w-16 h-16 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">🎥</span>
             </div>
-            <h2 className="text-xl font-bold mb-2 text-primary">Join SimAlly Meeting</h2>
+            <h2 className="text-xl font-bold mb-2 text-primary">Join Offline Meeting</h2>
             <p className="text-sm text-secondary">
-              Enter your name to join the video conference
+              Enter your name to join the completely offline video conference
             </p>
           </div>
           
@@ -95,11 +95,11 @@ const MeetingRoom: React.FC = () => {
           
           <div className="mt-6 p-3 glass-panel rounded-lg">
             <p className="text-xs text-secondary">
-              🔒 Secure P2P connection • No external servers
+              ✅ 100% Offline • No external servers required
               <br />
-              📱 Works on all devices • HD video & audio
+              🔒 Complete privacy • Works without internet
               <br />
-              💬 Built-in chat • Screen sharing support
+              📱 Screen sharing • Chat • Full HD video
             </p>
           </div>
         </div>

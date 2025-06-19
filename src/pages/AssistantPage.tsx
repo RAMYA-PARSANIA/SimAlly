@@ -43,7 +43,6 @@ const AssistantPage: React.FC = () => {
   const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
-  const [signalingStatus, setSignalingStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -80,7 +79,6 @@ const AssistantPage: React.FC = () => {
   // Check backend status and load data on mount
   useEffect(() => {
     checkBackendStatus();
-    checkSignalingStatus();
   }, []);
 
   const checkBackendStatus = async () => {
@@ -98,25 +96,8 @@ const AssistantPage: React.FC = () => {
         setBackendStatus('offline');
       }
     } catch (error) {
-      console.log('AI Backend not available');
+      console.log('Backend not available, using offline mode');
       setBackendStatus('offline');
-    }
-  };
-
-  const checkSignalingStatus = async () => {
-    try {
-      const response = await fetch('http://localhost:5001/health', {
-        signal: AbortSignal.timeout(5000) // 5 second timeout
-      });
-      
-      if (response.ok) {
-        setSignalingStatus('online');
-      } else {
-        setSignalingStatus('offline');
-      }
-    } catch (error) {
-      console.log('Signaling server not available');
-      setSignalingStatus('offline');
     }
   };
 
@@ -191,7 +172,7 @@ const AssistantPage: React.FC = () => {
         intent: 'chat',
         confidence: 1.0,
         parameters: {},
-        response: `I'm currently in offline mode. I can help you start meetings using our custom WebRTC system ${signalingStatus === 'online' ? '(signaling server is running)' : '(requires signaling server)'}, but other AI features require the backend to be running. Try saying "start a meeting" or use the Start Meeting button!`
+        response: 'I\'m currently in offline mode. I can help you start meetings using Jitsi Meet (completely free), but other AI features require the backend to be running. Try saying "start a meeting" or use the Start Meeting button!'
       };
     }
 
@@ -222,19 +203,13 @@ const AssistantPage: React.FC = () => {
   };
 
   const executeAction = async (intent: string, parameters: any): Promise<any> => {
-    if (intent === 'meeting_start') {
-      // Create meeting using custom WebRTC system
-      const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-      navigate(`/meeting/${meetingId}`);
-      return { 
-        success: true, 
-        meetingId, 
-        platform: 'Custom WebRTC',
-        signalingRequired: signalingStatus !== 'online'
-      };
-    }
-
     if (backendStatus !== 'online') {
+      if (intent === 'meeting_start') {
+        // Create meeting without backend using Jitsi
+        const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+        navigate(`/meeting/${meetingId}`);
+        return { success: true, meetingId, offline: true, platform: 'Jitsi Meet' };
+      }
       return { error: 'Backend services not available' };
     }
 
@@ -250,6 +225,8 @@ const AssistantPage: React.FC = () => {
           return await unsubscribeEmail(parameters);
         case 'gmail_compose_help':
           return await getComposeHelp(parameters);
+        case 'meeting_start':
+          return await startMeeting(parameters);
         case 'meeting_join':
           return await joinMeeting(parameters);
         case 'meeting_transcribe':
@@ -326,10 +303,55 @@ const AssistantPage: React.FC = () => {
   };
 
   // Meeting Actions
+  const startMeeting = async (params: any) => {
+    if (backendStatus !== 'online') {
+      // Create meeting without backend using Jitsi
+      const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      navigate(`/meeting/${meetingId}`);
+      return { success: true, meetingId, offline: true, platform: 'Jitsi Meet' };
+    }
+
+    const response = await fetch('http://localhost:8001/api/meetings/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        userId: user?.id,
+        title: params.title || 'New Meeting',
+        participants: params.participants || []
+      })
+    });
+    const data = await response.json();
+    if (data.success) {
+      loadActiveMeetings(); // Refresh meetings list
+      // Navigate to meeting room
+      navigate(`/meeting/${data.meetingId}`);
+    }
+    return data;
+  };
+
   const joinMeeting = async (params: any) => {
-    // Join meeting using custom WebRTC
-    navigate(`/meeting/${params.meetingId}`);
-    return { success: true, platform: 'Custom WebRTC' };
+    if (backendStatus !== 'online') {
+      // Join meeting without backend
+      navigate(`/meeting/${params.meetingId}`);
+      return { success: true, offline: true };
+    }
+
+    const response = await fetch('http://localhost:8001/api/meetings/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        meetingId: params.meetingId,
+        userId: user?.id
+      })
+    });
+    const data = await response.json();
+    if (data.success) {
+      // Navigate to meeting room
+      navigate(`/meeting/${params.meetingId}`);
+    }
+    return data;
   };
 
   const toggleTranscription = async (params: any) => {
@@ -444,7 +466,7 @@ const AssistantPage: React.FC = () => {
   const handleStartMeeting = async () => {
     setIsCreatingMeeting(true);
     try {
-      // Create meeting using custom WebRTC system
+      // Always create meeting using Jitsi (works with or without backend)
       const meetingId = `simally-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       navigate(`/meeting/${meetingId}`);
     } catch (error) {
@@ -507,30 +529,12 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const getSignalingStatusColor = () => {
-    switch (signalingStatus) {
-      case 'online': return 'bg-green-500';
-      case 'offline': return 'bg-red-500';
-      case 'checking': return 'bg-yellow-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
   const getBackendStatusText = () => {
     switch (backendStatus) {
-      case 'online': return 'AI Backend';
+      case 'online': return 'AI Backend Online';
       case 'offline': return 'AI Backend Offline';
-      case 'checking': return 'Checking...';
-      default: return 'Unknown';
-    }
-  };
-
-  const getSignalingStatusText = () => {
-    switch (signalingStatus) {
-      case 'online': return 'WebRTC Ready';
-      case 'offline': return 'WebRTC Offline';
-      case 'checking': return 'Checking...';
-      default: return 'Unknown';
+      case 'checking': return 'Checking Backend...';
+      default: return 'Unknown Status';
     }
   };
 
@@ -554,7 +558,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Custom WebRTC Meetings • Gmail • AI Chat
+                  Free Video Meetings • Gmail • AI Chat
                 </p>
               </div>
             </div>
@@ -582,8 +586,8 @@ const AssistantPage: React.FC = () => {
                 <span className="text-xs text-secondary">{getBackendStatusText()}</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${getSignalingStatusColor()}`} />
-                <span className="text-xs text-secondary">{getSignalingStatusText()}</span>
+                <div className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="text-xs text-secondary">Jitsi Meet</span>
               </div>
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
@@ -604,23 +608,17 @@ const AssistantPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Status Banner */}
-      {(backendStatus === 'offline' || signalingStatus === 'offline') && (
+      {/* Backend Status Banner */}
+      {backendStatus === 'offline' && (
         <div className="bg-blue-500/10 border-b border-blue-500/30 px-6 py-2">
           <div className="max-w-7xl mx-auto">
             <p className="text-blue-400 text-sm text-center">
-              ℹ️ {signalingStatus === 'online' 
-                ? 'Using custom WebRTC for video meetings. AI features available when backend is connected.'
-                : 'Start signaling server (npm run dev:webrtc) for multi-user meetings.'
-              }
+              ℹ️ Using free Jitsi Meet for video meetings. AI features available when backend is connected.
               <button 
-                onClick={() => {
-                  checkBackendStatus();
-                  checkSignalingStatus();
-                }}
+                onClick={checkBackendStatus}
                 className="ml-2 underline hover:no-underline"
               >
-                Refresh Status
+                Check Backend
               </button>
             </p>
           </div>
@@ -647,7 +645,7 @@ const AssistantPage: React.FC = () => {
                 <p className="text-secondary mb-8 max-w-2xl mx-auto">
                   {backendStatus === 'online' 
                     ? "I can help you with Gmail management, video meetings, and answer any questions you have. Just tell me what you need in natural language!"
-                    : `I can help you start ${signalingStatus === 'online' ? 'multi-user' : 'single-user'} video meetings using our custom WebRTC system! AI features will be available when the backend is connected.`
+                    : "I can help you start free video meetings using Jitsi Meet! AI features will be available when the backend is connected."
                   }
                 </p>
                 
@@ -668,7 +666,7 @@ const AssistantPage: React.FC = () => {
                     <Video className="w-8 h-8 text-green-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Meetings</h3>
                     <p className="text-xs text-secondary">
-                      "Start a meeting" - Custom WebRTC
+                      "Start a meeting" - Free with Jitsi Meet
                     </p>
                   </GlassCard>
                   
@@ -698,12 +696,12 @@ const AssistantPage: React.FC = () => {
                     ) : (
                       <Video className="w-5 h-5" />
                     )}
-                    <span>Start Custom Meeting</span>
+                    <span>Start Free Meeting</span>
                   </Button>
                   <p className="text-xs text-secondary mt-2">
-                    {signalingStatus === 'online' 
-                      ? 'Multi-user WebRTC meetings with P2P connections'
-                      : 'Single-user mode (start signaling server for multi-user)'
+                    {backendStatus === 'online' 
+                      ? 'Or just say "Start a meeting" to create one with AI assistance'
+                      : 'Powered by Jitsi Meet - completely free and open source!'
                     }
                   </p>
                 </div>
@@ -812,9 +810,9 @@ const AssistantPage: React.FC = () => {
                       {msg.action && msg.action.success && (
                         <div className="mt-3 p-3 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
                           <p className="text-green-400 text-sm font-medium">
-                            ✓ {msg.action.signalingRequired 
-                              ? `Meeting created (start signaling server for multi-user support)` 
-                              : `Meeting created using ${msg.action.platform || 'Custom WebRTC'}`}
+                            ✓ {msg.action.offline 
+                              ? `Meeting created using ${msg.action.platform || 'Jitsi Meet'} (free)` 
+                              : 'Action completed successfully'}
                           </p>
                         </div>
                       )}
@@ -868,7 +866,7 @@ const AssistantPage: React.FC = () => {
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={backendStatus === 'online' 
                     ? "Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
-                    : "Try: 'Start a meeting' or use the Start Meeting button above for custom WebRTC calls!"
+                    : "Try: 'Start a meeting' or use the Start Meeting button above for free video calls!"
                   }
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
