@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import AssistantPage from './pages/AssistantPage';
 import GameModePage from './pages/GameModePage';
+import MeetingPage from './pages/MeetingPage';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/assistant" element={<AssistantPage />} />
               <Route path="/game-mode" element={<GameModePage />} />
+              <Route path="/meetings" element={<MeetingPage />} />
             </Routes>
           </div>
         </Router>

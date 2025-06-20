@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, LogOut, Settings, User } from 'lucide-react';
+import { Bot, Gamepad2, Video, LogOut, Settings, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
@@ -20,8 +20,15 @@ const Dashboard: React.FC = () => {
       id: 'assistant',
       icon: Bot,
       title: 'AI Assistant',
-      description: 'Professional productivity support with Gmail management, Zoom integration, and intelligent assistance for your daily workflow.',
+      description: 'Professional productivity support with Gmail management and intelligent assistance for your daily workflow.',
       route: '/assistant',
+    },
+    {
+      id: 'meetings',
+      icon: Video,
+      title: 'Video Meetings',
+      description: 'Smart video conferencing with AI-powered transcription, note-taking, and meeting summaries.',
+      route: '/meetings',
     },
     {
       id: 'game-mode',
@@ -94,7 +101,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}
@@ -103,24 +110,22 @@ const Dashboard: React.FC = () => {
                 goldBorder
                 onClick={() => handleFeatureClick(feature.route)}
               >
-                <div className="flex items-start space-x-6">
-                  <div className="w-14 h-14 rounded-lg bg-gradient-gold-silver flex items-center justify-center flex-shrink-0">
-                    <feature.icon className="w-7 h-7 text-white" />
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-lg bg-gradient-gold-silver flex items-center justify-center mx-auto mb-6">
+                    <feature.icon className="w-8 h-8 text-white" />
                   </div>
                   
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-primary mb-3 group-hover:gold-text transition-colors">
-                      {feature.title}
-                    </h3>
-                    <p className="text-secondary leading-relaxed mb-4 text-sm">
-                      {feature.description}
-                    </p>
-                    <div className="flex items-center gradient-gold-silver font-semibold text-sm">
-                      <span>Access {feature.title}</span>
-                      <svg className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
+                  <h3 className="text-xl font-bold text-primary mb-4 group-hover:gold-text transition-colors">
+                    {feature.title}
+                  </h3>
+                  <p className="text-secondary leading-relaxed mb-6 text-sm">
+                    {feature.description}
+                  </p>
+                  <div className="flex items-center justify-center gradient-gold-silver font-semibold text-sm">
+                    <span>Access {feature.title}</span>
+                    <svg className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
                   </div>
                 </div>
               </GlassCard>

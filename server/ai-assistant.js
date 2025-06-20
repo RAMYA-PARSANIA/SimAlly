@@ -28,9 +28,6 @@ const oauth2Client = new OAuth2Client(
 // Store user sessions (in production, use Redis or database)
 const userSessions = new Map();
 
-// Store active meetings
-const activeMeetings = new Map();
-
 // =============================================================================
 // INTENT DETECTION & ROUTING
 // =============================================================================
@@ -45,8 +42,7 @@ app.post('/api/chat/detect-intent', async (req, res) => {
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
       1. Gmail operations (send, read, delete, unsubscribe, compose help)
-      2. Meeting assistance (start meeting, join meeting, transcribe, take notes, summarize)
-      3. General chat/questions
+      2. General chat/questions
       
       Analyze this user message and determine the intent, extract parameters, and provide a helpful response.
       
@@ -54,14 +50,12 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Respond in this exact JSON format:
       {
-        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, meeting_start, meeting_join, meeting_transcribe, meeting_notes, meeting_summary, chat",
+        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, chat",
         "confidence": 0.0-1.0,
         "parameters": {
           // Extract relevant parameters based on intent
           // For gmail_send: {"to": "email", "subject": "subject", "body": "body"}
           // For gmail_read: {"count": number, "query": "search terms"}
-          // For meeting_start: {"title": "meeting title", "participants": ["emails"]}
-          // For meeting_join: {"meetingId": "meeting id or code"}
           // For chat: {}
         },
         "response": "A helpful response to the user explaining what you'll do or asking for clarification"
@@ -69,9 +63,6 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Examples:
       - "Send an email to john@example.com about the meeting" → gmail_send intent
-      - "Start a meeting with my team" → meeting_start intent
-      - "Join meeting room 123" → meeting_join intent
-      - "Take notes during this meeting" → meeting_notes intent
       - "What's the weather today?" → chat intent
       
       Be intelligent about parameter extraction and provide clear, helpful responses.
@@ -131,7 +122,7 @@ const getChatResponse = async (message, userId) => {
     
     const prompt = `
       You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
-      You can help with Gmail management, video meetings, and general questions.
+      You can help with Gmail management and general questions.
       
       ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
       
@@ -408,148 +399,13 @@ app.post('/api/gmail/compose-help', async (req, res) => {
 });
 
 // =============================================================================
-// MEETING FUNCTIONALITY
+// MEETING AI FUNCTIONALITY
 // =============================================================================
 
-// Create a new meeting
-app.post('/api/meetings/create', async (req, res) => {
+// Generate auto notes from meeting transcript
+app.post('/api/meetings/auto-notes', async (req, res) => {
   try {
-    const { userId, title, participants = [] } = req.body;
-    const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const meeting = {
-      id: meetingId,
-      title: title || 'Untitled Meeting',
-      host: userId,
-      participants: [userId, ...participants],
-      createdAt: new Date(),
-      isActive: true,
-      transcript: [],
-      notes: [],
-      summary: null,
-      aiEnabled: false
-    };
-    
-    activeMeetings.set(meetingId, meeting);
-    
-    res.json({ 
-      success: true, 
-      meetingId,
-      meeting: {
-        id: meetingId,
-        title: meeting.title,
-        host: meeting.host,
-        participants: meeting.participants,
-        createdAt: meeting.createdAt
-      }
-    });
-  } catch (error) {
-    console.error('Create meeting error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Join a meeting
-app.post('/api/meetings/join', async (req, res) => {
-  try {
-    const { meetingId, userId } = req.body;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
-    
-    if (!meeting.participants.includes(userId)) {
-      meeting.participants.push(userId);
-    }
-    
-    res.json({ 
-      success: true, 
-      meeting: {
-        id: meeting.id,
-        title: meeting.title,
-        host: meeting.host,
-        participants: meeting.participants,
-        aiEnabled: meeting.aiEnabled
-      }
-    });
-  } catch (error) {
-    console.error('Join meeting error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Enable/Disable AI Assistant for meeting
-app.post('/api/meetings/:meetingId/ai-toggle', async (req, res) => {
-  try {
-    const { meetingId } = req.params;
-    const { enabled, userId } = req.body;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
-    
-    // Only host can toggle AI
-    if (meeting.host !== userId) {
-      return res.status(403).json({ success: false, error: 'Only host can toggle AI assistant' });
-    }
-    
-    meeting.aiEnabled = enabled;
-    
-    res.json({ 
-      success: true, 
-      aiEnabled: meeting.aiEnabled,
-      message: `AI assistant ${enabled ? 'enabled' : 'disabled'}` 
-    });
-  } catch (error) {
-    console.error('AI toggle error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Add transcript entry
-app.post('/api/meetings/:meetingId/transcript', async (req, res) => {
-  try {
-    const { meetingId } = req.params;
     const { text, speaker, userId } = req.body;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
-    
-    if (!meeting.aiEnabled) {
-      return res.status(400).json({ success: false, error: 'AI assistant not enabled' });
-    }
-    
-    const transcriptEntry = {
-      id: Date.now(),
-      text,
-      speaker: speaker || 'Unknown',
-      timestamp: new Date(),
-      userId
-    };
-    
-    meeting.transcript.push(transcriptEntry);
-    
-    // Auto-generate notes if significant content
-    if (text.length > 50) {
-      await generateAutoNotes(meetingId, text, speaker);
-    }
-    
-    res.json({ success: true, transcriptEntry });
-  } catch (error) {
-    console.error('Add transcript error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Generate automatic notes
-const generateAutoNotes = async (meetingId, text, speaker) => {
-  try {
-    const meeting = activeMeetings.get(meetingId);
-    if (!meeting) return;
     
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `
@@ -573,66 +429,30 @@ const generateAutoNotes = async (meetingId, text, speaker) => {
     const notes = result.response.text().trim();
     
     if (notes !== 'NO_NOTES') {
-      meeting.notes.push({
-        id: Date.now(),
-        content: notes,
-        timestamp: new Date(),
-        source: 'auto',
-        relatedTranscript: text
-      });
+      res.json({ success: true, notes });
+    } else {
+      res.json({ success: true, notes: null });
     }
   } catch (error) {
     console.error('Auto notes generation error:', error);
-  }
-};
-
-// Get meeting transcript
-app.get('/api/meetings/:meetingId/transcript', async (req, res) => {
-  try {
-    const { meetingId } = req.params;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
-    
-    res.json({ 
-      success: true, 
-      transcript: meeting.transcript,
-      notes: meeting.notes 
-    });
-  } catch (error) {
-    console.error('Get transcript error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // Generate meeting summary
-app.post('/api/meetings/:meetingId/summary', async (req, res) => {
+app.post('/api/meetings/summary', async (req, res) => {
   try {
-    const { meetingId } = req.params;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
+    const { transcript, participants, duration } = req.body;
     
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
-    // Combine transcript for summary
-    const fullTranscript = meeting.transcript
-      .map(entry => `${entry.speaker}: ${entry.text}`)
-      .join('\n');
-    
     const prompt = `
       Generate a comprehensive meeting summary based on this transcript:
       
-      Meeting: ${meeting.title}
-      Duration: ${Math.round((new Date() - meeting.createdAt) / 60000)} minutes
-      Participants: ${meeting.participants.length}
+      Duration: ${duration} minutes
+      Participants: ${participants.join(', ')}
       
       Transcript:
-      ${fullTranscript}
+      ${transcript}
       
       Provide a structured summary with:
       1. Meeting Overview
@@ -641,97 +461,15 @@ app.post('/api/meetings/:meetingId/summary', async (req, res) => {
       4. Action Items (with responsible parties if mentioned)
       5. Next Steps
       
-      Format as JSON with these fields: overview, keyPoints, decisions, actionItems, nextSteps
+      Keep it professional and concise.
     `;
     
     const result = await model.generateContent(prompt);
-    const response = result.response.text();
+    const summary = result.response.text();
     
-    try {
-      const summary = JSON.parse(response);
-      meeting.summary = {
-        ...summary,
-        generatedAt: new Date()
-      };
-      
-      res.json({ success: true, summary: meeting.summary });
-    } catch {
-      // Fallback summary
-      const fallbackSummary = {
-        overview: 'Meeting completed successfully',
-        keyPoints: ['Discussion held with team members'],
-        decisions: ['Various topics were covered'],
-        actionItems: ['Follow up on key points discussed'],
-        nextSteps: ['Schedule follow-up meeting if needed'],
-        generatedAt: new Date()
-      };
-      
-      meeting.summary = fallbackSummary;
-      res.json({ success: true, summary: fallbackSummary });
-    }
+    res.json({ success: true, summary });
   } catch (error) {
     console.error('Generate summary error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// End meeting
-app.post('/api/meetings/:meetingId/end', async (req, res) => {
-  try {
-    const { meetingId } = req.params;
-    const { userId } = req.body;
-    const meeting = activeMeetings.get(meetingId);
-    
-    if (!meeting) {
-      return res.status(404).json({ success: false, error: 'Meeting not found' });
-    }
-    
-    // Only host can end meeting
-    if (meeting.host !== userId) {
-      return res.status(403).json({ success: false, error: 'Only host can end meeting' });
-    }
-    
-    meeting.isActive = false;
-    meeting.endedAt = new Date();
-    
-    // Generate final summary if AI was enabled
-    if (meeting.aiEnabled && meeting.transcript.length > 0) {
-      // Summary will be generated on demand
-    }
-    
-    res.json({ 
-      success: true, 
-      message: 'Meeting ended successfully',
-      summary: meeting.summary 
-    });
-  } catch (error) {
-    console.error('End meeting error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Get active meetings for user
-app.get('/api/meetings/active', async (req, res) => {
-  try {
-    const { userId } = req.query;
-    const userMeetings = [];
-    
-    for (const [id, meeting] of activeMeetings.entries()) {
-      if (meeting.participants.includes(userId) && meeting.isActive) {
-        userMeetings.push({
-          id: meeting.id,
-          title: meeting.title,
-          host: meeting.host,
-          participants: meeting.participants.length,
-          createdAt: meeting.createdAt,
-          aiEnabled: meeting.aiEnabled
-        });
-      }
-    }
-    
-    res.json({ success: true, meetings: userMeetings });
-  } catch (error) {
-    console.error('Get active meetings error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -799,8 +537,7 @@ app.get('/api/health', (req, res) => {
       chatbot: 'ready',
       intentDetection: 'ready'
     },
-    activeSessions: userSessions.size,
-    activeMeetings: activeMeetings.size
+    activeSessions: userSessions.size
   });
 });
 
@@ -808,14 +545,14 @@ app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
     version: '3.0.0',
-    services: ['Gmail', 'Video Meetings', 'AI Assistant', 'Intent Detection']
+    services: ['Gmail', 'Meeting AI', 'AI Assistant', 'Intent Detection']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Intent Detection, Gmail, Video Meetings, AI Assistant');
+  console.log('Features: Intent Detection, Gmail, Meeting AI, AI Assistant');
 });
 
 module.exports = app;
