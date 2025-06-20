@@ -342,8 +342,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       console.log('Got user media stream');
       setLocalStream(stream);
       
+      // IMPORTANT: Attach local stream to video element immediately
       if (localVideoRef.current) {
+        console.log('Attaching local stream to video element');
         localVideoRef.current.srcObject = stream;
+        localVideoRef.current.play().catch(console.error);
       }
 
       // Produce audio and video
