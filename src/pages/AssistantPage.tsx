@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -42,6 +42,9 @@ const AssistantPage: React.FC = () => {
   const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [meetingIdToJoin, setMeetingIdToJoin] = useState('');
+  const [isJoiningMeeting, setIsJoiningMeeting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -415,6 +418,48 @@ const AssistantPage: React.FC = () => {
     }
   };
 
+  const handleJoinMeeting = async () => {
+    if (!meetingIdToJoin.trim()) return;
+
+    setIsJoiningMeeting(true);
+    try {
+      const response = await fetch('http://localhost:8001/api/meetings/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          meetingId: meetingIdToJoin.trim(),
+          userId: user?.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setShowJoinModal(false);
+        setMeetingIdToJoin('');
+        navigate(`/meeting/${meetingIdToJoin.trim()}`);
+      } else {
+        // Handle error - meeting not found, etc.
+        alert(data.error || 'Failed to join meeting');
+      }
+    } catch (error) {
+      console.error('Failed to join meeting:', error);
+      alert('Failed to join meeting. Please check the meeting ID and try again.');
+    } finally {
+      setIsJoiningMeeting(false);
+    }
+  };
+
+  const copyTranscript = () => {
+    // Implementation for copying transcript
+    console.log('Copy transcript functionality');
+  };
+
+  const downloadNotes = () => {
+    // Implementation for downloading notes
+    console.log('Download notes functionality');
+  };
+
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
       case 'gmail_send':
@@ -495,6 +540,17 @@ const AssistantPage: React.FC = () => {
                 <span>Start Meeting</span>
               </Button>
 
+              {/* Join Meeting Button */}
+              <Button
+                onClick={() => setShowJoinModal(true)}
+                variant="secondary"
+                size="sm"
+                className="flex items-center space-x-2"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Join Meeting</span>
+              </Button>
+
               {/* Status Indicators */}
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
@@ -518,6 +574,77 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Join Meeting Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md">
+            <GlassCard className="p-6" goldBorder>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold gradient-gold-silver">
+                  Join Meeting
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowJoinModal(false);
+                    setMeetingIdToJoin('');
+                  }}
+                  className="text-secondary hover:text-primary p-1 rounded-lg glass-panel glass-panel-hover"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Meeting ID
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter meeting ID"
+                    value={meetingIdToJoin}
+                    onChange={(e) => setMeetingIdToJoin(e.target.value)}
+                    className="w-full px-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && meetingIdToJoin.trim()) {
+                        handleJoinMeeting();
+                      }
+                    }}
+                    disabled={isJoiningMeeting}
+                  />
+                </div>
+
+                <div className="flex space-x-3">
+                  <Button
+                    onClick={() => {
+                      setShowJoinModal(false);
+                      setMeetingIdToJoin('');
+                    }}
+                    variant="secondary"
+                    className="flex-1"
+                    disabled={isJoiningMeeting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleJoinMeeting}
+                    disabled={!meetingIdToJoin.trim() || isJoiningMeeting}
+                    variant="premium"
+                    className="flex-1"
+                  >
+                    {isJoiningMeeting ? (
+                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                    ) : (
+                      'Join Meeting'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
 
       {/* Main Chat Interface */}
       <main className="flex flex-col h-[calc(100vh-80px)]">
@@ -568,8 +695,8 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                 </div>
 
-                {/* Quick Start Meeting Button */}
-                <div className="mb-8">
+                {/* Meeting Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
                   <Button
                     onClick={handleStartMeeting}
                     disabled={isCreatingMeeting}
@@ -584,10 +711,21 @@ const AssistantPage: React.FC = () => {
                     )}
                     <span>Start Quick Meeting</span>
                   </Button>
-                  <p className="text-xs text-secondary mt-2">
-                    Or just say "Start a meeting" to create one with AI assistance
-                  </p>
+
+                  <Button
+                    onClick={() => setShowJoinModal(true)}
+                    variant="secondary"
+                    size="lg"
+                    className="inline-flex items-center space-x-2"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                    <span>Join Meeting</span>
+                  </Button>
                 </div>
+
+                <p className="text-xs text-secondary mb-8">
+                  Or just say "Start a meeting" or "Join meeting ABC123" to use voice commands
+                </p>
 
                 {/* Active Meetings */}
                 {activeMeetings.length > 0 && (
@@ -607,6 +745,9 @@ const AssistantPage: React.FC = () => {
                               <h4 className="font-semibold text-primary">{meeting.title}</h4>
                               <p className="text-xs text-secondary">
                                 {meeting.participants} participants • AI {meeting.aiEnabled ? 'ON' : 'OFF'}
+                              </p>
+                              <p className="text-xs text-secondary mt-1">
+                                ID: {meeting.id}
                               </p>
                             </div>
                           </div>
@@ -726,7 +867,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'What's the weather?')"
+                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'Join meeting ABC123')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {

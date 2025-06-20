@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 import { motion } from 'framer-motion';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, Settings, Bot, NutOff as BotOff, FileText, Download, Copy, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, MessageSquare, Settings, Bot, NutOff as BotOff, FileText, Download, Copy, Loader2, Share } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
@@ -60,6 +60,7 @@ const MeetingRoom: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'participants' | 'transcript' | 'notes'>('participants');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [summary, setSummary] = useState<any>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -426,6 +427,41 @@ const MeetingRoom: React.FC = () => {
     return peer;
   };
 
+  const copyInviteLink = () => {
+    const inviteLink = `${window.location.origin}/meeting/${meetingId}`;
+    navigator.clipboard.writeText(inviteLink);
+    setShowInviteModal(false);
+  };
+
+  const copyMeetingId = () => {
+    if (meetingId) {
+      navigator.clipboard.writeText(meetingId);
+    }
+  };
+
+  const copyTranscript = () => {
+    const transcriptText = transcript
+      .map(entry => `${entry.speaker} (${entry.timestamp.toLocaleTimeString()}): ${entry.text}`)
+      .join('\n');
+    navigator.clipboard.writeText(transcriptText);
+  };
+
+  const downloadNotes = () => {
+    const notesText = notes
+      .map(note => `${note.timestamp.toLocaleString()} [${note.source}]: ${note.content}`)
+      .join('\n\n');
+    
+    const blob = new Blob([notesText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `meeting-notes-${meetingId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     initializeSpeechRecognition();
   }, []);
@@ -532,19 +568,86 @@ const MeetingRoom: React.FC = () => {
             )}
 
             <Button
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/meeting/${meetingId}`);
-              }}
+              onClick={() => setShowInviteModal(true)}
               variant="secondary"
               size="sm"
               className="flex items-center space-x-2"
             >
-              <Users className="w-4 h-4" />
-              <span>Copy Invite Link</span>
+              <Share className="w-4 h-4" />
+              <span>Invite</span>
             </Button>
           </div>
         </div>
       </header>
+
+      {/* Invite Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="w-full max-w-md">
+            <GlassCard className="p-6" goldBorder>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold gradient-gold-silver">
+                  Invite Others
+                </h2>
+                <button
+                  onClick={() => setShowInviteModal(false)}
+                  className="text-secondary hover:text-primary p-1 rounded-lg glass-panel glass-panel-hover"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Meeting ID
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={meetingId || ''}
+                      readOnly
+                      className="flex-1 px-4 py-3 glass-panel rounded-lg text-primary bg-surface/50"
+                    />
+                    <Button
+                      onClick={copyMeetingId}
+                      variant="secondary"
+                      size="sm"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Invite Link
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={`${window.location.origin}/meeting/${meetingId}`}
+                      readOnly
+                      className="flex-1 px-4 py-3 glass-panel rounded-lg text-primary bg-surface/50 text-sm"
+                    />
+                    <Button
+                      onClick={copyInviteLink}
+                      variant="premium"
+                      size="sm"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-secondary">
+                  Share the meeting ID or link with others to let them join this meeting.
+                </p>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex">
         {/* Main Video Area */}
