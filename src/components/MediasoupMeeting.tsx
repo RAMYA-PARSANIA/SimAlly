@@ -58,6 +58,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   const [consumers, setConsumers] = useState<Map<string, any>>(new Map());
   const [connectionStatus, setConnectionStatus] = useState<string>('Connecting...');
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [producerToPeer, setProducerToPeer] = useState<Map<string, string>>(new Map());
 
   // Initialize socket connection
   useEffect(() => {
@@ -339,16 +340,20 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
         },
       });
       
-      console.log('Got user media stream');
+      console.log('Got user media stream', stream);
       setLocalStream(stream);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
+
+      // Debug: log tracks
+      console.log('Local stream tracks:', stream.getTracks());
+      console.log('Video tracks:', stream.getVideoTracks());
+      console.log('Audio tracks:', stream.getAudioTracks());
 
       // Produce audio and video
       const audioTrack = stream.getAudioTracks()[0];
       const videoTrack = stream.getVideoTracks()[0];
+
+      console.log('audioTrack:', audioTrack);
+      console.log('videoTrack:', videoTrack);
 
       if (audioTrack && sendTransportRef.current) {
         console.log('Producing audio track');
@@ -368,6 +373,10 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
         videoProducer.on('trackended', () => {
           console.log('Video track ended');
         });
+      } else if (!videoTrack) {
+        console.warn('No video track found in local stream');
+      } else if (!sendTransportRef.current) {
+        console.warn('sendTransportRef.current is not ready for video');
       }
 
       setConnectionStatus('Connected');
@@ -389,8 +398,8 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const handleConsumed = async (data: any) => {
     const { id, producerId, kind, rtpParameters } = data;
-    console.log('Consuming:', { id, producerId, kind });
-    
+    console.log('Consuming:', data);
+
     try {
       if (!recvTransportRef.current) {
         console.error('Receive transport not ready');
@@ -407,56 +416,53 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       console.log('Consumer created:', consumer.id);
       setConsumers(prev => new Map(prev.set(id, consumer)));
 
-      // Resume consumer immediately
       socketRef.current.emit('resumeConsumer', { consumerId: id });
 
-      // Create media stream for remote peer
       const stream = new MediaStream([consumer.track]);
-      
-      // Find the producer's peer ID
-      const producerPeerId = findPeerByProducerId(producerId);
-      if (producerPeerId) {
-        console.log(`Attaching ${kind} stream from peer ${producerPeerId}`);
-        setRemoteStreams(prev => {
-          const newStreams = new Map(prev);
-          const existingStream = newStreams.get(producerPeerId);
-          
-          if (existingStream) {
-            // Add track to existing stream
-            existingStream.addTrack(consumer.track);
-          } else {
-            // Create new stream
-            newStreams.set(producerPeerId, stream);
-          }
-          
-          return newStreams;
-        });
 
-        // Update the video element for this peer
-        setTimeout(() => {
-          const videoElement = document.getElementById(`remote-video-${producerPeerId}`) as HTMLVideoElement;
-          if (videoElement && kind === 'video') {
-            console.log(`Setting video stream for peer ${producerPeerId}`);
-            videoElement.srcObject = stream;
-            videoElement.play().catch(console.error);
-          }
-          
-          const audioElement = document.getElementById(`remote-audio-${producerPeerId}`) as HTMLAudioElement;
-          if (audioElement && kind === 'audio') {
-            console.log(`Setting audio stream for peer ${producerPeerId}`);
-            audioElement.srcObject = stream;
-            audioElement.play().catch(console.error);
-          }
-        }, 100);
+      const peerId = findPeerByProducerId(producerId); // Must return correct ID
+
+      if (!peerId) {
+        console.warn('Could not find peerId for producerId:', producerId);
+        return;
       }
+
+      setRemoteStreams(prev => {
+        const newStreams = new Map(prev);
+        const existing = newStreams.get(peerId);
+        if (existing) {
+          existing.addTrack(consumer.track);
+        } else {
+          newStreams.set(peerId, stream);
+        }
+        return newStreams;
+      });
+
+      // 🕒 Delay to allow <video> elements to be rendered
+      setTimeout(() => {
+        const videoEl = document.getElementById(`remote-video-${peerId}`) as HTMLVideoElement;
+        const audioEl = document.getElementById(`remote-audio-${peerId}`) as HTMLAudioElement;
+
+        if (kind === 'video' && videoEl) {
+          console.log(`Setting video stream for peer ${peerId}`);
+          videoEl.srcObject = stream;
+          videoEl.play().catch(console.error);
+        }
+
+        if (kind === 'audio' && audioEl) {
+          console.log(`Setting audio stream for peer ${peerId}`);
+          audioEl.srcObject = stream;
+          audioEl.play().catch(console.error);
+        }
+      }, 500);
 
       consumer.on('transportclose', () => {
         console.log('Consumer transport closed');
         consumer.close();
         setConsumers(prev => {
-          const newConsumers = new Map(prev);
-          newConsumers.delete(id);
-          return newConsumers;
+          const map = new Map(prev);
+          map.delete(id);
+          return map;
         });
       });
 
@@ -465,9 +471,27 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     }
   };
 
+
   const findPeerByProducerId = (producerId: string): string | null => {
-    // This is a simplified approach - in a real app you'd track producer-to-peer mapping
-    // For now, we'll use the first peer that's not us
+    // TODO: Map producerId to peerId correctly.
+    // The current implementation just returns the first peer, which is incorrect for multiple peers.
+    // You need to maintain a mapping from producerId to peerId when you receive producer info from the server.
+
+    // Example: Maintain a Map<string, string> (producerId -> peerId)
+    // Add this at the top:
+    // const [producerToPeer, setProducerToPeer] = useState<Map<string, string>>(new Map());
+
+    // When you receive producers (handleProducers, handleExistingProducers, handleNewProducer), update the map:
+    // setProducerToPeer(prev => {
+    //   const map = new Map(prev);
+    //   map.set(producerId, peerId);
+    //   return map;
+    // });
+
+    // Then, here:
+    // return producerToPeer.get(producerId) || null;
+
+    // For now, fallback to the first peer (may be incorrect):
     const peerIds = Array.from(peers.keys());
     return peerIds.length > 0 ? peerIds[0] : null;
   };
@@ -478,6 +502,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const handleProducers = (producers: any[]) => {
     console.log('Received existing producers:', producers);
+    // setProducerToPeer(prev => {
+    //   const map = new Map(prev);
+    //   producers.forEach(({ peerId, producerId }) => map.set(producerId, peerId));
+    //   return map;
+    // });
     producers.forEach(({ peerId, producerId, kind }) => {
       console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
       consume(producerId, peerId);
@@ -486,6 +515,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const handleExistingProducers = (producers: any[]) => {
     console.log('Received existing producers:', producers);
+    // setProducerToPeer(prev => {
+    //   const map = new Map(prev);
+    //   producers.forEach(({ peerId, producerId }) => map.set(producerId, peerId));
+    //   return map;
+    // });
     producers.forEach(({ peerId, producerId, kind }) => {
       console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
       consume(producerId, peerId);
@@ -494,6 +528,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const handleNewProducer = ({ peerId, producerId, kind }: any) => {
     console.log(`New producer: ${producerId} (${kind}) from peer: ${peerId}`);
+    // setProducerToPeer(prev => {
+    //   const map = new Map(prev);
+    //   map.set(producerId, peerId);
+    //   return map;
+    // });
     consume(producerId, peerId);
   };
 
@@ -711,6 +750,45 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     URL.revokeObjectURL(url);
   };
 
+  // Debug: log when the video ref is set
+  const handleLocalVideoRef = (el: HTMLVideoElement | null) => {
+    localVideoRef.current = el;
+    if (el) {
+      console.log('localVideoRef set:', el);
+      // Add a property for easier debugging in the browser console
+      (window as any).__localVideoRef = el;
+    } else {
+      console.log('localVideoRef set: null');
+    }
+  };
+
+  // Ensure video element updates when localStream or isVideoEnabled changes
+  // This effect runs when the video ref finally becomes available
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const videoEl = localVideoRef.current;
+
+      if (videoEl && localStream && isVideoEnabled) {
+        console.log('Delayed assignment of localStream to video element');
+
+        videoEl.srcObject = localStream;
+        videoEl.muted = true;
+
+        videoEl.onloadedmetadata = () => {
+          videoEl.play().then(() => {
+            console.log('localVideoRef play() success');
+          }).catch((err) => {
+            console.error('localVideoRef play() error', err);
+          });
+        };
+
+        clearInterval(interval);
+      }
+    }, 100); // Retry every 100ms until video ref appears
+
+    return () => clearInterval(interval);
+  }, [localStream, isVideoEnabled]);
+
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -800,20 +878,30 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
             {/* Local Video */}
             <div className="relative glass-panel rounded-lg overflow-hidden">
               <video
-                ref={localVideoRef}
+                ref={handleLocalVideoRef}
+                key={
+                  localStream && localStream.getVideoTracks().length > 0
+                    ? localStream.getVideoTracks()[0].id
+                    : 'no-video'
+                }
                 autoPlay
                 muted
                 playsInline
                 className="w-full h-full object-cover"
+                style={{
+                  display: isVideoEnabled ? 'block' : 'none',
+                  background: '#222',
+                  border: '2px solid red',
+                }}
               />
-              <div className="absolute bottom-2 left-2 glass-panel px-2 py-1 rounded text-sm">
-                <span className="text-primary font-medium">{displayName} (You)</span>
-              </div>
               {!isVideoEnabled && (
                 <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
                   <VideoOff className="w-8 h-8 text-gray-400" />
                 </div>
               )}
+              <div className="absolute bottom-2 left-2 glass-panel px-2 py-1 rounded text-sm">
+                <span className="text-primary font-medium">{displayName} (You)</span>
+              </div>
             </div>
 
             {/* Remote Videos */}
@@ -1044,6 +1132,21 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
             <PhoneOff className="w-6 h-6 text-red-400" />
           </button>
         </div>
+      </div>
+
+      {/* Debugging: Log video element info */}
+      <div className="hidden">
+        {/* After your app loads, open the browser console and run:
+        console.log('__localVideoRef:', window.__localVideoRef);
+        if (window.__localVideoRef) {
+          const v = window.__localVideoRef;
+          console.log('srcObject:', v.srcObject);
+          if (v.srcObject) {
+            console.log('videoTracks:', v.srcObject.getVideoTracks());
+            console.log('audioTracks:', v.srcObject.getAudioTracks());
+          }
+          console.log('videoWidth:', v.videoWidth, 'videoHeight:', v.videoHeight, 'readyState:', v.readyState);
+        } */}
       </div>
     </div>
   );
