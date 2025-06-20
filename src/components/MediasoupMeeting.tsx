@@ -57,6 +57,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   const [producers, setProducers] = useState<Map<string, any>>(new Map());
   const [consumers, setConsumers] = useState<Map<string, any>>(new Map());
   const [connectionStatus, setConnectionStatus] = useState<string>('Connecting...');
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
 
   // Initialize socket connection
   useEffect(() => {
@@ -84,23 +85,21 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       setConnectionStatus('Connection failed');
     });
 
-    socketRef.current.on('routerRtpCapabilities', async (rtpCapabilities: any) => {
-      console.log('Received router RTP capabilities');
-      setConnectionStatus('Initializing device...');
-      await initializeDevice(rtpCapabilities);
-    });
-
+    // Socket event handlers
+    socketRef.current.on('routerRtpCapabilities', handleRouterRtpCapabilities);
     socketRef.current.on('webRtcTransportCreated', handleTransportCreated);
     socketRef.current.on('transportConnected', handleTransportConnected);
     socketRef.current.on('produced', handleProduced);
     socketRef.current.on('consumed', handleConsumed);
     socketRef.current.on('consumerResumed', handleConsumerResumed);
     socketRef.current.on('producers', handleProducers);
+    socketRef.current.on('existingProducers', handleExistingProducers);
     socketRef.current.on('newProducer', handleNewProducer);
     socketRef.current.on('peerJoined', handlePeerJoined);
     socketRef.current.on('peerLeft', handlePeerLeft);
     socketRef.current.on('existingPeers', handleExistingPeers);
     socketRef.current.on('consumerClosed', handleConsumerClosed);
+    socketRef.current.on('cannotConsume', handleCannotConsume);
     socketRef.current.on('error', handleError);
 
     return () => {
@@ -171,9 +170,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     });
   };
 
-  const initializeDevice = async (rtpCapabilities: any) => {
+  const handleRouterRtpCapabilities = async (rtpCapabilities: any) => {
     try {
-      console.log('Initializing mediasoup device...');
+      console.log('Received router RTP capabilities');
+      setConnectionStatus('Initializing device...');
+      
       deviceRef.current = new Device();
       await deviceRef.current.load({ routerRtpCapabilities: rtpCapabilities });
       console.log('Device loaded successfully');
@@ -181,14 +182,9 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       setConnectionStatus('Creating transports...');
       await createTransports();
       
-      setConnectionStatus('Getting user media...');
-      await getUserMedia();
-      
-      setConnectionStatus('Connected');
-      setIsConnected(true);
     } catch (error) {
-      console.error('Error initializing device:', error);
-      setConnectionStatus('Failed to initialize');
+      console.error('Error handling router RTP capabilities:', error);
+      setConnectionStatus('Failed to initialize device');
     }
   };
 
@@ -198,117 +194,138 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     // Create send transport
     socketRef.current.emit('createWebRtcTransport', { direction: 'send' });
     
-    // Wait a bit before creating receive transport
-    setTimeout(() => {
-      socketRef.current.emit('createWebRtcTransport', { direction: 'recv' });
-    }, 100);
+    // Create receive transport
+    socketRef.current.emit('createWebRtcTransport', { direction: 'recv' });
   };
 
   const handleTransportCreated = async (data: any) => {
-    const { id, iceParameters, iceCandidates, dtlsParameters } = data;
-    console.log('Transport created:', id);
+    const { id, iceParameters, iceCandidates, dtlsParameters, direction } = data;
+    console.log(`Transport created: ${id} (${direction})`);
     
-    if (!sendTransportRef.current) {
-      console.log('Creating send transport');
-      // This is the send transport
-      sendTransportRef.current = deviceRef.current!.createSendTransport({
-        id,
-        iceParameters,
-        iceCandidates,
-        dtlsParameters,
-      });
+    try {
+      if (direction === 'send' && !sendTransportRef.current) {
+        console.log('Creating send transport');
+        sendTransportRef.current = deviceRef.current!.createSendTransport({
+          id,
+          iceParameters,
+          iceCandidates,
+          dtlsParameters,
+        });
 
-      sendTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
-        try {
-          console.log('Connecting send transport');
-          socketRef.current.emit('connectTransport', {
-            transportId: id,
-            dtlsParameters,
-          });
-          
-          // Wait for transport connected event
-          const connectPromise = new Promise((resolve) => {
-            socketRef.current.once('transportConnected', resolve);
-          });
-          
-          await connectPromise;
-          callback();
-        } catch (error) {
-          console.error('Send transport connect error:', error);
-          errback(error);
+        sendTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
+          try {
+            console.log('Connecting send transport');
+            socketRef.current.emit('connectTransport', {
+              transportId: id,
+              dtlsParameters,
+            });
+            
+            // Wait for transport connected event
+            const connectPromise = new Promise((resolve) => {
+              const handler = (data: any) => {
+                if (data.transportId === id) {
+                  socketRef.current.off('transportConnected', handler);
+                  resolve(data);
+                }
+              };
+              socketRef.current.on('transportConnected', handler);
+            });
+            
+            await connectPromise;
+            callback();
+          } catch (error) {
+            console.error('Send transport connect error:', error);
+            errback(error);
+          }
+        });
+
+        sendTransportRef.current.on('produce', async (parameters: any, callback: any, errback: any) => {
+          try {
+            console.log('Producing:', parameters.kind);
+            socketRef.current.emit('produce', {
+              transportId: id,
+              kind: parameters.kind,
+              rtpParameters: parameters.rtpParameters,
+            });
+            
+            // Wait for produced event
+            const producePromise = new Promise((resolve) => {
+              socketRef.current.once('produced', resolve);
+            });
+            
+            const data: any = await producePromise;
+            callback({ id: data.id });
+          } catch (error) {
+            console.error('Produce error:', error);
+            errback(error);
+          }
+        });
+
+        sendTransportRef.current.on('connectionstatechange', (state: string) => {
+          console.log('Send transport connection state:', state);
+        });
+
+        // Start producing after send transport is ready
+        if (recvTransportRef.current) {
+          await startProducing();
         }
-      });
 
-      sendTransportRef.current.on('produce', async (parameters: any, callback: any, errback: any) => {
-        try {
-          console.log('Producing:', parameters.kind);
-          socketRef.current.emit('produce', {
-            transportId: id,
-            kind: parameters.kind,
-            rtpParameters: parameters.rtpParameters,
-          });
-          
-          // Wait for produced event
-          const producePromise = new Promise((resolve) => {
-            socketRef.current.once('produced', resolve);
-          });
-          
-          const data: any = await producePromise;
-          callback({ id: data.id });
-        } catch (error) {
-          console.error('Produce error:', error);
-          errback(error);
+      } else if (direction === 'recv' && !recvTransportRef.current) {
+        console.log('Creating receive transport');
+        recvTransportRef.current = deviceRef.current!.createRecvTransport({
+          id,
+          iceParameters,
+          iceCandidates,
+          dtlsParameters,
+        });
+
+        recvTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
+          try {
+            console.log('Connecting receive transport');
+            socketRef.current.emit('connectTransport', {
+              transportId: id,
+              dtlsParameters,
+            });
+            
+            // Wait for transport connected event
+            const connectPromise = new Promise((resolve) => {
+              const handler = (data: any) => {
+                if (data.transportId === id) {
+                  socketRef.current.off('transportConnected', handler);
+                  resolve(data);
+                }
+              };
+              socketRef.current.on('transportConnected', handler);
+            });
+            
+            await connectPromise;
+            callback();
+          } catch (error) {
+            console.error('Receive transport connect error:', error);
+            errback(error);
+          }
+        });
+
+        recvTransportRef.current.on('connectionstatechange', (state: string) => {
+          console.log('Receive transport connection state:', state);
+        });
+
+        // Start producing after both transports are ready
+        if (sendTransportRef.current) {
+          await startProducing();
         }
-      });
-
-      sendTransportRef.current.on('connectionstatechange', (state: string) => {
-        console.log('Send transport connection state:', state);
-      });
-
-    } else if (!recvTransportRef.current) {
-      console.log('Creating receive transport');
-      // This is the receive transport
-      recvTransportRef.current = deviceRef.current!.createRecvTransport({
-        id,
-        iceParameters,
-        iceCandidates,
-        dtlsParameters,
-      });
-
-      recvTransportRef.current.on('connect', async ({ dtlsParameters }: any, callback: any, errback: any) => {
-        try {
-          console.log('Connecting receive transport');
-          socketRef.current.emit('connectTransport', {
-            transportId: id,
-            dtlsParameters,
-          });
-          
-          // Wait for transport connected event
-          const connectPromise = new Promise((resolve) => {
-            socketRef.current.once('transportConnected', resolve);
-          });
-          
-          await connectPromise;
-          callback();
-        } catch (error) {
-          console.error('Receive transport connect error:', error);
-          errback(error);
-        }
-      });
-
-      recvTransportRef.current.on('connectionstatechange', (state: string) => {
-        console.log('Receive transport connection state:', state);
-      });
+      }
+    } catch (error) {
+      console.error('Error creating transport:', error);
+      setConnectionStatus('Failed to create transport');
     }
   };
 
-  const handleTransportConnected = () => {
-    console.log('Transport connected successfully');
-  };
-
-  const getUserMedia = async () => {
+  const startProducing = async () => {
     try {
+      setConnectionStatus('Getting user media...');
       console.log('Getting user media...');
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -328,22 +345,6 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
-
-      // Wait for both transports to be ready
-      const waitForTransports = () => {
-        return new Promise<void>((resolve) => {
-          const checkTransports = () => {
-            if (sendTransportRef.current && recvTransportRef.current) {
-              resolve();
-            } else {
-              setTimeout(checkTransports, 100);
-            }
-          };
-          checkTransports();
-        });
-      };
-
-      await waitForTransports();
 
       // Produce audio and video
       const audioTrack = stream.getAudioTracks()[0];
@@ -369,16 +370,17 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
         });
       }
 
-      // Request existing producers after we've set up our own
-      setTimeout(() => {
-        console.log('Requesting existing producers...');
-        socketRef.current.emit('getProducers');
-      }, 1000);
+      setConnectionStatus('Connected');
+      setIsConnected(true);
 
     } catch (error) {
-      console.error('Error getting user media:', error);
+      console.error('Error starting production:', error);
       setConnectionStatus('Media access denied');
     }
+  };
+
+  const handleTransportConnected = (data: any) => {
+    console.log('Transport connected:', data.transportId);
   };
 
   const handleProduced = (data: any) => {
@@ -408,27 +410,45 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       // Resume consumer immediately
       socketRef.current.emit('resumeConsumer', { consumerId: id });
 
-      // Create media element for remote stream
+      // Create media stream for remote peer
       const stream = new MediaStream([consumer.track]);
       
-      // Find or create peer and attach stream
-      setTimeout(() => {
-        const remoteVideoElements = document.querySelectorAll('[data-peer-id]');
-        console.log('Found remote video elements:', remoteVideoElements.length);
-        
-        // Try to attach to any available remote video element
-        remoteVideoElements.forEach((element: any) => {
-          if (kind === 'video' && element.tagName === 'VIDEO') {
-            console.log('Attaching video stream to element');
-            element.srcObject = stream;
-            element.play().catch(console.error);
-          } else if (kind === 'audio' && element.tagName === 'AUDIO') {
-            console.log('Attaching audio stream to element');
-            element.srcObject = stream;
-            element.play().catch(console.error);
+      // Find the producer's peer ID
+      const producerPeerId = findPeerByProducerId(producerId);
+      if (producerPeerId) {
+        console.log(`Attaching ${kind} stream from peer ${producerPeerId}`);
+        setRemoteStreams(prev => {
+          const newStreams = new Map(prev);
+          const existingStream = newStreams.get(producerPeerId);
+          
+          if (existingStream) {
+            // Add track to existing stream
+            existingStream.addTrack(consumer.track);
+          } else {
+            // Create new stream
+            newStreams.set(producerPeerId, stream);
           }
+          
+          return newStreams;
         });
-      }, 100);
+
+        // Update the video element for this peer
+        setTimeout(() => {
+          const videoElement = document.getElementById(`remote-video-${producerPeerId}`) as HTMLVideoElement;
+          if (videoElement && kind === 'video') {
+            console.log(`Setting video stream for peer ${producerPeerId}`);
+            videoElement.srcObject = stream;
+            videoElement.play().catch(console.error);
+          }
+          
+          const audioElement = document.getElementById(`remote-audio-${producerPeerId}`) as HTMLAudioElement;
+          if (audioElement && kind === 'audio') {
+            console.log(`Setting audio stream for peer ${producerPeerId}`);
+            audioElement.srcObject = stream;
+            audioElement.play().catch(console.error);
+          }
+        }, 100);
+      }
 
       consumer.on('transportclose', () => {
         console.log('Consumer transport closed');
@@ -445,30 +465,45 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     }
   };
 
-  const handleConsumerResumed = () => {
-    console.log('Consumer resumed');
+  const findPeerByProducerId = (producerId: string): string | null => {
+    // This is a simplified approach - in a real app you'd track producer-to-peer mapping
+    // For now, we'll use the first peer that's not us
+    const peerIds = Array.from(peers.keys());
+    return peerIds.length > 0 ? peerIds[0] : null;
+  };
+
+  const handleConsumerResumed = (data: any) => {
+    console.log('Consumer resumed:', data.consumerId);
   };
 
   const handleProducers = (producers: any[]) => {
     console.log('Received existing producers:', producers);
     producers.forEach(({ peerId, producerId, kind }) => {
       console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
-      consume(producerId);
+      consume(producerId, peerId);
+    });
+  };
+
+  const handleExistingProducers = (producers: any[]) => {
+    console.log('Received existing producers:', producers);
+    producers.forEach(({ peerId, producerId, kind }) => {
+      console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
+      consume(producerId, peerId);
     });
   };
 
   const handleNewProducer = ({ peerId, producerId, kind }: any) => {
     console.log(`New producer: ${producerId} (${kind}) from peer: ${peerId}`);
-    consume(producerId);
+    consume(producerId, peerId);
   };
 
-  const consume = (producerId: string) => {
+  const consume = (producerId: string, peerId: string) => {
     if (!recvTransportRef.current || !deviceRef.current) {
       console.error('Cannot consume: transport or device not ready');
       return;
     }
 
-    console.log('Requesting to consume producer:', producerId);
+    console.log(`Requesting to consume producer: ${producerId} from peer: ${peerId}`);
     socketRef.current.emit('consume', {
       transportId: recvTransportRef.current.id,
       producerId,
@@ -491,6 +526,13 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       newPeers.delete(peerId);
       return newPeers;
     });
+    
+    // Clean up remote stream
+    setRemoteStreams(prev => {
+      const newStreams = new Map(prev);
+      newStreams.delete(peerId);
+      return newStreams;
+    });
   };
 
   const handleExistingPeers = (existingPeers: any[]) => {
@@ -509,6 +551,10 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       newConsumers.delete(consumerId);
       return newConsumers;
     });
+  };
+
+  const handleCannotConsume = ({ producerId }: any) => {
+    console.log('Cannot consume producer:', producerId);
   };
 
   const handleError = (error: any) => {
@@ -774,14 +820,15 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
             {Array.from(peers.values()).map((peer) => (
               <div key={peer.id} className="relative glass-panel rounded-lg overflow-hidden">
                 <video
-                  data-peer-id={peer.id}
+                  id={`remote-video-${peer.id}`}
                   autoPlay
                   playsInline
                   className="w-full h-full object-cover"
                 />
                 <audio
-                  data-peer-id={peer.id}
+                  id={`remote-audio-${peer.id}`}
                   autoPlay
+                  playsInline
                 />
                 <div className="absolute bottom-2 left-2 glass-panel px-2 py-1 rounded text-sm">
                   <span className="text-primary font-medium">{peer.displayName}</span>

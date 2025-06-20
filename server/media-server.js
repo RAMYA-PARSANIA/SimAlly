@@ -72,7 +72,6 @@ const mediaCodecs = [
 
 // Global variables
 let worker;
-let router;
 const rooms = new Map();
 const peers = new Map();
 
@@ -91,13 +90,6 @@ async function createWorker() {
   });
 
   return worker;
-}
-
-// Create router
-async function createRouter() {
-  router = await worker.createRouter({ mediaCodecs });
-  console.log('Mediasoup router created');
-  return router;
 }
 
 // Room management
@@ -175,6 +167,35 @@ class Room {
     });
     return peersInfo;
   }
+
+  // NEW: Get all producers in the room
+  getAllProducers() {
+    const producers = [];
+    this.peers.forEach((peer, peerId) => {
+      peer.producers.forEach((producer, producerId) => {
+        producers.push({
+          peerId: peerId,
+          producerId: producerId,
+          kind: producer.kind
+        });
+      });
+    });
+    return producers;
+  }
+
+  // NEW: Notify all peers about a new producer
+  notifyNewProducer(producerPeerId, producerId, kind) {
+    this.peers.forEach((peer, peerId) => {
+      if (peerId !== producerPeerId && peer.joined) {
+        console.log(`Notifying peer ${peerId} about new producer ${producerId} from ${producerPeerId}`);
+        peer.socket.emit('newProducer', {
+          peerId: producerPeerId,
+          producerId: producerId,
+          kind: kind
+        });
+      }
+    });
+  }
 }
 
 // Socket.IO connection handling
@@ -212,7 +233,7 @@ io.on('connection', (socket) => {
 
   socket.on('createWebRtcTransport', async (data) => {
     try {
-      const { direction } = data; // 'send' or 'recv'
+      const { direction } = data;
       const room = rooms.get(socket.roomId);
       const peer = peers.get(socket.id);
 
@@ -220,11 +241,13 @@ io.on('connection', (socket) => {
         throw new Error('Room or peer not found');
       }
 
+      console.log(`Creating ${direction} transport for peer ${socket.id}`);
+
       const transport = await room.router.createWebRtcTransport({
         listenIps: [
           {
             ip: '0.0.0.0',
-            announcedIp: '127.0.0.1', // Replace with your server's public IP in production
+            announcedIp: '127.0.0.1',
           },
         ],
         enableUdp: true,
@@ -246,6 +269,7 @@ io.on('connection', (socket) => {
         iceParameters: transport.iceParameters,
         iceCandidates: transport.iceCandidates,
         dtlsParameters: transport.dtlsParameters,
+        direction: direction
       });
 
     } catch (error) {
@@ -269,7 +293,8 @@ io.on('connection', (socket) => {
       }
 
       await transport.connect({ dtlsParameters });
-      socket.emit('transportConnected');
+      console.log(`Transport ${transportId} connected for peer ${socket.id}`);
+      socket.emit('transportConnected', { transportId });
 
     } catch (error) {
       console.error('Error connecting transport:', error);
@@ -292,6 +317,7 @@ io.on('connection', (socket) => {
         throw new Error('Transport not found');
       }
 
+      console.log(`Peer ${socket.id} producing ${kind}`);
       const producer = await transport.produce({ kind, rtpParameters });
       peer.producers.set(producer.id, producer);
 
@@ -303,23 +329,30 @@ io.on('connection', (socket) => {
       // Mark peer as joined when they start producing
       if (!peer.joined) {
         peer.joined = true;
+        console.log(`Peer ${socket.id} marked as joined`);
         
-        // Notify other peers
+        // Notify other peers about this peer joining
         room.broadcast('peerJoined', {
           peerId: socket.id,
           displayName: peer.displayName
         }, socket.id);
 
         // Send existing peers to new peer
-        socket.emit('existingPeers', room.getPeersInfo());
+        const existingPeers = room.getPeersInfo().filter(p => p.id !== socket.id);
+        socket.emit('existingPeers', existingPeers);
+        console.log(`Sent existing peers to ${socket.id}:`, existingPeers);
+
+        // Send existing producers to new peer
+        const existingProducers = room.getAllProducers().filter(p => p.peerId !== socket.id);
+        if (existingProducers.length > 0) {
+          console.log(`Sending existing producers to ${socket.id}:`, existingProducers);
+          socket.emit('existingProducers', existingProducers);
+        }
       }
 
       // Notify other peers about new producer
-      room.broadcast('newProducer', {
-        peerId: socket.id,
-        producerId: producer.id,
-        kind: producer.kind
-      }, socket.id);
+      console.log(`Broadcasting new producer ${producer.id} (${kind}) from ${socket.id}`);
+      room.notifyNewProducer(socket.id, producer.id, producer.kind);
 
       socket.emit('produced', { id: producer.id });
 
@@ -345,9 +378,12 @@ io.on('connection', (socket) => {
       }
 
       if (!room.router.canConsume({ producerId, rtpCapabilities })) {
-        throw new Error('Cannot consume');
+        console.log(`Cannot consume producer ${producerId} for peer ${socket.id}`);
+        socket.emit('cannotConsume', { producerId });
+        return;
       }
 
+      console.log(`Peer ${socket.id} consuming producer ${producerId}`);
       const consumer = await transport.consume({
         producerId,
         rtpCapabilities,
@@ -374,6 +410,8 @@ io.on('connection', (socket) => {
         rtpParameters: consumer.rtpParameters,
       });
 
+      console.log(`Consumer ${consumer.id} created for peer ${socket.id}`);
+
     } catch (error) {
       console.error('Error consuming:', error);
       socket.emit('error', { message: 'Failed to consume' });
@@ -395,7 +433,8 @@ io.on('connection', (socket) => {
       }
 
       await consumer.resume();
-      socket.emit('consumerResumed');
+      console.log(`Consumer ${consumerId} resumed for peer ${socket.id}`);
+      socket.emit('consumerResumed', { consumerId });
 
     } catch (error) {
       console.error('Error resuming consumer:', error);
@@ -410,19 +449,8 @@ io.on('connection', (socket) => {
         throw new Error('Room not found');
       }
 
-      const producers = [];
-      room.peers.forEach((peer, peerId) => {
-        if (peerId !== socket.id && peer.joined) {
-          peer.producers.forEach((producer, producerId) => {
-            producers.push({
-              peerId: peerId,
-              producerId: producerId,
-              kind: producer.kind
-            });
-          });
-        }
-      });
-
+      const producers = room.getAllProducers().filter(p => p.peerId !== socket.id);
+      console.log(`Sending producers to ${socket.id}:`, producers);
       socket.emit('producers', producers);
 
     } catch (error) {
