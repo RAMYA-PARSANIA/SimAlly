@@ -397,7 +397,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   };
 
   const handleConsumed = async (data: any) => {
-    const { id, producerId, kind, rtpParameters } = data;
+    const { id, producerId, kind, rtpParameters, peerId: explicitPeerId } = data;
     console.log('Consuming:', data);
 
     try {
@@ -405,6 +405,12 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
         console.error('Receive transport not ready');
         return;
       }
+
+      // Force flush debug logs to the window for inspection
+      (window as any).__debug_producerToPeer = Array.from(producerToPeer.entries());
+      (window as any).__debug_peers = Array.from(peers.entries());
+      (window as any).__debug_producers = Array.from(producers.entries());
+      (window as any).__debug_consumed_data = data;
 
       const consumer = await recvTransportRef.current.consume({
         id,
@@ -420,10 +426,14 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
       const stream = new MediaStream([consumer.track]);
 
-      const peerId = findPeerByProducerId(producerId); // Must return correct ID
-
+      // Try to get peerId from data, fallback to mapping
+      let peerId = explicitPeerId;
       if (!peerId) {
-        console.warn('Could not find peerId for producerId:', producerId);
+        peerId = findPeerByProducerId(producerId);
+      }
+      if (!peerId) {
+        // Print a single warning, but now you can inspect the debug info in the browser console
+        console.warn('Could not find peerId for producerId:', producerId, 'Inspect window.__debug_producerToPeer, window.__debug_peers, window.__debug_producers, window.__debug_consumed_data');
         return;
       }
 
@@ -438,7 +448,6 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
         return newStreams;
       });
 
-      // 🕒 Delay to allow <video> elements to be rendered
       setTimeout(() => {
         const videoEl = document.getElementById(`remote-video-${peerId}`) as HTMLVideoElement;
         const audioEl = document.getElementById(`remote-audio-${peerId}`) as HTMLAudioElement;
@@ -472,68 +481,61 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   };
 
 
-  const findPeerByProducerId = (producerId: string): string | null => {
-    // TODO: Map producerId to peerId correctly.
-    // The current implementation just returns the first peer, which is incorrect for multiple peers.
-    // You need to maintain a mapping from producerId to peerId when you receive producer info from the server.
-
-    // Example: Maintain a Map<string, string> (producerId -> peerId)
-    // Add this at the top:
-    // const [producerToPeer, setProducerToPeer] = useState<Map<string, string>>(new Map());
-
-    // When you receive producers (handleProducers, handleExistingProducers, handleNewProducer), update the map:
-    // setProducerToPeer(prev => {
-    //   const map = new Map(prev);
-    //   map.set(producerId, peerId);
-    //   return map;
-    // });
-
-    // Then, here:
-    // return producerToPeer.get(producerId) || null;
-
-    // For now, fallback to the first peer (may be incorrect):
-    const peerIds = Array.from(peers.keys());
-    return peerIds.length > 0 ? peerIds[0] : null;
-  };
-
-  const handleConsumerResumed = (data: any) => {
-    console.log('Consumer resumed:', data.consumerId);
-  };
-
+  // Update producerToPeer mapping when receiving producers
   const handleProducers = (producers: any[]) => {
     console.log('Received existing producers:', producers);
-    // setProducerToPeer(prev => {
-    //   const map = new Map(prev);
-    //   producers.forEach(({ peerId, producerId }) => map.set(producerId, peerId));
-    //   return map;
-    // });
+    // Defensive: If producers is empty, do nothing
+    if (!producers || producers.length === 0) return;
+    setProducerToPeer(prev => {
+      const map = new Map(prev);
+      producers.forEach(({ peerId, producerId }) => {
+        if (peerId && producerId) map.set(producerId, peerId);
+      });
+      return map;
+    });
     producers.forEach(({ peerId, producerId, kind }) => {
-      console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
-      consume(producerId, peerId);
+      if (peerId && producerId) {
+        console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
+        consume(producerId, peerId);
+      }
     });
   };
 
   const handleExistingProducers = (producers: any[]) => {
     console.log('Received existing producers:', producers);
-    // setProducerToPeer(prev => {
-    //   const map = new Map(prev);
-    //   producers.forEach(({ peerId, producerId }) => map.set(producerId, peerId));
-    //   return map;
-    // });
+    if (!producers || producers.length === 0) return;
+    setProducerToPeer(prev => {
+      const map = new Map(prev);
+      producers.forEach(({ peerId, producerId }) => {
+        if (peerId && producerId) map.set(producerId, peerId);
+      });
+      return map;
+    });
     producers.forEach(({ peerId, producerId, kind }) => {
-      console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
-      consume(producerId, peerId);
+      if (peerId && producerId) {
+        console.log(`Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
+        consume(producerId, peerId);
+      }
     });
   };
 
   const handleNewProducer = ({ peerId, producerId, kind }: any) => {
     console.log(`New producer: ${producerId} (${kind}) from peer: ${peerId}`);
-    // setProducerToPeer(prev => {
-    //   const map = new Map(prev);
-    //   map.set(producerId, peerId);
-    //   return map;
-    // });
+    if (!peerId || !producerId) return;
+    setProducerToPeer(prev => {
+      const map = new Map(prev);
+      map.set(producerId, peerId);
+      return map;
+    });
     consume(producerId, peerId);
+  };
+
+  const findPeerByProducerId = (producerId: string): string | null => {
+    return producerToPeer.get(producerId) || null;
+  };
+
+  const handleConsumerResumed = (data: any) => {
+    console.log('Consumer resumed:', data.consumerId);
   };
 
   const consume = (producerId: string, peerId: string) => {
@@ -556,6 +558,13 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       id: peerId, 
       displayName: peerDisplayName 
     })));
+    // Defensive: update mapping for all current producers if possible
+    setProducerToPeer(prev => {
+      const map = new Map(prev);
+      // If you have a way to get all producerIds for this peer, add them here
+      // Example: if (peerProducers[peerId]) peerProducers[peerId].forEach(pid => map.set(pid, peerId));
+      return map;
+    });
   };
 
   const handlePeerLeft = ({ peerId }: any) => {
@@ -788,6 +797,36 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
     return () => clearInterval(interval);
   }, [localStream, isVideoEnabled]);
+
+  // Log all socket events for debugging
+  useEffect(() => {
+    if (!socketRef.current) return;
+    const socket = socketRef.current;
+    const logEvent = (event: string) => (...args: any[]) => {
+      console.log(`[SOCKET EVENT] ${event}:`, ...args);
+    };
+    const events = [
+      'routerRtpCapabilities',
+      'webRtcTransportCreated',
+      'transportConnected',
+      'produced',
+      'consumed',
+      'consumerResumed',
+      'producers',
+      'existingProducers',
+      'newProducer',
+      'peerJoined',
+      'peerLeft',
+      'existingPeers',
+      'consumerClosed',
+      'cannotConsume',
+      'error'
+    ];
+    events.forEach(event => socket.on(event, logEvent(event)));
+    return () => {
+      events.forEach(event => socket.off(event, logEvent(event)));
+    };
+  }, [socketRef.current]);
 
   if (!isConnected) {
     return (
