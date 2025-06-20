@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, Video, MessageSquare, Loader2, User, Bot, Settings, Trash2, Users, Calendar, Plus, UserPlus } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -23,15 +23,6 @@ interface IntentResult {
   response: string;
 }
 
-interface Meeting {
-  id: string;
-  title: string;
-  host: string;
-  participants: number;
-  createdAt: string;
-  aiEnabled: boolean;
-}
-
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -40,11 +31,6 @@ const AssistantPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
-  const [activeMeetings, setActiveMeetings] = useState<Meeting[]>([]);
-  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
-  const [showJoinModal, setShowJoinModal] = useState(false);
-  const [meetingIdToJoin, setMeetingIdToJoin] = useState('');
-  const [isJoiningMeeting, setIsJoiningMeeting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -78,10 +64,9 @@ const AssistantPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history and active meetings on mount
+  // Load chat history on mount
   useEffect(() => {
     loadChatHistory();
-    loadActiveMeetings();
   }, []);
 
   const loadChatHistory = async () => {
@@ -102,21 +87,6 @@ const AssistantPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
-    }
-  };
-
-  const loadActiveMeetings = async () => {
-    try {
-      const response = await fetch(`http://localhost:8001/api/meetings/active?userId=${user?.id}`, {
-        credentials: 'include'
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        setActiveMeetings(data.meetings);
-      }
-    } catch (error) {
-      console.error('Failed to load active meetings:', error);
     }
   };
 
@@ -174,16 +144,6 @@ const AssistantPage: React.FC = () => {
           return await unsubscribeEmail(parameters);
         case 'gmail_compose_help':
           return await getComposeHelp(parameters);
-        case 'meeting_start':
-          return await startMeeting(parameters);
-        case 'meeting_join':
-          return await joinMeeting(parameters);
-        case 'meeting_transcribe':
-          return await toggleTranscription(parameters);
-        case 'meeting_notes':
-          return await getMeetingNotes(parameters);
-        case 'meeting_summary':
-          return await getMeetingSummary(parameters);
         default:
           return null;
       }
@@ -247,67 +207,6 @@ const AssistantPage: React.FC = () => {
         context: params.context,
         tone: params.tone
       })
-    });
-    return await response.json();
-  };
-
-  // Meeting Actions
-  const startMeeting = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/meetings/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        userId: user?.id,
-        title: params.title || 'New Meeting',
-        participants: params.participants || []
-      })
-    });
-    const data = await response.json();
-    if (data.success) {
-      loadActiveMeetings(); // Refresh meetings list
-      // Navigate to meeting room
-      navigate(`/meeting/${data.meetingId}`);
-    }
-    return data;
-  };
-
-  const joinMeeting = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/meetings/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        meetingId: params.meetingId,
-        userId: user?.id
-      })
-    });
-    const data = await response.json();
-    if (data.success) {
-      // Navigate to meeting room
-      navigate(`/meeting/${params.meetingId}`);
-    }
-    return data;
-  };
-
-  const toggleTranscription = async (params: any) => {
-    // This would be handled in the meeting room component
-    return { success: true, message: 'Transcription toggled' };
-  };
-
-  const getMeetingNotes = async (params: any) => {
-    const response = await fetch(`http://localhost:8001/api/meetings/${params.meetingId}/transcript`, {
-      credentials: 'include'
-    });
-    return await response.json();
-  };
-
-  const getMeetingSummary = async (params: any) => {
-    const response = await fetch(`http://localhost:8001/api/meetings/${params.meetingId}/summary`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({})
     });
     return await response.json();
   };
@@ -392,74 +291,6 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const handleStartMeeting = async () => {
-    setIsCreatingMeeting(true);
-    try {
-      const response = await fetch('http://localhost:8001/api/meetings/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          userId: user?.id,
-          title: 'Quick Meeting',
-          participants: []
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        loadActiveMeetings(); // Refresh meetings list
-        navigate(`/meeting/${data.meetingId}`);
-      }
-    } catch (error) {
-      console.error('Failed to create meeting:', error);
-    } finally {
-      setIsCreatingMeeting(false);
-    }
-  };
-
-  const handleJoinMeeting = async () => {
-    if (!meetingIdToJoin.trim()) return;
-
-    setIsJoiningMeeting(true);
-    try {
-      const response = await fetch('http://localhost:8001/api/meetings/join', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          meetingId: meetingIdToJoin.trim(),
-          userId: user?.id
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setShowJoinModal(false);
-        setMeetingIdToJoin('');
-        navigate(`/meeting/${meetingIdToJoin.trim()}`);
-      } else {
-        // Handle error - meeting not found, etc.
-        alert(data.error || 'Failed to join meeting');
-      }
-    } catch (error) {
-      console.error('Failed to join meeting:', error);
-      alert('Failed to join meeting. Please check the meeting ID and try again.');
-    } finally {
-      setIsJoiningMeeting(false);
-    }
-  };
-
-  const copyTranscript = () => {
-    // Implementation for copying transcript
-    console.log('Copy transcript functionality');
-  };
-
-  const downloadNotes = () => {
-    // Implementation for downloading notes
-    console.log('Download notes functionality');
-  };
-
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
       case 'gmail_send':
@@ -468,12 +299,6 @@ const AssistantPage: React.FC = () => {
       case 'gmail_unsubscribe':
       case 'gmail_compose_help':
         return <Mail className="w-4 h-4" />;
-      case 'meeting_start':
-      case 'meeting_join':
-      case 'meeting_transcribe':
-      case 'meeting_notes':
-      case 'meeting_summary':
-        return <Video className="w-4 h-4" />;
       default:
         return <MessageSquare className="w-4 h-4" />;
     }
@@ -487,12 +312,6 @@ const AssistantPage: React.FC = () => {
       case 'gmail_unsubscribe':
       case 'gmail_compose_help':
         return 'text-blue-500';
-      case 'meeting_start':
-      case 'meeting_join':
-      case 'meeting_transcribe':
-      case 'meeting_notes':
-      case 'meeting_summary':
-        return 'text-green-500';
       default:
         return 'text-purple-500';
     }
@@ -518,47 +337,16 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Gmail • Video Meetings • General Assistant
+                  Gmail • General Assistant
                 </p>
               </div>
             </div>
             
             <div className="flex items-center space-x-3">
-              {/* Quick Start Meeting Button */}
-              <Button
-                onClick={handleStartMeeting}
-                disabled={isCreatingMeeting}
-                variant="premium"
-                size="sm"
-                className="flex items-center space-x-2"
-              >
-                {isCreatingMeeting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                <span>Start Meeting</span>
-              </Button>
-
-              {/* Join Meeting Button */}
-              <Button
-                onClick={() => setShowJoinModal(true)}
-                variant="secondary"
-                size="sm"
-                className="flex items-center space-x-2"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Join Meeting</span>
-              </Button>
-
               {/* Status Indicators */}
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
                 <span className="text-xs text-secondary">Gmail</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${activeMeetings.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-xs text-secondary">Meetings</span>
               </div>
               
               <button
@@ -574,77 +362,6 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </header>
-
-      {/* Join Meeting Modal */}
-      {showJoinModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="w-full max-w-md">
-            <GlassCard className="p-6" goldBorder>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold gradient-gold-silver">
-                  Join Meeting
-                </h2>
-                <button
-                  onClick={() => {
-                    setShowJoinModal(false);
-                    setMeetingIdToJoin('');
-                  }}
-                  className="text-secondary hover:text-primary p-1 rounded-lg glass-panel glass-panel-hover"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-primary mb-2">
-                    Meeting ID
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter meeting ID"
-                    value={meetingIdToJoin}
-                    onChange={(e) => setMeetingIdToJoin(e.target.value)}
-                    className="w-full px-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && meetingIdToJoin.trim()) {
-                        handleJoinMeeting();
-                      }
-                    }}
-                    disabled={isJoiningMeeting}
-                  />
-                </div>
-
-                <div className="flex space-x-3">
-                  <Button
-                    onClick={() => {
-                      setShowJoinModal(false);
-                      setMeetingIdToJoin('');
-                    }}
-                    variant="secondary"
-                    className="flex-1"
-                    disabled={isJoiningMeeting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleJoinMeeting}
-                    disabled={!meetingIdToJoin.trim() || isJoiningMeeting}
-                    variant="premium"
-                    className="flex-1"
-                  >
-                    {isJoiningMeeting ? (
-                      <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                    ) : (
-                      'Join Meeting'
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </GlassCard>
-          </div>
-        </div>
-      )}
 
       {/* Main Chat Interface */}
       <main className="flex flex-col h-[calc(100vh-80px)]">
@@ -664,25 +381,17 @@ const AssistantPage: React.FC = () => {
                   Hello! I'm your AI Assistant
                 </h2>
                 <p className="text-secondary mb-8 max-w-2xl mx-auto">
-                  I can help you with Gmail management, video meetings, and answer any questions you have. 
+                  I can help you with Gmail management and answer any questions you have. 
                   Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
                   <GlassCard className="p-4 text-center" hover>
                     <Mail className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Gmail</h3>
                     <p className="text-xs text-secondary">
                       "Send an email to John about the meeting"
-                    </p>
-                  </GlassCard>
-                  
-                  <GlassCard className="p-4 text-center" hover>
-                    <Video className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Meetings</h3>
-                    <p className="text-xs text-secondary">
-                      "Start a meeting with my team"
                     </p>
                   </GlassCard>
                   
@@ -695,67 +404,9 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                 </div>
 
-                {/* Meeting Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8">
-                  <Button
-                    onClick={handleStartMeeting}
-                    disabled={isCreatingMeeting}
-                    variant="premium"
-                    size="lg"
-                    className="inline-flex items-center space-x-2"
-                  >
-                    {isCreatingMeeting ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Video className="w-5 h-5" />
-                    )}
-                    <span>Start Quick Meeting</span>
-                  </Button>
-
-                  <Button
-                    onClick={() => setShowJoinModal(true)}
-                    variant="secondary"
-                    size="lg"
-                    className="inline-flex items-center space-x-2"
-                  >
-                    <UserPlus className="w-5 h-5" />
-                    <span>Join Meeting</span>
-                  </Button>
-                </div>
-
                 <p className="text-xs text-secondary mb-8">
-                  Or just say "Start a meeting" or "Join meeting ABC123" to use voice commands
+                  Ask me anything or use voice commands to get started
                 </p>
-
-                {/* Active Meetings */}
-                {activeMeetings.length > 0 && (
-                  <div className="mb-8">
-                    <h3 className="text-lg font-semibold text-primary mb-4">Active Meetings</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-                      {activeMeetings.map((meeting) => (
-                        <GlassCard 
-                          key={meeting.id} 
-                          className="p-4 text-left cursor-pointer" 
-                          hover
-                          onClick={() => navigate(`/meeting/${meeting.id}`)}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <Users className="w-6 h-6 text-green-500" />
-                            <div className="flex-1">
-                              <h4 className="font-semibold text-primary">{meeting.title}</h4>
-                              <p className="text-xs text-secondary">
-                                {meeting.participants} participants • AI {meeting.aiEnabled ? 'ON' : 'OFF'}
-                              </p>
-                              <p className="text-xs text-secondary mt-1">
-                                ID: {meeting.id}
-                              </p>
-                            </div>
-                          </div>
-                        </GlassCard>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 
                 {!isGmailConnected && (
                   <div className="mt-8">
@@ -867,7 +518,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'Start a meeting with my team', 'Join meeting ABC123')"
+                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'What's the weather?')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
