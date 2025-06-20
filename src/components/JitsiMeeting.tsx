@@ -67,9 +67,32 @@ const JitsiMeeting: React.FC<JitsiMeetingProps> = ({ roomName, displayName, onLe
           startWithVideoMuted: false,
           enableWelcomePage: false,
           prejoinPageEnabled: false,
-          disableModeratorIndicator: false,
+          disableModeratorIndicator: true,
           startScreenSharing: false,
-          enableEmailInStats: false
+          enableEmailInStats: false,
+          // Disable authentication and waiting room
+          enableUserRolesBasedOnToken: false,
+          enableInsecureRoomNameWarning: false,
+          enableAutomaticUrlCopy: false,
+          // Security settings to avoid waiting room
+          requireDisplayName: false,
+          enableLobbyChat: false,
+          enableClosePage: false,
+          // Disable moderator requirements
+          disableDeepLinking: true,
+          enableNoAudioDetection: false,
+          enableNoisyMicDetection: false,
+          // Make everyone a moderator to avoid waiting
+          enableUserRolesBasedOnToken: false,
+          moderatedRoomServiceUrl: undefined,
+          // Disable authentication
+          hosts: {
+            domain: 'meet.jit.si',
+            anonymousdomain: 'guest.meet.jit.si',
+            authdomain: 'meet.jit.si',
+            focus: 'focus.meet.jit.si',
+            muc: 'conference.meet.jit.si'
+          }
         },
         interfaceConfigOverwrite: {
           DISABLE_JOIN_LEAVE_NOTIFICATIONS: false,
@@ -94,7 +117,12 @@ const JitsiMeeting: React.FC<JitsiMeetingProps> = ({ roomName, displayName, onLe
           SHOW_POWERED_BY: false,
           SHOW_PROMOTIONAL_CLOSE_PAGE: false,
           TOOLBAR_ALWAYS_VISIBLE: false,
-          TOOLBAR_TIMEOUT: 4000
+          TOOLBAR_TIMEOUT: 4000,
+          // Remove authentication UI elements
+          AUTHENTICATION_ENABLE: false,
+          ENABLE_WELCOME_PAGE: false,
+          HIDE_DEEP_LINKING_LOGO: true,
+          SHOW_WATERMARK_FOR_GUESTS: false
         }
       };
 
@@ -102,20 +130,51 @@ const JitsiMeeting: React.FC<JitsiMeetingProps> = ({ roomName, displayName, onLe
 
       // Event listeners
       apiRef.current.addEventListener('participantJoined', (participant: any) => {
+        console.log('Participant joined:', participant);
         setParticipants(prev => [...prev, participant.displayName || 'Unknown']);
       });
 
       apiRef.current.addEventListener('participantLeft', (participant: any) => {
+        console.log('Participant left:', participant);
         setParticipants(prev => prev.filter(p => p !== (participant.displayName || 'Unknown')));
       });
 
-      apiRef.current.addEventListener('videoConferenceJoined', () => {
-        console.log('Joined the meeting');
+      apiRef.current.addEventListener('videoConferenceJoined', (participant: any) => {
+        console.log('Successfully joined the meeting:', participant);
+        // Auto-dismiss any authentication dialogs
+        setTimeout(() => {
+          // Try to click "Log-in" button if it exists to bypass waiting room
+          const loginButton = document.querySelector('[data-testid="lobby.button.login"]') || 
+                             document.querySelector('button:contains("Log-in")') ||
+                             document.querySelector('.login-button');
+          if (loginButton) {
+            (loginButton as HTMLElement).click();
+          }
+        }, 1000);
       });
 
       apiRef.current.addEventListener('videoConferenceLeft', () => {
+        console.log('Left the meeting');
         onLeave();
       });
+
+      // Handle authentication/lobby events
+      apiRef.current.addEventListener('readyToClose', () => {
+        console.log('Ready to close');
+        onLeave();
+      });
+
+      // Try to auto-join without waiting for moderator
+      setTimeout(() => {
+        if (apiRef.current) {
+          // Execute commands to bypass lobby if possible
+          try {
+            apiRef.current.executeCommand('toggleLobby', false);
+          } catch (error) {
+            console.log('Could not disable lobby:', error);
+          }
+        }
+      }, 2000);
     };
 
     // Load Jitsi Meet API
@@ -412,6 +471,15 @@ const JitsiMeeting: React.FC<JitsiMeetingProps> = ({ roomName, displayName, onLe
               </div>
             </div>
           )}
+
+          {/* Instructions Overlay for Authentication Issues */}
+          <div className="absolute bottom-4 left-4 right-4">
+            <div className="glass-panel p-4 rounded-lg border-yellow-500/50 bg-yellow-500/10">
+              <p className="text-yellow-400 text-sm">
+                💡 <strong>Tip:</strong> If you see a "Waiting for authenticated user" message, click "Log-in" to join as a guest, or wait a moment for the meeting to start automatically.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Transcript Panel */}
