@@ -40,6 +40,7 @@ const MeetingRoom: React.FC = () => {
   
   // Meeting state
   const [meeting, setMeeting] = useState<any>(null);
+  // Remove initial participants array, start empty
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isHost, setIsHost] = useState(false);
   
@@ -67,6 +68,10 @@ const MeetingRoom: React.FC = () => {
   const peersRef = useRef<{ [id: string]: RTCPeerConnection }>({});
   const socketRef = useRef<any>(null);
 
+  // New state for display name
+  const [displayName, setDisplayName] = useState<string>('');
+  const [showNamePrompt, setShowNamePrompt] = useState(true);
+
   // Initialize meeting
   useEffect(() => {
     initializeMedia();
@@ -75,12 +80,33 @@ const MeetingRoom: React.FC = () => {
     };
   }, []);
 
+  // Ensure local video element always gets the stream
   useEffect(() => {
-    if (meetingId && user?.id && localStream) {
+    // Debug: log refs on every render
+    console.log('localVideoRef.current:', localVideoRef.current, 'localStream:', localStream);
+    if (localVideoRef.current && localStream) {
+      // Debug: log when setting srcObject
+      console.log('Setting local video srcObject', localStream);
+      if (localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
+      }
+      setTimeout(() => {
+        console.log('localVideoRef.current.readyState', localVideoRef.current?.readyState);
+        console.log('localVideoRef.current.srcObject', localVideoRef.current?.srcObject);
+      }, 500);
+    } else {
+      // Debug: log when missing refs/stream
+      console.log('localVideoRef or localStream missing', localVideoRef.current, localStream);
+    }
+  }, [localStream, showNamePrompt]);
+
+  // Only join meeting after displayName is set
+  useEffect(() => {
+    if (meetingId && user?.id && localStream && displayName) {
       joinMeeting();
     }
     // eslint-disable-next-line
-  }, [meetingId, user?.id, localStream]);
+  }, [meetingId, user?.id, localStream, displayName]);
 
   const joinMeeting = async () => {
     try {
@@ -99,11 +125,11 @@ const MeetingRoom: React.FC = () => {
         setMeeting(data.meeting);
         setIsHost(data.meeting.host === user?.id);
         setAiEnabled(data.meeting.aiEnabled);
-        
-        // Add self as participant
+
+        // Use displayName for local participant
         setParticipants([{
           id: user?.id || 'local',
-          name: user?.name || 'You',
+          name: displayName,
           isHost: data.meeting.host === user?.id,
           isMuted: false,
           isVideoOff: false
@@ -114,15 +140,20 @@ const MeetingRoom: React.FC = () => {
         socketRef.current.emit('join-room', meetingId, user.id);
 
         socketRef.current.on('all-users', (users: string[]) => {
+          // Only create peers for other users (not self)
           users.forEach((socketId) => {
-            const peer = createPeer(socketId, true);
-            peersRef.current[socketId] = peer;
+            if (socketId !== socketRef.current.id) {
+              const peer = createPeer(socketId, true);
+              peersRef.current[socketId] = peer;
+            }
           });
         });
 
         socketRef.current.on('user-joined', (socketId: string) => {
-          const peer = createPeer(socketId, false);
-          peersRef.current[socketId] = peer;
+          if (socketId !== socketRef.current.id) {
+            const peer = createPeer(socketId, false);
+            peersRef.current[socketId] = peer;
+          }
         });
 
         socketRef.current.on('signal', async ({ from, signal }) => {
@@ -156,11 +187,13 @@ const MeetingRoom: React.FC = () => {
         video: true,
         audio: true
       });
-      
+      console.log('Got user media stream', stream);
       setLocalStream(stream);
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
+      // Move this assignment to after the display name prompt is closed
+      // if (localVideoRef.current) {
+      //   localVideoRef.current.srcObject = stream;
+      //   console.log('Set localVideoRef.current.srcObject in initializeMedia', stream);
+      // }
     } catch (error) {
       console.error('Failed to get media:', error);
     }
@@ -181,7 +214,7 @@ const MeetingRoom: React.FC = () => {
           .join('');
 
         if (event.results[event.results.length - 1].isFinal) {
-          addTranscriptEntry(transcript, user?.name || 'You');
+          addTranscriptEntry(transcript, displayName || 'You');
         }
       };
 
@@ -317,58 +350,49 @@ const MeetingRoom: React.FC = () => {
     } catch (error) {
       console.error('Failed to end meeting:', error);
     } finally {
-      cleanup();
+      // Clean up media, then navigate
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {}
+        });
+      }
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = null;
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      // Navigate first, then refresh after a short delay
       navigate('/assistant');
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
     }
   };
 
-  const cleanup = () => {
+  const cleanup = async () => {
+    // Debug: cleanup called
+    console.log('cleanup called');
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      for (const track of localStream.getTracks()) {
+        try {
+          track.stop();
+          console.log('cleanup: stopped track', track.kind);
+        } catch (e) {
+          console.warn('Error stopping track', e);
+        }
+      }
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+      console.log('cleanup: cleared localVideoRef.current.srcObject');
     }
     if (recognitionRef.current) {
       recognitionRef.current.stop();
+      console.log('cleanup: stopped recognition');
     }
-  };
-
-  const copyTranscript = () => {
-    const transcriptText = transcript
-      .map(entry => `${entry.speaker}: ${entry.text}`)
-      .join('\n');
-    navigator.clipboard.writeText(transcriptText);
-  };
-
-  const downloadNotes = () => {
-    const content = [
-      `Meeting: ${meeting?.title || 'Untitled Meeting'}`,
-      `Date: ${new Date().toLocaleDateString()}`,
-      `Participants: ${participants.map(p => p.name).join(', ')}`,
-      '',
-      'TRANSCRIPT:',
-      ...transcript.map(entry => `${entry.speaker}: ${entry.text}`),
-      '',
-      'NOTES:',
-      ...notes.map(note => `• ${note.content}`),
-      ''
-    ];
-
-    if (summary) {
-      content.push(
-        'SUMMARY:',
-        `Overview: ${summary.overview}`,
-        `Key Points: ${summary.keyPoints?.join(', ') || 'None'}`,
-        `Action Items: ${summary.actionItems?.join(', ') || 'None'}`,
-        `Next Steps: ${summary.nextSteps?.join(', ') || 'None'}`
-      );
-    }
-
-    const blob = new Blob([content.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `meeting-notes-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   // --- WebRTC Peer Connection helpers ---
@@ -420,6 +444,38 @@ const MeetingRoom: React.FC = () => {
     }
     // eslint-disable-next-line
   }, [aiEnabled, localStream]);
+
+  // Prompt for display name before joining
+  if (showNamePrompt) {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="glass-panel p-8 rounded-xl flex flex-col items-center space-y-4">
+          <h2 className="text-lg font-bold text-primary">Enter your display name</h2>
+          <input
+            className="px-4 py-2 rounded border border-gray-300 focus:outline-none focus:ring w-64 text-black"
+            type="text"
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            placeholder="Your name"
+            maxLength={32}
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Enter' && displayName.trim()) {
+                setShowNamePrompt(false);
+              }
+            }}
+          />
+          <button
+            className="bg-gradient-gold-silver text-white px-6 py-2 rounded font-semibold disabled:opacity-50"
+            disabled={!displayName.trim()}
+            onClick={() => setShowNamePrompt(false)}
+          >
+            Join Meeting
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!meeting) {
     return (
@@ -505,7 +561,7 @@ const MeetingRoom: React.FC = () => {
               />
               <div className="absolute bottom-4 left-4 glass-panel px-3 py-1 rounded-lg">
                 <span className="text-primary text-sm font-medium">
-                  {user?.name || 'You'} {isHost && '(Host)'}
+                  {displayName || 'You'} {isHost && '(Host)'}
                 </span>
               </div>
               {isMuted && (
@@ -570,23 +626,38 @@ const MeetingRoom: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4">
               {activeTab === 'participants' && (
                 <div className="space-y-3">
-                  {participants.map((participant) => (
-                    <div key={participant.id} className="flex items-center space-x-3">
+                  {/* Local user */}
+                  <div key={user?.id || 'local'} className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded-full bg-gradient-gold-silver flex items-center justify-center">
+                      <span className="text-white text-sm font-medium">
+                        {(displayName || 'You').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-primary font-medium">{displayName || 'You'}</p>
+                      <p className="text-xs text-secondary">
+                        {isHost ? 'Host' : 'Participant'}
+                      </p>
+                    </div>
+                    <div className="flex space-x-1">
+                      {isMuted && <MicOff className="w-4 h-4 text-red-400" />}
+                      {isVideoOff && <VideoOff className="w-4 h-4 text-red-400" />}
+                    </div>
+                  </div>
+                  {/* Remote users */}
+                  {Object.keys(remoteStreams).map((id) => (
+                    <div key={id} className="flex items-center space-x-3">
                       <div className="w-8 h-8 rounded-full bg-gradient-gold-silver flex items-center justify-center">
                         <span className="text-white text-sm font-medium">
-                          {participant.name.charAt(0).toUpperCase()}
+                          {/* Just show 'P' for participant, or use id */}
+                          P
                         </span>
                       </div>
                       <div className="flex-1">
-                        <p className="text-primary font-medium">{participant.name}</p>
-                        <p className="text-xs text-secondary">
-                          {participant.isHost ? 'Host' : 'Participant'}
-                        </p>
+                        <p className="text-primary font-medium">Participant</p>
+                        <p className="text-xs text-secondary">Remote</p>
                       </div>
-                      <div className="flex space-x-1">
-                        {participant.isMuted && <MicOff className="w-4 h-4 text-red-400" />}
-                        {participant.isVideoOff && <VideoOff className="w-4 h-4 text-red-400" />}
-                      </div>
+                      {/* No mute/video info for remote (unless you track it) */}
                     </div>
                   ))}
                 </div>
