@@ -344,8 +344,9 @@ io.on('connection', (socket) => {
 
         // Send existing producers to new peer
         const existingProducers = room.getAllProducers().filter(p => p.peerId !== socket.id);
+        // --- ADD DEBUG LOG ---
+        console.log(`[SERVER] existingProducers for ${socket.id}:`, existingProducers);
         if (existingProducers.length > 0) {
-          console.log(`Sending existing producers to ${socket.id}:`, existingProducers);
           socket.emit('existingProducers', existingProducers);
         }
       }
@@ -383,7 +384,9 @@ io.on('connection', (socket) => {
         return;
       }
 
-      console.log(`Peer ${socket.id} consuming producer ${producerId}`);
+      // --- ADD DEBUG LOG ---
+      console.log(`[SERVER] consume request: peer=${socket.id} producerId=${producerId}`);
+
       const consumer = await transport.consume({
         producerId,
         rtpCapabilities,
@@ -403,11 +406,18 @@ io.on('connection', (socket) => {
         socket.emit('consumerClosed', { consumerId: consumer.id });
       });
 
+      // --- ADD DEBUG LOG ---
+      console.log(`[SERVER] sending consumed: consumerId=${consumer.id} producerId=${producerId} kind=${consumer.kind} to peer=${socket.id}`);
+
       socket.emit('consumed', {
         id: consumer.id,
         producerId: producerId,
         kind: consumer.kind,
         rtpParameters: consumer.rtpParameters,
+        // ADD peerId for mapping on client
+        peerId: Array.from(room.peers.entries()).find(([pid, p]) =>
+          p.producers.has(producerId)
+        )?.[0] || null
       });
 
       console.log(`Consumer ${consumer.id} created for peer ${socket.id}`);
