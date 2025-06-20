@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import MeetingControls from '../components/MeetingControls';
-import JitsiMeeting from '../components/JitsiMeeting';
+import MediasoupMeeting from '../components/MediasoupMeeting';
 import GlassCard from '../components/ui/GlassCard';
 
 const MeetingPage: React.FC = () => {
@@ -35,7 +35,7 @@ const MeetingPage: React.FC = () => {
   // If in a meeting, show the meeting interface
   if (currentMeeting) {
     return (
-      <JitsiMeeting
+      <MediasoupMeeting
         roomName={currentMeeting.roomName}
         displayName={currentMeeting.displayName}
         onLeave={handleLeaveMeeting}
@@ -64,7 +64,7 @@ const MeetingPage: React.FC = () => {
                   Video Meetings
                 </h1>
                 <p className="text-xs text-secondary">
-                  Powered by Jitsi Meet + AI Assistant
+                  Powered by Mediasoup + AI Assistant
                 </p>
               </div>
             </div>
@@ -95,7 +95,7 @@ const MeetingPage: React.FC = () => {
               className="text-lg text-secondary max-w-2xl mx-auto mb-8"
             >
               Professional video conferencing with AI-powered transcription, note-taking, and meeting summaries. 
-              Everything you need for productive meetings.
+              Built with Mediasoup for superior performance and reliability.
             </motion.p>
 
             {/* Features Grid */}
@@ -229,6 +229,52 @@ const MeetingPage: React.FC = () => {
                   </div>
                   <h3 className="font-bold text-primary mb-2">{step.title}</h3>
                   <p className="text-secondary text-sm">{step.description}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {/* Technical Advantages */}
+          <div className="mt-20">
+            <div className="text-center mb-12">
+              <motion.h2
+                initial={{ y: 30, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="text-3xl font-bold gradient-gold-silver mb-4"
+              >
+                Why Mediasoup?
+              </motion.h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+              {[
+                {
+                  title: 'Superior Performance',
+                  description: 'Low latency, high quality video with adaptive bitrate streaming'
+                },
+                {
+                  title: 'Scalable Architecture',
+                  description: 'Handle hundreds of participants with efficient resource usage'
+                },
+                {
+                  title: 'Full Control',
+                  description: 'Complete customization and control over your meeting experience'
+                },
+                {
+                  title: 'Open Source',
+                  description: 'Free, transparent, and continuously improved by the community'
+                }
+              ].map((advantage, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ y: 30, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.5 + index * 0.1 }}
+                >
+                  <GlassCard className="p-6" hover>
+                    <h3 className="font-bold text-primary mb-3">{advantage.title}</h3>
+                    <p className="text-secondary text-sm">{advantage.description}</p>
+                  </GlassCard>
                 </motion.div>
               ))}
             </div>

@@ -8,8 +8,9 @@
     "dev": "nodemon app.js",
     "start:ai": "node ai-assistant.js",
     "dev:ai": "nodemon ai-assistant.js",
-    "dev:signaling": "nodemon signaling.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:signaling\""
+    "start:media": "node media-server.js",
+    "dev:media": "nodemon media-server.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:media\""
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.56.0",
@@ -19,8 +20,10 @@
     "express": "^4.18.2",
     "google-auth-library": "^9.15.1",
     "googleapis": "^126.0.1",
+    "mediasoup": "^3.13.24",
     "node-fetch": "^2.7.0",
     "simple-peer": "^9.11.1",
+    "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
@@ -34,7 +37,7 @@
     "tavus",
     "gemini",
     "gmail",
-    "zoom"
+    "mediasoup"
   ],
   "author": "SimAlly Team",
   "license": "MIT"
