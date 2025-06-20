@@ -1,20 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import MeetingControls from '../components/MeetingControls';
 import MediasoupMeeting from '../components/MediasoupMeeting';
 import GlassCard from '../components/ui/GlassCard';
+import Button from '../components/ui/Button';
 
 const MeetingPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [currentMeeting, setCurrentMeeting] = useState<{
     roomName: string;
     displayName: string;
   } | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Check for room parameter in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const roomFromUrl = urlParams.get('room');
+    if (roomFromUrl && !currentMeeting) {
+      // Auto-open join modal if room is in URL
+      // This will be handled by MeetingControls component
+    }
+  }, [location.search, currentMeeting]);
 
   const handleBack = () => {
     navigate('/dashboard');
@@ -22,24 +36,166 @@ const MeetingPage: React.FC = () => {
 
   const handleStartMeeting = (roomName: string, displayName: string) => {
     setCurrentMeeting({ roomName, displayName });
+    // Update URL to include room parameter
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
+    window.history.replaceState({}, '', newUrl);
   };
 
   const handleJoinMeeting = (roomName: string, displayName: string) => {
     setCurrentMeeting({ roomName, displayName });
+    // Update URL to include room parameter
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
+    window.history.replaceState({}, '', newUrl);
   };
 
   const handleLeaveMeeting = () => {
     setCurrentMeeting(null);
+    // Remove room parameter from URL
+    window.history.replaceState({}, '', window.location.pathname);
   };
 
-  // If in a meeting, show the meeting interface
+  const copyMeetingLink = async () => {
+    if (currentMeeting) {
+      const meetingLink = `${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`;
+      try {
+        await navigator.clipboard.writeText(meetingLink);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy meeting link:', error);
+      }
+    }
+  };
+
+  const shareViaEmail = () => {
+    if (!currentMeeting) return;
+    
+    const subject = encodeURIComponent(`Join my video meeting: ${currentMeeting.roomName}`);
+    const body = encodeURIComponent(`Hi! 
+
+I'd like to invite you to join my video meeting.
+
+Meeting Room: ${currentMeeting.roomName}
+Meeting Link: ${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}
+
+To join:
+1. Click the link above or go to ${window.location.origin}/meetings
+2. Click "Join Meeting"
+3. Enter the room name: ${currentMeeting.roomName}
+4. Enter your name and join!
+
+See you there!`);
+    
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+  };
+
+  // If in a meeting, show the meeting interface with invite options
   if (currentMeeting) {
     return (
-      <MediasoupMeeting
-        roomName={currentMeeting.roomName}
-        displayName={currentMeeting.displayName}
-        onLeave={handleLeaveMeeting}
-      />
+      <div className="min-h-screen bg-primary">
+        {/* Meeting Header with Invite Button */}
+        <div className="absolute top-4 right-4 z-50">
+          <Button
+            onClick={() => setShowInviteModal(true)}
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>Invite Others</span>
+          </Button>
+        </div>
+
+        <MediasoupMeeting
+          roomName={currentMeeting.roomName}
+          displayName={currentMeeting.displayName}
+          onLeave={handleLeaveMeeting}
+        />
+
+        {/* Invite Modal */}
+        {showInviteModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-full max-w-md"
+            >
+              <GlassCard className="p-8" goldBorder>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold gradient-gold-silver">Invite Others</h2>
+                  <button
+                    onClick={() => setShowInviteModal(false)}
+                    className="text-secondary hover:text-primary"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Room Name
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={currentMeeting.roomName}
+                        readOnly
+                        className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10"
+                      />
+                      <Button
+                        onClick={() => navigator.clipboard.writeText(currentMeeting.roomName)}
+                        variant="ghost"
+                        size="sm"
+                        className="px-3"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Meeting Link
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={`${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`}
+                        readOnly
+                        className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10 text-sm"
+                      />
+                      <Button
+                        onClick={copyMeetingLink}
+                        variant="ghost"
+                        size="sm"
+                        className="px-3"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      onClick={shareViaEmail}
+                      variant="secondary"
+                      className="w-full justify-start"
+                    >
+                      <Share2 className="w-4 h-4 mr-2" />
+                      Share via Email
+                    </Button>
+                  </div>
+
+                  <div className="text-xs text-secondary">
+                    Share the room name or link with others so they can join your meeting.
+                  </div>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -208,13 +364,13 @@ const MeetingPage: React.FC = () => {
                 },
                 {
                   step: '2',
-                  title: 'Enable AI',
-                  description: 'Turn on the AI assistant to start transcription and notes'
+                  title: 'Invite Others',
+                  description: 'Share the room name or meeting link with participants'
                 },
                 {
                   step: '3',
-                  title: 'Get Insights',
-                  description: 'Download transcripts, notes, and AI-generated summaries'
+                  title: 'Enable AI',
+                  description: 'Turn on the AI assistant for transcription and smart features'
                 }
               ].map((step, index) => (
                 <motion.div

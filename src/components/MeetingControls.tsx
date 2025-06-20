@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Video, Users, Plus, LogIn, ArrowRight, Copy, Check } from 'lucide-react';
+import { Video, Users, Plus, LogIn, ArrowRight, Copy, Check, Share2, QrCode, Link } from 'lucide-react';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -16,6 +16,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
   const [roomName, setRoomName] = useState('');
   const [generatedRoom, setGeneratedRoom] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
 
   const generateRoomName = () => {
     const adjectives = ['swift', 'bright', 'clever', 'dynamic', 'focused', 'creative', 'efficient', 'innovative'];
@@ -37,6 +38,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
       setShowStartModal(false);
       setDisplayName('');
       setGeneratedRoom('');
+      setShowShareOptions(false);
     }
   };
 
@@ -61,10 +63,58 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
     }
   };
 
+  const copyMeetingLink = async () => {
+    if (generatedRoom) {
+      const meetingLink = `${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}`;
+      try {
+        await navigator.clipboard.writeText(meetingLink);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy meeting link:', error);
+      }
+    }
+  };
+
+  const shareViaEmail = () => {
+    const subject = encodeURIComponent(`Join my video meeting: ${generatedRoom}`);
+    const body = encodeURIComponent(`Hi! 
+
+I'd like to invite you to join my video meeting.
+
+Meeting Room: ${generatedRoom}
+Meeting Link: ${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}
+
+To join:
+1. Click the link above or go to ${window.location.origin}/meetings
+2. Click "Join Meeting"
+3. Enter the room name: ${generatedRoom}
+4. Enter your name and join!
+
+See you there!`);
+    
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+  };
+
+  const shareViaSMS = () => {
+    const message = encodeURIComponent(`Join my video meeting! Room: ${generatedRoom} Link: ${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}`);
+    window.open(`sms:?body=${message}`);
+  };
+
   const openStartModal = () => {
     setGeneratedRoom(generateRoomName());
     setShowStartModal(true);
   };
+
+  // Check for room parameter in URL
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = urlParams.get('room');
+    if (roomFromUrl) {
+      setRoomName(roomFromUrl);
+      setShowJoinModal(true);
+    }
+  }, []);
 
   return (
     <>
@@ -173,9 +223,66 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
                   </p>
                 </div>
 
+                {/* Share Options */}
+                {generatedRoom && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-sm font-medium text-primary">
+                        Invite Others
+                      </label>
+                      <Button
+                        onClick={() => setShowShareOptions(!showShareOptions)}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    
+                    {showShareOptions && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        className="space-y-2"
+                      >
+                        <Button
+                          onClick={copyMeetingLink}
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start"
+                        >
+                          <Link className="w-4 h-4 mr-2" />
+                          Copy Meeting Link
+                        </Button>
+                        <Button
+                          onClick={shareViaEmail}
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start"
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Share via Email
+                        </Button>
+                        <Button
+                          onClick={shareViaSMS}
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start"
+                        >
+                          <Share2 className="w-4 h-4 mr-2" />
+                          Share via SMS
+                        </Button>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex space-x-4">
                   <Button
-                    onClick={() => setShowStartModal(false)}
+                    onClick={() => {
+                      setShowStartModal(false);
+                      setShowShareOptions(false);
+                    }}
                     variant="secondary"
                     className="flex-1"
                   >
@@ -234,6 +341,9 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
                     placeholder="Enter room name to join"
                     className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                   />
+                  <p className="text-xs text-secondary mt-1">
+                    Ask the meeting host for the room name
+                  </p>
                 </div>
 
                 <div className="flex space-x-4">
@@ -259,6 +369,47 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
           </motion.div>
         </div>
       )}
+
+      {/* How to Share Instructions */}
+      <div className="mt-16 max-w-4xl mx-auto">
+        <GlassCard className="p-8">
+          <h3 className="text-xl font-bold gradient-gold-silver mb-6 text-center">
+            How to Invite Others to Your Meeting
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center mx-auto mb-4">
+                <span className="text-white font-bold">1</span>
+              </div>
+              <h4 className="font-bold text-primary mb-2">Share Room Name</h4>
+              <p className="text-secondary text-sm">
+                Copy the room name and send it via text, email, or chat
+              </p>
+            </div>
+            
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-4">
+                <span className="text-white font-bold">2</span>
+              </div>
+              <h4 className="font-bold text-primary mb-2">Send Meeting Link</h4>
+              <p className="text-secondary text-sm">
+                Share the direct link that automatically fills in the room name
+              </p>
+            </div>
+            
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-pink-500 to-red-500 flex items-center justify-center mx-auto mb-4">
+                <span className="text-white font-bold">3</span>
+              </div>
+              <h4 className="font-bold text-primary mb-2">They Join</h4>
+              <p className="text-secondary text-sm">
+                Others click "Join Meeting" and enter the room name
+              </p>
+            </div>
+          </div>
+        </GlassCard>
+      </div>
     </>
   );
 };
