@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2 } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -12,15 +12,51 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  intent?: string;
-  action?: any;
+  agent?: AgentResponse;
 }
 
-interface IntentResult {
+interface AgentResponse {
   intent: string;
+  subIntent: string;
   confidence: number;
-  parameters: any;
+  requiresData: boolean;
+  dataQueries?: string[];
+  actions: AgentAction[];
   response: string;
+  suggestions: AgentSuggestion[];
+  data?: any;
+  analysis?: {
+    insights: Insight[];
+    recommendations: Recommendation[];
+    enhancedResponse: string;
+  };
+}
+
+interface AgentAction {
+  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion';
+  target: string;
+  parameters: any;
+}
+
+interface AgentSuggestion {
+  title: string;
+  description: string;
+  action: string;
+  parameters: any;
+}
+
+interface Insight {
+  type: string;
+  title: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+interface Recommendation {
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high';
+  action: string;
 }
 
 const AssistantPage: React.FC = () => {
@@ -104,9 +140,9 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const detectIntent = async (userMessage: string): Promise<IntentResult> => {
+  const processWithAgent = async (userMessage: string): Promise<AgentResponse> => {
     try {
-      const response = await fetch('http://localhost:8001/api/chat/detect-intent', {
+      const response = await fetch('http://localhost:8001/api/chat/agent-process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -114,101 +150,28 @@ const AssistantPage: React.FC = () => {
         credentials: 'include',
         body: JSON.stringify({
           message: userMessage,
-          userId: user?.id
+          userId: user?.id,
+          context: {
+            currentPage: 'assistant',
+            timestamp: new Date().toISOString()
+          }
         })
       });
 
       const data = await response.json();
-      return data;
+      return data.success ? data.agent : null;
     } catch (error) {
-      console.error('Intent detection failed:', error);
+      console.error('Agent processing failed:', error);
       return {
-        intent: 'chat',
-        confidence: 1.0,
-        parameters: {},
-        response: 'I apologize, but I encountered an error. Please try again.'
+        intent: 'general_assistance',
+        subIntent: 'error',
+        confidence: 0.5,
+        requiresData: false,
+        actions: [],
+        response: 'I apologize, but I encountered an error processing your request. Please try again.',
+        suggestions: []
       };
     }
-  };
-
-  const executeAction = async (intent: string, parameters: any): Promise<any> => {
-    try {
-      switch (intent) {
-        case 'gmail_send':
-          return await sendEmail(parameters);
-        case 'gmail_read':
-          return await getEmails(parameters);
-        case 'gmail_delete':
-          return await deleteEmail(parameters);
-        case 'gmail_unsubscribe':
-          return await unsubscribeEmail(parameters);
-        case 'gmail_compose_help':
-          return await getComposeHelp(parameters);
-        default:
-          return null;
-      }
-    } catch (error) {
-      console.error('Action execution failed:', error);
-      return { error: 'Failed to execute action' };
-    }
-  };
-
-  // Gmail Actions
-  const sendEmail = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/gmail/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        userId: user?.id,
-        to: params.to,
-        subject: params.subject,
-        body: params.body
-      })
-    });
-    return await response.json();
-  };
-
-  const getEmails = async (params: any) => {
-    const response = await fetch(`http://localhost:8001/api/gmail/messages?userId=${user?.id}&maxResults=${params.count || 5}`, {
-      credentials: 'include'
-    });
-    return await response.json();
-  };
-
-  const deleteEmail = async (params: any) => {
-    const response = await fetch(`http://localhost:8001/api/gmail/messages/${params.messageId}?userId=${user?.id}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    });
-    return await response.json();
-  };
-
-  const unsubscribeEmail = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/gmail/unsubscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        userId: user?.id,
-        messageId: params.messageId
-      })
-    });
-    return await response.json();
-  };
-
-  const getComposeHelp = async (params: any) => {
-    const response = await fetch('http://localhost:8001/api/gmail/compose-help', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        prompt: params.prompt,
-        context: params.context,
-        tone: params.tone
-      })
-    });
-    return await response.json();
   };
 
   const handleSendMessage = async () => {
@@ -226,23 +189,16 @@ const AssistantPage: React.FC = () => {
     setIsProcessing(true);
 
     try {
-      // Detect intent and get AI response
-      const intentResult = await detectIntent(userMessage.content);
+      // Process with enhanced agent
+      const agentResponse = await processWithAgent(userMessage.content);
       
-      // Execute action if needed
-      let actionResult = null;
-      if (intentResult.intent !== 'chat') {
-        actionResult = await executeAction(intentResult.intent, intentResult.parameters);
-      }
-
       // Create assistant response
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: intentResult.response,
+        content: agentResponse.analysis?.enhancedResponse || agentResponse.response,
         timestamp: new Date(),
-        intent: intentResult.intent,
-        action: actionResult
+        agent: agentResponse
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -257,6 +213,25 @@ const AssistantPage: React.FC = () => {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: AgentSuggestion) => {
+    switch (suggestion.action) {
+      case 'navigate':
+        if (suggestion.parameters.target === 'meeting') {
+          navigate('/meetings');
+        } else if (suggestion.parameters.target === 'tasks') {
+          navigate('/workspace');
+        } else if (suggestion.parameters.target === 'calendar') {
+          navigate('/workspace');
+        }
+        break;
+      case 'message':
+        setMessage(suggestion.parameters.message || suggestion.title);
+        break;
+      default:
+        console.log('Suggestion clicked:', suggestion);
     }
   };
 
@@ -293,12 +268,16 @@ const AssistantPage: React.FC = () => {
 
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
-      case 'gmail_send':
-      case 'gmail_read':
-      case 'gmail_delete':
-      case 'gmail_unsubscribe':
-      case 'gmail_compose_help':
+      case 'task_management':
+        return <CheckSquare className="w-4 h-4" />;
+      case 'calendar_management':
+        return <Calendar className="w-4 h-4" />;
+      case 'meeting_control':
+        return <Video className="w-4 h-4" />;
+      case 'gmail_operations':
         return <Mail className="w-4 h-4" />;
+      case 'productivity_analysis':
+        return <BarChart3 className="w-4 h-4" />;
       default:
         return <MessageSquare className="w-4 h-4" />;
     }
@@ -306,14 +285,44 @@ const AssistantPage: React.FC = () => {
 
   const getIntentColor = (intent?: string) => {
     switch (intent) {
-      case 'gmail_send':
-      case 'gmail_read':
-      case 'gmail_delete':
-      case 'gmail_unsubscribe':
-      case 'gmail_compose_help':
+      case 'task_management':
         return 'text-blue-500';
-      default:
+      case 'calendar_management':
+        return 'text-green-500';
+      case 'meeting_control':
         return 'text-purple-500';
+      case 'gmail_operations':
+        return 'text-red-500';
+      case 'productivity_analysis':
+        return 'text-yellow-500';
+      default:
+        return 'text-gray-500';
+    }
+  };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'high':
+        return 'text-red-500 bg-red-500/10 border-red-500/30';
+      case 'medium':
+        return 'text-yellow-500 bg-yellow-500/10 border-yellow-500/30';
+      case 'low':
+        return 'text-green-500 bg-green-500/10 border-green-500/30';
+      default:
+        return 'text-gray-500 bg-gray-500/10 border-gray-500/30';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return 'text-red-500';
+      case 'medium':
+        return 'text-yellow-500';
+      case 'low':
+        return 'text-green-500';
+      default:
+        return 'text-gray-500';
     }
   };
 
@@ -334,19 +343,25 @@ const AssistantPage: React.FC = () => {
               </motion.button>
               <div>
                 <h1 className="text-lg font-bold gradient-gold-silver">
-                  AI Assistant
+                  AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Gmail • General Assistant
+                  Advanced Intelligence • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
             
             <div className="flex items-center space-x-3">
               {/* Status Indicators */}
-              <div className="flex items-center space-x-2">
-                <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="text-xs text-secondary">Gmail</span>
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="text-xs text-secondary">Agent Active</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
+                  <span className="text-xs text-secondary">Gmail</span>
+                </div>
               </div>
               
               <button
@@ -367,7 +382,7 @@ const AssistantPage: React.FC = () => {
       <main className="flex flex-col h-[calc(100vh-80px)]">
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             {messages.length === 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -378,34 +393,42 @@ const AssistantPage: React.FC = () => {
                   <Bot className="w-10 h-10 text-white" />
                 </div>
                 <h2 className="text-2xl font-bold gradient-gold-silver mb-4">
-                  Hello! I'm your AI Assistant
+                  Hello! I'm your Advanced AI Agent
                 </h2>
-                <p className="text-secondary mb-8 max-w-2xl mx-auto">
-                  I can help you with Gmail management and answer any questions you have. 
-                  Just tell me what you need in natural language!
+                <p className="text-secondary mb-8 max-w-3xl mx-auto">
+                  I can analyze your data, provide insights, manage your tasks and calendar, control meetings, 
+                  handle Gmail operations, and much more. Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-8">
                   <GlassCard className="p-4 text-center" hover>
-                    <Mail className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Gmail</h3>
+                    <CheckSquare className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Task Management</h3>
                     <p className="text-xs text-secondary">
-                      "Send an email to John about the meeting"
+                      "What tasks do I need to do today?"
                     </p>
                   </GlassCard>
                   
                   <GlassCard className="p-4 text-center" hover>
-                    <MessageSquare className="w-8 h-8 text-purple-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Chat</h3>
+                    <BarChart3 className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Productivity Analysis</h3>
                     <p className="text-xs text-secondary">
-                      "What's the weather like today?"
+                      "How productive was I this week?"
+                    </p>
+                  </GlassCard>
+
+                  <GlassCard className="p-4 text-center" hover>
+                    <Video className="w-8 h-8 text-purple-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Meeting Control</h3>
+                    <p className="text-xs text-secondary">
+                      "Start a new meeting"
                     </p>
                   </GlassCard>
                 </div>
 
                 <p className="text-xs text-secondary mb-8">
-                  Ask me anything or use voice commands to get started
+                  I can access your tasks, calendar, and workspace data to provide personalized insights
                 </p>
                 
                 {!isGmailConnected && (
@@ -430,9 +453,9 @@ const AssistantPage: React.FC = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-6`}
                 >
-                  <div className={`flex items-start space-x-3 max-w-3xl ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                  <div className={`flex items-start space-x-3 max-w-4xl ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
                     {/* Avatar */}
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       msg.role === 'user' 
@@ -453,31 +476,150 @@ const AssistantPage: React.FC = () => {
                         : 'border-gold-border'
                     }`}>
                       {/* Intent indicator for assistant messages */}
-                      {msg.role === 'assistant' && msg.intent && msg.intent !== 'chat' && (
-                        <div className={`flex items-center space-x-2 mb-2 text-xs ${getIntentColor(msg.intent)}`}>
-                          {getIntentIcon(msg.intent)}
+                      {msg.role === 'assistant' && msg.agent && (
+                        <div className={`flex items-center space-x-2 mb-3 text-xs ${getIntentColor(msg.agent.intent)}`}>
+                          {getIntentIcon(msg.agent.intent)}
                           <span className="font-medium capitalize">
-                            {msg.intent.replace('_', ' ')}
+                            {msg.agent.intent.replace('_', ' ')} • {(msg.agent.confidence * 100).toFixed(0)}% confidence
                           </span>
                         </div>
                       )}
                       
-                      <p className="text-primary whitespace-pre-wrap">{msg.content}</p>
-                      
-                      {/* Action results */}
-                      {msg.action && msg.action.success && (
-                        <div className="mt-3 p-3 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
-                          <p className="text-green-400 text-sm font-medium">✓ Action completed successfully</p>
+                      <p className="text-primary whitespace-pre-wrap mb-3">{msg.content}</p>
+
+                      {/* Data Display */}
+                      {msg.agent?.data && (
+                        <div className="mt-4 space-y-4">
+                          {/* Tasks Data */}
+                          {msg.agent.data.tasks && msg.agent.data.tasks.length > 0 && (
+                            <div className="glass-panel p-4 rounded-lg">
+                              <h4 className="font-semibold text-primary mb-3 flex items-center">
+                                <CheckSquare className="w-4 h-4 mr-2" />
+                                Your Tasks ({msg.agent.data.tasks.length})
+                              </h4>
+                              <div className="space-y-2 max-h-40 overflow-y-auto">
+                                {msg.agent.data.tasks.slice(0, 5).map((task: any) => (
+                                  <div key={task.id} className="flex items-center justify-between p-2 glass-panel rounded">
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium text-primary">{task.title}</p>
+                                      <p className="text-xs text-secondary">
+                                        {task.status} • {task.priority} priority
+                                        {task.due_date && ` • Due: ${new Date(task.due_date).toLocaleDateString()}`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                                {msg.agent.data.tasks.length > 5 && (
+                                  <p className="text-xs text-secondary text-center">
+                                    +{msg.agent.data.tasks.length - 5} more tasks
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Productivity Data */}
+                          {msg.agent.data.productivity && (
+                            <div className="glass-panel p-4 rounded-lg">
+                              <h4 className="font-semibold text-primary mb-3 flex items-center">
+                                <BarChart3 className="w-4 h-4 mr-2" />
+                                Productivity Overview
+                              </h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold gradient-gold-silver">
+                                    {msg.agent.data.productivity.tasks.completionRate}%
+                                  </div>
+                                  <div className="text-xs text-secondary">Completion Rate</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold text-blue-500">
+                                    {msg.agent.data.productivity.tasks.inProgress}
+                                  </div>
+                                  <div className="text-xs text-secondary">In Progress</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold text-red-500">
+                                    {msg.agent.data.productivity.tasks.overdue}
+                                  </div>
+                                  <div className="text-xs text-secondary">Overdue</div>
+                                </div>
+                                <div className="text-center">
+                                  <div className="text-2xl font-bold text-green-500">
+                                    {msg.agent.data.productivity.calendar.todayEvents}
+                                  </div>
+                                  <div className="text-xs text-secondary">Today's Events</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Insights */}
+                      {msg.agent?.analysis?.insights && msg.agent.analysis.insights.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-semibold text-primary mb-3 flex items-center">
+                            <TrendingUp className="w-4 h-4 mr-2" />
+                            Key Insights
+                          </h4>
+                          <div className="space-y-2">
+                            {msg.agent.analysis.insights.map((insight, index) => (
+                              <div key={index} className={`p-3 rounded-lg border ${getSeverityColor(insight.severity)}`}>
+                                <div className="font-medium text-sm">{insight.title}</div>
+                                <div className="text-xs mt-1">{insight.description}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Recommendations */}
+                      {msg.agent?.analysis?.recommendations && msg.agent.analysis.recommendations.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-semibold text-primary mb-3 flex items-center">
+                            <Target className="w-4 h-4 mr-2" />
+                            Recommendations
+                          </h4>
+                          <div className="space-y-2">
+                            {msg.agent.analysis.recommendations.map((rec, index) => (
+                              <div key={index} className="p-3 glass-panel rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <div className="font-medium text-sm text-primary">{rec.title}</div>
+                                  <div className={`text-xs px-2 py-1 rounded ${getPriorityColor(rec.priority)}`}>
+                                    {rec.priority}
+                                  </div>
+                                </div>
+                                <div className="text-xs text-secondary mt-1">{rec.description}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Suggestions */}
+                      {msg.agent?.suggestions && msg.agent.suggestions.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-semibold text-primary mb-3 flex items-center">
+                            <Zap className="w-4 h-4 mr-2" />
+                            Quick Actions
+                          </h4>
+                          <div className="flex flex-wrap gap-2">
+                            {msg.agent.suggestions.map((suggestion, index) => (
+                              <button
+                                key={index}
+                                onClick={() => handleSuggestionClick(suggestion)}
+                                className="glass-panel px-3 py-2 rounded-lg glass-panel-hover text-sm flex items-center space-x-2"
+                              >
+                                <span>{suggestion.title}</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                       
-                      {msg.action && msg.action.error && (
-                        <div className="mt-3 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
-                          <p className="text-red-400 text-sm font-medium">✗ {msg.action.error}</p>
-                        </div>
-                      )}
-                      
-                      <div className="text-xs text-secondary mt-2">
+                      <div className="text-xs text-secondary mt-3">
                         {msg.timestamp.toLocaleTimeString()}
                       </div>
                     </div>
@@ -492,14 +634,14 @@ const AssistantPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex justify-start mb-4"
               >
-                <div className="flex items-start space-x-3 max-w-3xl">
+                <div className="flex items-start space-x-3 max-w-4xl">
                   <div className="w-8 h-8 rounded-full bg-gradient-gold-silver flex items-center justify-center flex-shrink-0">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
                   <div className="glass-panel rounded-2xl p-4 border-gold-border">
                     <div className="flex items-center space-x-2">
                       <Loader2 className="w-4 h-4 animate-spin text-secondary" />
-                      <span className="text-secondary">Thinking...</span>
+                      <span className="text-secondary">Analyzing your request...</span>
                     </div>
                   </div>
                 </div>
@@ -512,13 +654,13 @@ const AssistantPage: React.FC = () => {
 
         {/* Input Area */}
         <div className="glass-panel border-t silver-border p-6">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <div className="flex items-end space-x-4">
               <div className="flex-1">
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you need... (e.g., 'Send an email to John', 'What's the weather?')"
+                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Start a meeting', 'How productive was I this week?')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -528,6 +670,14 @@ const AssistantPage: React.FC = () => {
                   }}
                   disabled={isProcessing}
                 />
+                <div className="flex items-center justify-between mt-2">
+                  <div className="text-xs text-secondary">
+                    I can analyze your data, manage tasks, control meetings, and much more
+                  </div>
+                  <div className="text-xs text-secondary">
+                    Enter to send • Shift+Enter for new line
+                  </div>
+                </div>
               </div>
               
               <div className="flex items-center space-x-2">

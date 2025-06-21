@@ -18,7 +18,7 @@ app.use(express.json());
 
 // Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 
 // Gmail OAuth2 setup
 const oauth2Client = new OAuth2Client(
@@ -31,7 +31,355 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
-// CHAT MESSAGE PROCESSING FOR TASK DETECTION
+// ENHANCED INTENT DETECTION & AGENT SYSTEM
+// =============================================================================
+
+app.post('/api/chat/agent-process', async (req, res) => {
+  try {
+    const { message, userId, context = {} } = req.body;
+    
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // Enhanced intent detection with context awareness
+    const intentPrompt = `
+      You are SimAlly, an advanced AI agent that can help users with various tasks. Analyze this user message and determine the best way to help them.
+
+      User message: "${message}"
+      User context: ${JSON.stringify(context)}
+
+      Available capabilities:
+      1. Task Management - View, create, update tasks
+      2. Calendar Management - View events, schedule meetings
+      3. Meeting Control - Start/join video meetings
+      4. Gmail Operations - Send, read, manage emails
+      5. Workspace Navigation - Navigate to different sections
+      6. Data Analysis - Analyze user's tasks, calendar, productivity
+      7. General Assistance - Answer questions, provide help
+
+      Respond with a comprehensive JSON that includes:
+      {
+        "intent": "primary_intent_category",
+        "subIntent": "specific_action_needed",
+        "confidence": 0.0-1.0,
+        "requiresData": true/false,
+        "dataQueries": ["list of data queries needed"],
+        "actions": [
+          {
+            "type": "navigation|data_display|external_action|suggestion",
+            "target": "specific_target",
+            "parameters": {}
+          }
+        ],
+        "response": "Comprehensive response with analysis and suggestions",
+        "suggestions": [
+          {
+            "title": "Suggestion title",
+            "description": "What this will do",
+            "action": "action_type",
+            "parameters": {}
+          }
+        ]
+      }
+
+      Intent categories:
+      - task_management: View, create, update tasks
+      - calendar_management: View calendar, schedule events
+      - meeting_control: Start/join meetings
+      - gmail_operations: Email management
+      - workspace_navigation: Navigate to different sections
+      - productivity_analysis: Analyze user's productivity
+      - general_assistance: General help and questions
+
+      Examples:
+      - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
+      - "Start a meeting" → meeting_control intent, navigate to meeting page
+      - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
+      - "Send email to John" → gmail_operations intent, compose email
+    `;
+    
+    const result = await model.generateContent(intentPrompt);
+    const response = result.response.text();
+    
+    try {
+      const agentResponse = JSON.parse(response);
+      
+      // Fetch required data if needed
+      if (agentResponse.requiresData && agentResponse.dataQueries) {
+        const data = await fetchUserData(userId, agentResponse.dataQueries);
+        agentResponse.data = data;
+        
+        // Enhance response with data analysis
+        if (data) {
+          const analysisResponse = await analyzeUserData(data, message, agentResponse.intent);
+          agentResponse.analysis = analysisResponse;
+          agentResponse.response = analysisResponse.enhancedResponse || agentResponse.response;
+        }
+      }
+      
+      res.json({
+        success: true,
+        agent: agentResponse
+      });
+    } catch (parseError) {
+      console.error('Failed to parse agent response:', parseError);
+      // Fallback response
+      res.json({
+        success: true,
+        agent: {
+          intent: 'general_assistance',
+          subIntent: 'help',
+          confidence: 0.8,
+          requiresData: false,
+          actions: [],
+          response: 'I understand you need help. Could you please be more specific about what you\'d like me to assist you with?',
+          suggestions: [
+            {
+              title: 'View Tasks',
+              description: 'See all your current tasks and their status',
+              action: 'navigate',
+              parameters: { target: 'tasks' }
+            },
+            {
+              title: 'Start Meeting',
+              description: 'Begin a new video meeting',
+              action: 'navigate',
+              parameters: { target: 'meeting' }
+            }
+          ]
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Agent processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Fetch user data based on queries
+const fetchUserData = async (userId, queries) => {
+  const data = {};
+  
+  try {
+    for (const query of queries) {
+      switch (query) {
+        case 'tasks':
+          data.tasks = await fetchUserTasks(userId);
+          break;
+        case 'calendar':
+          data.calendar = await fetchUserCalendar(userId);
+          break;
+        case 'channels':
+          data.channels = await fetchUserChannels(userId);
+          break;
+        case 'messages':
+          data.recentMessages = await fetchRecentMessages(userId);
+          break;
+        case 'productivity':
+          data.productivity = await fetchProductivityData(userId);
+          break;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+  }
+  
+  return data;
+};
+
+const fetchUserTasks = async (userId) => {
+  try {
+    // Get user's tasks
+    const { data: tasks } = await supabase
+      .from('tasks')
+      .select(`
+        *,
+        assignments:task_assignments(
+          user_id,
+          user:profiles(full_name)
+        )
+      `)
+      .or(`created_by.eq.${userId},id.in.(${await getUserTaskIds(userId)})`)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    return tasks || [];
+  } catch (error) {
+    console.error('Error fetching tasks:', error);
+    return [];
+  }
+};
+
+const fetchUserCalendar = async (userId) => {
+  try {
+    const { data: events } = await supabase
+      .from('calendar_events')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('start_time', new Date().toISOString())
+      .order('start_time', { ascending: true })
+      .limit(20);
+
+    return events || [];
+  } catch (error) {
+    console.error('Error fetching calendar:', error);
+    return [];
+  }
+};
+
+const fetchUserChannels = async (userId) => {
+  try {
+    const { data: channels } = await supabase
+      .from('channels')
+      .select(`
+        *,
+        channel_members!inner(user_id)
+      `)
+      .eq('channel_members.user_id', userId)
+      .order('created_at', { ascending: true });
+
+    return channels || [];
+  } catch (error) {
+    console.error('Error fetching channels:', error);
+    return [];
+  }
+};
+
+const fetchRecentMessages = async (userId) => {
+  try {
+    // Get user's channels first
+    const { data: userChannels } = await supabase
+      .from('channel_members')
+      .select('channel_id')
+      .eq('user_id', userId);
+
+    if (!userChannels || userChannels.length === 0) return [];
+
+    const channelIds = userChannels.map(c => c.channel_id);
+
+    const { data: messages } = await supabase
+      .from('messages')
+      .select(`
+        *,
+        sender:profiles(full_name),
+        channel:channels(name)
+      `)
+      .in('channel_id', channelIds)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    return messages || [];
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    return [];
+  }
+};
+
+const fetchProductivityData = async (userId) => {
+  try {
+    const tasks = await fetchUserTasks(userId);
+    const calendar = await fetchUserCalendar(userId);
+    
+    // Calculate productivity metrics
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length;
+    const overdueTasks = tasks.filter(t => 
+      t.due_date && new Date(t.due_date) < new Date() && t.status !== 'completed'
+    ).length;
+    
+    const upcomingEvents = calendar.length;
+    const todayEvents = calendar.filter(e => 
+      new Date(e.start_time).toDateString() === new Date().toDateString()
+    ).length;
+
+    return {
+      tasks: {
+        total: totalTasks,
+        completed: completedTasks,
+        inProgress: inProgressTasks,
+        overdue: overdueTasks,
+        completionRate: totalTasks > 0 ? (completedTasks / totalTasks * 100).toFixed(1) : 0
+      },
+      calendar: {
+        upcomingEvents,
+        todayEvents
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching productivity data:', error);
+    return null;
+  }
+};
+
+const getUserTaskIds = async (userId) => {
+  const { data } = await supabase
+    .from('task_assignments')
+    .select('task_id')
+    .eq('user_id', userId);
+  
+  return data?.map(t => t.task_id).join(',') || '';
+};
+
+// Analyze user data and provide insights
+const analyzeUserData = async (data, originalMessage, intent) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    const analysisPrompt = `
+      Analyze this user's data and provide intelligent insights and suggestions.
+      
+      Original user message: "${originalMessage}"
+      Intent: ${intent}
+      User data: ${JSON.stringify(data, null, 2)}
+      
+      Provide a comprehensive analysis with:
+      1. Key insights about their current situation
+      2. Specific actionable recommendations
+      3. Priority items they should focus on
+      4. Productivity suggestions
+      5. An enhanced response that directly addresses their question with data
+      
+      Respond in JSON format:
+      {
+        "insights": [
+          {
+            "type": "insight_type",
+            "title": "Insight title",
+            "description": "Detailed insight",
+            "severity": "low|medium|high"
+          }
+        ],
+        "recommendations": [
+          {
+            "title": "Recommendation title",
+            "description": "What to do",
+            "priority": "low|medium|high",
+            "action": "specific_action"
+          }
+        ],
+        "enhancedResponse": "A comprehensive response that answers their question with data and insights"
+      }
+    `;
+    
+    const result = await model.generateContent(analysisPrompt);
+    const response = result.response.text();
+    
+    return JSON.parse(response);
+  } catch (error) {
+    console.error('Error analyzing user data:', error);
+    return {
+      insights: [],
+      recommendations: [],
+      enhancedResponse: "I've gathered your data but encountered an issue analyzing it. Let me help you with what I can see."
+    };
+  }
+};
+
+// =============================================================================
+// CHAT MESSAGE PROCESSING FOR TASK DETECTION (existing functionality)
 // =============================================================================
 
 app.post('/api/chat/process-message', async (req, res) => {
@@ -195,7 +543,7 @@ const createTaskFromMessage = async (taskData, createdBy, sourceMessageId, menti
 };
 
 // =============================================================================
-// INTENT DETECTION & ROUTING (existing functionality)
+// LEGACY INTENT DETECTION (for backward compatibility)
 // =============================================================================
 
 app.post('/api/chat/detect-intent', async (req, res) => {
@@ -702,6 +1050,7 @@ app.get('/api/health', (req, res) => {
       chatbot: 'ready',
       intentDetection: 'ready',
       taskDetection: 'ready',
+      agentSystem: 'ready',
       supabase: 'ready'
     },
     activeSessions: userSessions.size
@@ -711,15 +1060,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '4.0.0',
-    services: ['Gmail', 'Meeting AI', 'AI Assistant', 'Intent Detection', 'Task Detection', 'Workspace Chat']
+    version: '5.0.0',
+    services: ['Advanced AI Agent', 'Gmail', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Intent Detection, Gmail, Meeting AI, AI Assistant, Task Detection, Workspace Chat');
+  console.log('Features: Advanced AI Agent, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;
