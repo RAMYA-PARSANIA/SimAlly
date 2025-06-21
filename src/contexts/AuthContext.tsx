@@ -75,7 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      // Sign up without email confirmation
+      // First, try to sign up the user
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -83,7 +83,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           data: {
             full_name: fullName,
           },
-          emailRedirectTo: undefined, // Disable email confirmation
         },
       });
 
@@ -91,9 +90,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error: error.message };
       }
 
-      // If user is immediately confirmed (no email verification), they should be logged in
-      if (data.user && !data.user.email_confirmed_at) {
-        console.log('User created but not confirmed. This should not happen with disabled email confirmation.');
+      // If the user was created but needs confirmation, show appropriate message
+      if (data.user && !data.session) {
+        return { 
+          error: 'Please check your email and click the confirmation link to complete your registration.' 
+        };
+      }
+
+      // If user is immediately available (email confirmation disabled), they should be logged in
+      if (data.user && data.session) {
+        console.log('User created and logged in successfully');
       }
 
       return {};
