@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { X, Lock, User, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
@@ -14,8 +14,8 @@ interface AuthModalProps {
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChange }) => {
   const { signIn, signUp } = useAuth();
   const [formData, setFormData] = useState({
+    username: '',
     fullName: '',
-    email: '',
     password: '',
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -30,21 +30,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
     try {
       let result;
       if (mode === 'signin') {
-        result = await signIn(formData.email, formData.password);
+        result = await signIn(formData.username, formData.password);
       } else {
         if (!formData.fullName.trim()) {
           setError('Full name is required');
           setIsLoading(false);
           return;
         }
-        result = await signUp(formData.email, formData.password, formData.fullName);
+        result = await signUp(formData.username, formData.password, formData.fullName);
       }
 
       if (result.error) {
         setError(result.error);
       } else {
         onClose();
-        setFormData({ fullName: '', email: '', password: '' });
+        setFormData({ username: '', fullName: '', password: '' });
         setError('');
       }
     } catch (err) {
@@ -82,6 +82,25 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-primary mb-2">
+                Username
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 w-5 h-5 text-secondary" />
+                <input
+                  type="text"
+                  name="username"
+                  placeholder="Enter your username"
+                  value={formData.username}
+                  onChange={handleInputChange}
+                  className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
+                  required
+                  autoComplete="username"
+                />
+              </div>
+            </div>
+
             {mode === 'signup' && (
               <div>
                 <label className="block text-sm font-medium text-primary mb-2">
@@ -97,28 +116,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
                     onChange={handleInputChange}
                     className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
                     required
+                    autoComplete="name"
                   />
                 </div>
               </div>
             )}
-
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 w-5 h-5 text-secondary" />
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
-                  required
-                />
-              </div>
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-primary mb-2">
@@ -135,6 +137,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
                   className="w-full pl-10 pr-12 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
                   required
                   minLength={6}
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                 />
                 <button
                   type="button"

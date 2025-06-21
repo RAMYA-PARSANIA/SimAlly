@@ -9,10 +9,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Types
+// Types for our custom auth system
 export interface Profile {
   id: string;
-  email: string;
+  username: string;
   full_name: string;
   avatar_url?: string;
   status: 'online' | 'offline' | 'away' | 'busy';
