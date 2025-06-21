@@ -25,7 +25,10 @@
     "node-fetch": "^2.7.0",
     "simple-peer": "^9.11.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "node-latex": "^3.1.0",
+    "fs-extra": "^11.1.1",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
@@ -40,7 +43,9 @@
     "gmail",
     "mediasoup",
     "supabase",
-    "workspace"
+    "workspace",
+    "latex",
+    "pdf"
   ],
   "author": "SimAlly Team",
   "license": "MIT"

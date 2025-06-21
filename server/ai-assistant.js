@@ -4,6 +4,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const { createClient } = require('@supabase/supabase-js');
+const latex = require('node-latex');
+const fs = require('fs-extra');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const app = express();
@@ -15,6 +19,12 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+// Serve static files for PDF downloads
+app.use('/downloads', express.static(path.join(__dirname, 'downloads')));
+
+// Ensure downloads directory exists
+fs.ensureDirSync(path.join(__dirname, 'downloads'));
 
 // Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -31,6 +41,212 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
+// DOCUMENT GENERATION FEATURE
+// =============================================================================
+
+app.post('/api/documents/generate', async (req, res) => {
+  try {
+    const { prompt, documentType = 'general', userId } = req.body;
+    
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Document prompt is required'
+      });
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    const latexPrompt = `
+      You are an expert LaTeX document generator. Create a professional, well-formatted LaTeX document based on this request:
+      
+      Request: "${prompt}"
+      Document Type: ${documentType}
+      
+      Requirements:
+      1. Generate COMPLETE, VALID LaTeX code that compiles without errors
+      2. Use appropriate document class (article, report, letter, etc.)
+      3. Include necessary packages for formatting, fonts, and layout
+      4. Create professional-looking content with proper structure
+      5. Use sections, subsections, lists, tables, and other elements as appropriate
+      6. Include proper spacing, margins, and typography
+      7. Add placeholder content if the request is vague, but make it relevant
+      8. Ensure the document is publication-ready
+      
+      Document types and their requirements:
+      - "letter": Use letter class, include date, address, signature
+      - "report": Use report class, include title page, table of contents, chapters
+      - "article": Use article class, include abstract, sections, references
+      - "resume": Professional CV format with sections for experience, education, skills
+      - "proposal": Business proposal format with executive summary, objectives, timeline
+      - "memo": Professional memo format with header, subject, body
+      - "general": Choose the most appropriate format based on content
+      
+      IMPORTANT: 
+      - Return ONLY the LaTeX code, no explanations or markdown formatting
+      - Ensure all packages are commonly available
+      - Use UTF-8 encoding
+      - Include \\usepackage[utf8]{inputenc} for character support
+      - Make the content substantial and professional
+      
+      Example structure for reference:
+      \\documentclass[11pt,a4paper]{article}
+      \\usepackage[utf8]{inputenc}
+      \\usepackage[T1]{fontenc}
+      \\usepackage{geometry}
+      \\usepackage{amsmath}
+      \\usepackage{graphicx}
+      \\usepackage{hyperref}
+      
+      \\geometry{margin=1in}
+      
+      \\title{Document Title}
+      \\author{Author Name}
+      \\date{\\today}
+      
+      \\begin{document}
+      \\maketitle
+      
+      % Content here
+      
+      \\end{document}
+    `;
+    
+    const result = await model.generateContent(latexPrompt);
+    const latexCode = result.response.text().trim();
+    
+    // Clean up the LaTeX code (remove any markdown formatting if present)
+    const cleanLatexCode = latexCode
+      .replace(/^```latex\s*/gm, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+    
+    // Generate unique filename
+    const documentId = uuidv4();
+    const filename = `document_${documentId}`;
+    const texPath = path.join(__dirname, 'downloads', `${filename}.tex`);
+    const pdfPath = path.join(__dirname, 'downloads', `${filename}.pdf`);
+    
+    // Save LaTeX file
+    await fs.writeFile(texPath, cleanLatexCode, 'utf8');
+    
+    // Generate PDF
+    try {
+      const pdfStream = latex(cleanLatexCode, {
+        inputs: path.join(__dirname, 'downloads'),
+        cmd: 'pdflatex',
+        passes: 2 // Run twice for proper references
+      });
+      
+      const pdfBuffer = await streamToBuffer(pdfStream);
+      await fs.writeFile(pdfPath, pdfBuffer);
+      
+      // Clean up tex file
+      await fs.remove(texPath);
+      
+      res.json({
+        success: true,
+        document: {
+          id: documentId,
+          filename: `${filename}.pdf`,
+          downloadUrl: `/downloads/${filename}.pdf`,
+          latexCode: cleanLatexCode,
+          type: documentType,
+          createdAt: new Date().toISOString()
+        }
+      });
+      
+    } catch (pdfError) {
+      console.error('PDF generation error:', pdfError);
+      
+      // If PDF generation fails, still return the LaTeX code
+      res.json({
+        success: true,
+        document: {
+          id: documentId,
+          filename: `${filename}.tex`,
+          downloadUrl: `/downloads/${filename}.tex`,
+          latexCode: cleanLatexCode,
+          type: documentType,
+          createdAt: new Date().toISOString(),
+          pdfError: 'PDF generation failed, but LaTeX code is available'
+        }
+      });
+    }
+    
+  } catch (error) {
+    console.error('Document generation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate document. Please try again.'
+    });
+  }
+});
+
+// Helper function to convert stream to buffer
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', chunk => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
+// Get document preview (for LaTeX code viewing)
+app.get('/api/documents/:documentId/preview', async (req, res) => {
+  try {
+    const { documentId } = req.params;
+    const texPath = path.join(__dirname, 'downloads', `document_${documentId}.tex`);
+    
+    if (await fs.pathExists(texPath)) {
+      const latexCode = await fs.readFile(texPath, 'utf8');
+      res.json({
+        success: true,
+        latexCode
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+  } catch (error) {
+    console.error('Document preview error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load document preview'
+    });
+  }
+});
+
+// Clean up old documents (run periodically)
+const cleanupOldDocuments = async () => {
+  try {
+    const downloadsDir = path.join(__dirname, 'downloads');
+    const files = await fs.readdir(downloadsDir);
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    
+    for (const file of files) {
+      const filePath = path.join(downloadsDir, file);
+      const stats = await fs.stat(filePath);
+      
+      if (now - stats.mtime.getTime() > maxAge) {
+        await fs.remove(filePath);
+        console.log(`Cleaned up old document: ${file}`);
+      }
+    }
+  } catch (error) {
+    console.error('Cleanup error:', error);
+  }
+};
+
+// Run cleanup every hour
+setInterval(cleanupOldDocuments, 60 * 60 * 1000);
+
+// =============================================================================
 // ENHANCED INTENT DETECTION & AGENT SYSTEM
 // =============================================================================
 
@@ -40,7 +256,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
     
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
-    // Enhanced intent detection with context awareness
+    // Enhanced intent detection with document generation capability
     const intentPrompt = `
       You are SimAlly, an advanced AI agent that can help users with various tasks. Analyze this user message and determine the best way to help them.
 
@@ -54,7 +270,8 @@ app.post('/api/chat/agent-process', async (req, res) => {
       4. Gmail Operations - Send, read, manage emails
       5. Workspace Navigation - Navigate to different sections
       6. Data Analysis - Analyze user's tasks, calendar, productivity
-      7. General Assistance - Answer questions, provide help
+      7. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
+      8. General Assistance - Answer questions, provide help
 
       Respond with a comprehensive JSON that includes:
       {
@@ -65,7 +282,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
         "dataQueries": ["list of data queries needed"],
         "actions": [
           {
-            "type": "navigation|data_display|external_action|suggestion",
+            "type": "navigation|data_display|external_action|suggestion|document_generation",
             "target": "specific_target",
             "parameters": {}
           }
@@ -88,13 +305,22 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - gmail_operations: Email management
       - workspace_navigation: Navigate to different sections
       - productivity_analysis: Analyze user's productivity
+      - document_generation: Create documents (letters, reports, resumes, etc.)
       - general_assistance: General help and questions
+
+      Document generation examples:
+      - "Create a business letter" → document_generation intent, type: "letter"
+      - "Generate a project report" → document_generation intent, type: "report"
+      - "Write a professional resume" → document_generation intent, type: "resume"
+      - "Draft a proposal for..." → document_generation intent, type: "proposal"
+      - "Create a memo about..." → document_generation intent, type: "memo"
 
       Examples:
       - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
       - "Start a meeting" → meeting_control intent, navigate to meeting page
       - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
       - "Send email to John" → gmail_operations intent, compose email
+      - "Create a business letter to complain about service" → document_generation intent, generate letter
     `;
     
     const result = await model.generateContent(intentPrompt);
@@ -102,6 +328,18 @@ app.post('/api/chat/agent-process', async (req, res) => {
     
     try {
       const agentResponse = JSON.parse(response);
+      
+      // Handle document generation
+      if (agentResponse.intent === 'document_generation') {
+        // Extract document type and content from the message
+        const documentType = agentResponse.actions.find(a => a.type === 'document_generation')?.parameters?.type || 'general';
+        
+        agentResponse.documentGeneration = {
+          prompt: message,
+          type: documentType,
+          ready: true
+        };
+      }
       
       // Fetch required data if needed
       if (agentResponse.requiresData && agentResponse.dataQueries) {
@@ -144,6 +382,12 @@ app.post('/api/chat/agent-process', async (req, res) => {
               description: 'Begin a new video meeting',
               action: 'navigate',
               parameters: { target: 'meeting' }
+            },
+            {
+              title: 'Generate Document',
+              description: 'Create a professional document',
+              action: 'document',
+              parameters: { type: 'general' }
             }
           ]
         }
@@ -555,7 +799,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
       1. Gmail operations (send, read, delete, unsubscribe, compose help)
-      2. General chat/questions
+      2. Document generation (letters, reports, resumes, proposals, memos)
+      3. General chat/questions
       
       Analyze this user message and determine the intent, extract parameters, and provide a helpful response.
       
@@ -563,12 +808,13 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Respond in this exact JSON format:
       {
-        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, chat",
+        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, document_generation, chat",
         "confidence": 0.0-1.0,
         "parameters": {
           // Extract relevant parameters based on intent
           // For gmail_send: {"to": "email", "subject": "subject", "body": "body"}
           // For gmail_read: {"count": number, "query": "search terms"}
+          // For document_generation: {"type": "letter|report|resume|proposal|memo|general", "content": "description"}
           // For chat: {}
         },
         "response": "A helpful response to the user explaining what you'll do or asking for clarification"
@@ -576,6 +822,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Examples:
       - "Send an email to john@example.com about the meeting" → gmail_send intent
+      - "Create a business letter" → document_generation intent with type "letter"
+      - "Generate a project report" → document_generation intent with type "report"
       - "What's the weather today?" → chat intent
       
       Be intelligent about parameter extraction and provide clear, helpful responses.
@@ -635,7 +883,7 @@ const getChatResponse = async (message, userId) => {
     
     const prompt = `
       You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
-      You can help with Gmail management and general questions.
+      You can help with Gmail management, document generation, and general questions.
       
       ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
       
@@ -1051,6 +1299,7 @@ app.get('/api/health', (req, res) => {
       intentDetection: 'ready',
       taskDetection: 'ready',
       agentSystem: 'ready',
+      documentGeneration: 'ready',
       supabase: 'ready'
     },
     activeSessions: userSessions.size
@@ -1060,15 +1309,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '5.0.0',
-    services: ['Advanced AI Agent', 'Gmail', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
+    version: '6.0.0',
+    services: ['Advanced AI Agent', 'Document Generation', 'Gmail', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Advanced AI Agent, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
+  console.log('Features: Advanced AI Agent, Document Generation, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;

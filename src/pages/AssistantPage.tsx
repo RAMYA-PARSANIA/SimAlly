@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp, FileText, Download, Eye, Code, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -30,10 +30,15 @@ interface AgentResponse {
     recommendations: Recommendation[];
     enhancedResponse: string;
   };
+  documentGeneration?: {
+    prompt: string;
+    type: string;
+    ready: boolean;
+  };
 }
 
 interface AgentAction {
-  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion';
+  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation';
   target: string;
   parameters: any;
 }
@@ -59,6 +64,16 @@ interface Recommendation {
   action: string;
 }
 
+interface GeneratedDocument {
+  id: string;
+  filename: string;
+  downloadUrl: string;
+  latexCode: string;
+  type: string;
+  createdAt: string;
+  pdfError?: string;
+}
+
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -67,6 +82,10 @@ const AssistantPage: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGmailConnected, setIsGmailConnected] = useState(false);
+  const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+  const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
+  const [showLatexCode, setShowLatexCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -174,6 +193,39 @@ const AssistantPage: React.FC = () => {
     }
   };
 
+  const generateDocument = async (prompt: string, documentType: string = 'general') => {
+    setIsGeneratingDocument(true);
+    
+    try {
+      const response = await fetch('http://localhost:8001/api/documents/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          prompt,
+          documentType,
+          userId: user?.id
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setGeneratedDocuments(prev => [data.document, ...prev]);
+        return data.document;
+      } else {
+        throw new Error(data.error || 'Failed to generate document');
+      }
+    } catch (error) {
+      console.error('Document generation failed:', error);
+      throw error;
+    } finally {
+      setIsGeneratingDocument(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!message.trim() || isProcessing) return;
 
@@ -191,6 +243,21 @@ const AssistantPage: React.FC = () => {
     try {
       // Process with enhanced agent
       const agentResponse = await processWithAgent(userMessage.content);
+      
+      // Handle document generation if requested
+      if (agentResponse.documentGeneration?.ready) {
+        try {
+          const document = await generateDocument(
+            agentResponse.documentGeneration.prompt,
+            agentResponse.documentGeneration.type
+          );
+          
+          agentResponse.generatedDocument = document;
+          agentResponse.response += `\n\n✅ Document generated successfully! You can preview the LaTeX code and download the PDF below.`;
+        } catch (docError) {
+          agentResponse.response += `\n\n❌ Failed to generate document: ${docError.message}`;
+        }
+      }
       
       // Create assistant response
       const assistantMessage: Message = {
@@ -230,8 +297,49 @@ const AssistantPage: React.FC = () => {
       case 'message':
         setMessage(suggestion.parameters.message || suggestion.title);
         break;
+      case 'document':
+        setMessage(`Create a ${suggestion.parameters.type || 'professional'} document`);
+        break;
       default:
         console.log('Suggestion clicked:', suggestion);
+    }
+  };
+
+  const handleDocumentGeneration = async (prompt: string, type: string) => {
+    try {
+      const document = await generateDocument(prompt, type);
+      
+      // Add a message about the generated document
+      const documentMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `✅ Document generated successfully! You can preview the LaTeX code and download the PDF.`,
+        timestamp: new Date(),
+        agent: {
+          intent: 'document_generation',
+          subIntent: 'generated',
+          confidence: 1.0,
+          requiresData: false,
+          actions: [],
+          response: 'Document generated successfully!',
+          suggestions: [],
+          generatedDocument: document
+        }
+      };
+      
+      setMessages(prev => [...prev, documentMessage]);
+    } catch (error) {
+      console.error('Document generation failed:', error);
+    }
+  };
+
+  const copyLatexCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy LaTeX code:', error);
     }
   };
 
@@ -278,6 +386,8 @@ const AssistantPage: React.FC = () => {
         return <Mail className="w-4 h-4" />;
       case 'productivity_analysis':
         return <BarChart3 className="w-4 h-4" />;
+      case 'document_generation':
+        return <FileText className="w-4 h-4" />;
       default:
         return <MessageSquare className="w-4 h-4" />;
     }
@@ -295,6 +405,8 @@ const AssistantPage: React.FC = () => {
         return 'text-red-500';
       case 'productivity_analysis':
         return 'text-yellow-500';
+      case 'document_generation':
+        return 'text-orange-500';
       default:
         return 'text-gray-500';
     }
@@ -346,7 +458,7 @@ const AssistantPage: React.FC = () => {
                   AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Advanced Intelligence • Data Analysis • Smart Actions
+                  Advanced Intelligence • Document Generation • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
@@ -361,6 +473,10 @@ const AssistantPage: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
                   <span className="text-xs text-secondary">Gmail</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 rounded-full bg-green-500" />
+                  <span className="text-xs text-secondary">LaTeX</span>
                 </div>
               </div>
               
@@ -397,11 +513,11 @@ const AssistantPage: React.FC = () => {
                 </h2>
                 <p className="text-secondary mb-8 max-w-3xl mx-auto">
                   I can analyze your data, provide insights, manage your tasks and calendar, control meetings, 
-                  handle Gmail operations, and much more. Just tell me what you need in natural language!
+                  handle Gmail operations, generate professional documents, and much more. Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 max-w-5xl mx-auto mb-8">
                   <GlassCard className="p-4 text-center" hover>
                     <CheckSquare className="w-8 h-8 text-blue-500 mx-auto mb-2" />
                     <h3 className="font-semibold text-primary mb-1">Task Management</h3>
@@ -425,10 +541,18 @@ const AssistantPage: React.FC = () => {
                       "Start a new meeting"
                     </p>
                   </GlassCard>
+
+                  <GlassCard className="p-4 text-center" hover>
+                    <FileText className="w-8 h-8 text-orange-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Document Generation</h3>
+                    <p className="text-xs text-secondary">
+                      "Create a business letter"
+                    </p>
+                  </GlassCard>
                 </div>
 
                 <p className="text-xs text-secondary mb-8">
-                  I can access your tasks, calendar, and workspace data to provide personalized insights
+                  I can access your data, generate LaTeX documents, and provide personalized insights
                 </p>
                 
                 {!isGmailConnected && (
@@ -455,7 +579,7 @@ const AssistantPage: React.FC = () => {
                   exit={{ opacity: 0, y: -20 }}
                   className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-6`}
                 >
-                  <div className={`flex items-start space-x-3 max-w-4xl ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                  <div className={`flex items-start space-x-3 max-w-5xl ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''}`}>
                     {/* Avatar */}
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
                       msg.role === 'user' 
@@ -486,6 +610,55 @@ const AssistantPage: React.FC = () => {
                       )}
                       
                       <p className="text-primary whitespace-pre-wrap mb-3">{msg.content}</p>
+
+                      {/* Generated Document Display */}
+                      {msg.agent?.generatedDocument && (
+                        <div className="mt-4 glass-panel p-4 rounded-lg border-orange-500/30">
+                          <h4 className="font-semibold text-primary mb-3 flex items-center">
+                            <FileText className="w-4 h-4 mr-2 text-orange-500" />
+                            Generated Document
+                          </h4>
+                          
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium text-primary">{msg.agent.generatedDocument.filename}</p>
+                                <p className="text-xs text-secondary">
+                                  {msg.agent.generatedDocument.type} • {msg.agent.generatedDocument.createdAt}
+                                </p>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
+                                <Button
+                                  onClick={() => setShowLatexCode(msg.agent.generatedDocument.latexCode)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="flex items-center space-x-1"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                  <span>Preview</span>
+                                </Button>
+                                
+                                <Button
+                                  onClick={() => window.open(`http://localhost:8001${msg.agent.generatedDocument.downloadUrl}`, '_blank')}
+                                  variant="secondary"
+                                  size="sm"
+                                  className="flex items-center space-x-1"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  <span>Download</span>
+                                </Button>
+                              </div>
+                            </div>
+                            
+                            {msg.agent.generatedDocument.pdfError && (
+                              <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">
+                                ⚠️ {msg.agent.generatedDocument.pdfError}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Data Display */}
                       {msg.agent?.data && (
@@ -634,14 +807,16 @@ const AssistantPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex justify-start mb-4"
               >
-                <div className="flex items-start space-x-3 max-w-4xl">
+                <div className="flex items-start space-x-3 max-w-5xl">
                   <div className="w-8 h-8 rounded-full bg-gradient-gold-silver flex items-center justify-center flex-shrink-0">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
                   <div className="glass-panel rounded-2xl p-4 border-gold-border">
                     <div className="flex items-center space-x-2">
                       <Loader2 className="w-4 h-4 animate-spin text-secondary" />
-                      <span className="text-secondary">Analyzing your request...</span>
+                      <span className="text-secondary">
+                        {isGeneratingDocument ? 'Generating document...' : 'Analyzing your request...'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -660,7 +835,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Start a meeting', 'How productive was I this week?')"
+                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Create a business letter', 'Start a meeting', 'Generate a project report')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -672,7 +847,7 @@ const AssistantPage: React.FC = () => {
                 />
                 <div className="flex items-center justify-between mt-2">
                   <div className="text-xs text-secondary">
-                    I can analyze your data, manage tasks, control meetings, and much more
+                    I can analyze data, manage tasks, control meetings, generate documents, and much more
                   </div>
                   <div className="text-xs text-secondary">
                     Enter to send • Shift+Enter for new line
@@ -715,6 +890,53 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* LaTeX Code Preview Modal */}
+      {showLatexCode && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-full max-w-4xl max-h-[80vh] overflow-hidden"
+          >
+            <GlassCard className="p-6" goldBorder>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold gradient-gold-silver flex items-center">
+                  <Code className="w-5 h-5 mr-2" />
+                  LaTeX Source Code
+                </h3>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    onClick={() => copyLatexCode(showLatexCode)}
+                    variant="ghost"
+                    size="sm"
+                    className="flex items-center space-x-1"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                    <span>{copied ? 'Copied!' : 'Copy'}</span>
+                  </Button>
+                  <button
+                    onClick={() => setShowLatexCode(null)}
+                    className="text-secondary hover:text-primary"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              
+              <div className="glass-panel p-4 rounded-lg bg-gray-900/50 max-h-96 overflow-y-auto">
+                <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
+                  {showLatexCode}
+                </pre>
+              </div>
+              
+              <div className="mt-4 text-xs text-secondary">
+                💡 You can copy this LaTeX code and compile it with any LaTeX editor like Overleaf, TeXShop, or MiKTeX.
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
