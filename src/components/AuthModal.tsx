@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, Loader2, Eye, EyeOff } from 'lucide-react';
+import { X, Mail, Lock, User, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
@@ -12,9 +12,9 @@ interface AuthModalProps {
 }
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChange }) => {
-  const { login, signup } = useAuth();
+  const { signIn, signUp } = useAuth();
   const [formData, setFormData] = useState({
-    name: '',
+    fullName: '',
     email: '',
     password: '',
   });
@@ -28,19 +28,27 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
     setError('');
 
     try {
-      let success = false;
+      let result;
       if (mode === 'signin') {
-        success = await login(formData.email, formData.password);
+        result = await signIn(formData.email, formData.password);
       } else {
-        success = await signup(formData.name, formData.email, formData.password);
+        if (!formData.fullName.trim()) {
+          setError('Full name is required');
+          setIsLoading(false);
+          return;
+        }
+        result = await signUp(formData.email, formData.password, formData.fullName);
       }
 
-      if (success) {
+      if (result.error) {
+        setError(result.error);
+      } else {
         onClose();
-        setFormData({ name: '', email: '', password: '' });
+        setFormData({ fullName: '', email: '', password: '' });
+        setError('');
       }
     } catch (err) {
-      setError('Authentication failed. Please try again.');
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -51,6 +59,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
       ...prev,
       [e.target.name]: e.target.value
     }));
+    // Clear error when user starts typing
+    if (error) setError('');
   };
 
   if (!isOpen) return null;
@@ -81,9 +91,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
                   <User className="absolute left-3 top-3 w-5 h-5 text-secondary" />
                   <input
                     type="text"
-                    name="name"
+                    name="fullName"
                     placeholder="Enter your full name"
-                    value={formData.name}
+                    value={formData.fullName}
                     onChange={handleInputChange}
                     className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
                     required
@@ -124,6 +134,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
                   onChange={handleInputChange}
                   className="w-full pl-10 pr-12 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
                   required
+                  minLength={6}
                 />
                 <button
                   type="button"
@@ -133,12 +144,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {mode === 'signup' && (
+                <p className="text-xs text-secondary mt-1">
+                  Password must be at least 6 characters long
+                </p>
+              )}
             </div>
 
             {error && (
-              <p className="text-red-400 text-sm">
-                {error}
-              </p>
+              <div className="flex items-center space-x-2 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
             )}
 
             <Button
@@ -162,6 +179,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
               <button
                 onClick={() => onModeChange(mode === 'signin' ? 'signup' : 'signin')}
                 className="ml-2 gradient-gold-silver hover:underline font-semibold"
+                disabled={isLoading}
               >
                 {mode === 'signin' ? 'Sign Up' : 'Sign In'}
               </button>

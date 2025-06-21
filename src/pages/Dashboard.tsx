@@ -1,27 +1,36 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Video, LogOut, Settings, User } from 'lucide-react';
+import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, isAuthenticated } = useAuth();
+  const { user, profile, signOut, loading } = useAuth();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!loading && !user) {
       navigate('/');
     }
-  }, [isAuthenticated, navigate]);
+  }, [user, loading, navigate]);
 
   const features = [
+    {
+      id: 'workspace',
+      icon: Users,
+      title: 'Workspace',
+      description: 'Collaborative chat with AI task detection, calendar integration, and intelligent project management.',
+      route: '/workspace',
+      color: 'from-purple-500 to-blue-500',
+    },
     {
       id: 'assistant',
       icon: Bot,
       title: 'AI Assistant',
       description: 'Professional productivity support with Gmail management and intelligent assistance for your daily workflow.',
       route: '/assistant',
+      color: 'from-blue-500 to-cyan-500',
     },
     {
       id: 'meetings',
@@ -29,6 +38,7 @@ const Dashboard: React.FC = () => {
       title: 'Video Meetings',
       description: 'Smart video conferencing with AI-powered transcription, note-taking, and meeting summaries.',
       route: '/meetings',
+      color: 'from-cyan-500 to-green-500',
     },
     {
       id: 'game-mode',
@@ -36,6 +46,7 @@ const Dashboard: React.FC = () => {
       title: 'Interactive Games',
       description: 'Engaging mental exercises, problem-solving games, and intelligent entertainment for cognitive enhancement.',
       route: '/game-mode',
+      color: 'from-green-500 to-yellow-500',
     },
   ];
 
@@ -43,12 +54,24 @@ const Dashboard: React.FC = () => {
     navigate(route);
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     navigate('/');
   };
 
-  if (!isAuthenticated) {
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
+          <h3 className="text-xl font-bold text-primary mb-2">Loading Dashboard...</h3>
+          <p className="text-secondary">Setting up your workspace</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
     return null;
   }
 
@@ -64,7 +87,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-lg font-bold gradient-gold-silver">
-                  Welcome, {user?.name}
+                  Welcome, {profile?.full_name || user.email}
                 </h2>
                 <p className="text-sm text-secondary">
                   Select your preferred mode
@@ -101,7 +124,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}
@@ -111,7 +134,7 @@ const Dashboard: React.FC = () => {
                 onClick={() => handleFeatureClick(feature.route)}
               >
                 <div className="text-center">
-                  <div className="w-16 h-16 rounded-lg bg-gradient-gold-silver flex items-center justify-center mx-auto mb-6">
+                  <div className={`w-16 h-16 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mx-auto mb-6`}>
                     <feature.icon className="w-8 h-8 text-white" />
                   </div>
                   
@@ -137,7 +160,7 @@ const Dashboard: React.FC = () => {
             {[
               { label: 'Sessions Today', value: '0', color: 'gold-text' },
               { label: 'Total Interactions', value: '0', color: 'silver-text' },
-              { label: 'Preferred Mode', value: 'Not Set', color: 'gold-text' },
+              { label: 'Preferred Mode', value: 'Workspace', color: 'gold-text' },
             ].map((stat, index) => (
               <GlassCard key={index} className="p-6 text-center" hover>
                 <div className={`text-2xl font-bold ${stat.color} mb-2`}>

@@ -3,6 +3,7 @@ const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
@@ -15,8 +16,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Initialize Gemini AI
+// Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
 
 // Gmail OAuth2 setup
 const oauth2Client = new OAuth2Client(
@@ -29,10 +31,173 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
-// INTENT DETECTION & ROUTING
+// CHAT MESSAGE PROCESSING FOR TASK DETECTION
 // =============================================================================
 
-// Advanced intent detection with Gemini AI
+app.post('/api/chat/process-message', async (req, res) => {
+  try {
+    const { message, messageId, channelId, senderId, mentions = [], userId } = req.body;
+    
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    const taskDetectionPrompt = `
+      Analyze this chat message for task-related content and extract actionable items.
+      
+      Message: "${message}"
+      Mentions: ${mentions.join(', ')}
+      
+      Look for:
+      1. Action words (create, make, build, write, send, call, schedule, etc.)
+      2. Assignments (@mentions or "assign to", "give to", etc.)
+      3. Deadlines (dates, "by tomorrow", "end of week", etc.)
+      4. Priority indicators (urgent, asap, high priority, etc.)
+      
+      If this message contains a clear task, respond with JSON:
+      {
+        "hasTask": true,
+        "task": {
+          "title": "Brief task title (max 100 chars)",
+          "description": "Detailed description if available",
+          "priority": "low|medium|high|urgent",
+          "assignee": "mentioned username or null",
+          "dueDate": "YYYY-MM-DD or null",
+          "keywords": ["relevant", "keywords"]
+        }
+      }
+      
+      If no clear task is found, respond with:
+      {
+        "hasTask": false
+      }
+      
+      Examples:
+      - "Can someone create a report for the meeting?" → hasTask: true
+      - "@john please send the files by Friday" → hasTask: true, assignee: "john", dueDate: calculated
+      - "How's everyone doing?" → hasTask: false
+    `;
+    
+    const result = await model.generateContent(taskDetectionPrompt);
+    const response = result.response.text();
+    
+    try {
+      const taskData = JSON.parse(response);
+      
+      if (taskData.hasTask) {
+        // Create task in database
+        const taskResult = await createTaskFromMessage(taskData.task, senderId, messageId, mentions);
+        
+        if (taskResult.success) {
+          res.json({
+            success: true,
+            taskCreated: true,
+            task: taskResult.task
+          });
+        } else {
+          res.json({
+            success: true,
+            taskCreated: false,
+            error: taskResult.error
+          });
+        }
+      } else {
+        res.json({
+          success: true,
+          taskCreated: false
+        });
+      }
+    } catch (parseError) {
+      console.error('Failed to parse task detection response:', parseError);
+      res.json({
+        success: true,
+        taskCreated: false,
+        error: 'Failed to process message for tasks'
+      });
+    }
+  } catch (error) {
+    console.error('Message processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+const createTaskFromMessage = async (taskData, createdBy, sourceMessageId, mentions) => {
+  try {
+    // Create the task
+    const { data: task, error: taskError } = await supabase
+      .from('tasks')
+      .insert({
+        title: taskData.title,
+        description: taskData.description || null,
+        priority: taskData.priority || 'medium',
+        due_date: taskData.dueDate || null,
+        created_by: createdBy,
+        source_message_id: sourceMessageId
+      })
+      .select()
+      .single();
+
+    if (taskError) {
+      console.error('Error creating task:', taskError);
+      return { success: false, error: taskError.message };
+    }
+
+    // Handle assignments
+    if (taskData.assignee && mentions.length > 0) {
+      // Find user by mention
+      const { data: users } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .ilike('full_name', `%${taskData.assignee}%`);
+
+      if (users && users.length > 0) {
+        const assigneeId = users[0].id;
+        
+        // Create task assignment
+        await supabase
+          .from('task_assignments')
+          .insert({
+            task_id: task.id,
+            user_id: assigneeId
+          });
+
+        // Create calendar event if due date exists
+        if (taskData.dueDate) {
+          const dueDateTime = new Date(taskData.dueDate);
+          dueDateTime.setHours(17, 0, 0, 0); // Set to 5 PM
+
+          await supabase
+            .from('calendar_events')
+            .insert({
+              title: `Task Due: ${task.title}`,
+              description: task.description,
+              start_time: dueDateTime.toISOString(),
+              end_time: new Date(dueDateTime.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour duration
+              user_id: assigneeId,
+              task_id: task.id
+            });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      task: {
+        ...task,
+        assignee: taskData.assignee
+      }
+    };
+  } catch (error) {
+    console.error('Error creating task from message:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// =============================================================================
+// INTENT DETECTION & ROUTING (existing functionality)
+// =============================================================================
+
 app.post('/api/chat/detect-intent', async (req, res) => {
   try {
     const { message, userId } = req.body;
@@ -159,7 +324,7 @@ const getChatResponse = async (message, userId) => {
 };
 
 // =============================================================================
-// GMAIL FUNCTIONALITY
+// GMAIL FUNCTIONALITY (existing)
 // =============================================================================
 
 // Gmail OAuth - Get authorization URL
@@ -399,7 +564,7 @@ app.post('/api/gmail/compose-help', async (req, res) => {
 });
 
 // =============================================================================
-// MEETING AI FUNCTIONALITY
+// MEETING AI FUNCTIONALITY (existing)
 // =============================================================================
 
 // Generate auto notes from meeting transcript
@@ -475,7 +640,7 @@ app.post('/api/meetings/summary', async (req, res) => {
 });
 
 // =============================================================================
-// GENERIC CHATBOT
+// GENERIC CHATBOT (existing)
 // =============================================================================
 
 // Chat with AI (legacy endpoint for direct chat)
@@ -535,7 +700,9 @@ app.get('/api/health', (req, res) => {
       gmail: 'ready',
       meetings: 'ready',
       chatbot: 'ready',
-      intentDetection: 'ready'
+      intentDetection: 'ready',
+      taskDetection: 'ready',
+      supabase: 'ready'
     },
     activeSessions: userSessions.size
   });
@@ -544,15 +711,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '3.0.0',
-    services: ['Gmail', 'Meeting AI', 'AI Assistant', 'Intent Detection']
+    version: '4.0.0',
+    services: ['Gmail', 'Meeting AI', 'AI Assistant', 'Intent Detection', 'Task Detection', 'Workspace Chat']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Intent Detection, Gmail, Meeting AI, AI Assistant');
+  console.log('Features: Intent Detection, Gmail, Meeting AI, AI Assistant, Task Detection, Workspace Chat');
 });
 
 module.exports = app;
