@@ -7,6 +7,7 @@ interface AuthContextType {
   profile: Profile | null;
   session: Session | null;
   loading: boolean;
+  isAuthenticated: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -36,6 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -73,18 +75,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      // Sign up without email confirmation
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             full_name: fullName,
           },
+          emailRedirectTo: undefined, // Disable email confirmation
         },
       });
 
       if (error) {
         return { error: error.message };
+      }
+
+      // If user is immediately confirmed (no email verification), they should be logged in
+      if (data.user && !data.user.email_confirmed_at) {
+        console.log('User created but not confirmed. This should not happen with disabled email confirmation.');
       }
 
       return {};
@@ -135,12 +144,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isAuthenticated = !!user;
+
   return (
     <AuthContext.Provider value={{
       user,
       profile,
       session,
       loading,
+      isAuthenticated,
       signUp,
       signIn,
       signOut,

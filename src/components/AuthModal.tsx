@@ -46,6 +46,12 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
         onClose();
         setFormData({ fullName: '', email: '', password: '' });
         setError('');
+        
+        // Show success message for sign up
+        if (mode === 'signup') {
+          // User should be automatically logged in since email verification is disabled
+          console.log('Account created successfully! You are now logged in.');
+        }
       }
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
@@ -155,6 +161,14 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onModeChan
               <div className="flex items-center space-x-2 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                 <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            {mode === 'signup' && (
+              <div className="p-3 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30">
+                <p className="text-blue-400 text-sm">
+                  ✓ No email verification required - you'll be logged in immediately after creating your account
+                </p>
               </div>
             )}
 
