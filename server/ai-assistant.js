@@ -1114,7 +1114,7 @@ app.post('/api/documents/generate', async (req, res) => {
       Requirements:
       - Use semantic HTML structure (header, section, article)
       - Use inline styles or Tailwind CSS class names (optional)
-      - Include placeholder images or icons using public links
+      - Make it visually appealing and professional
       - Use dummy values if user data is missing
       - Ensure HTML is clean and ready to convert to PDF using html2pdf.js
       - No script tags. No markdown. No LaTeX.

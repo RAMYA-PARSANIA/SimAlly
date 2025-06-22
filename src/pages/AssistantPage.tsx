@@ -35,6 +35,7 @@ interface AgentResponse {
     type: string;
     ready: boolean;
   };
+  generatedDocument?: GeneratedDocument;
 }
 
 // Update GeneratedDocument interface for generic document (HTML/pdfmake)
@@ -84,6 +85,7 @@ const AssistantPage: React.FC = () => {
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [showLatexCode, setShowLatexCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [files, setFiles] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -157,7 +159,7 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const processWithAgent = async (userMessage: string): Promise<AgentResponse> => {
+  const processWithAgent = async (userMessage: string, filesToSend: any[] = []): Promise<AgentResponse> => {
     try {
       const response = await fetch('http://localhost:8001/api/chat/agent-process', {
         method: 'POST',
@@ -171,14 +173,15 @@ const AssistantPage: React.FC = () => {
           context: {
             currentPage: 'assistant',
             timestamp: new Date().toISOString()
-          }
+          },
+          files: filesToSend
         })
       });
 
       const data = await response.json();
-      return data.success ? data.agent : null;
+      if (data.success && data.agent) return data.agent;
+      throw new Error('Agent response failed');
     } catch (error) {
-      console.error('Agent processing failed:', error);
       return {
         intent: 'general_assistance',
         subIntent: 'error',
@@ -226,7 +229,7 @@ const AssistantPage: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!message.trim() || isProcessing) return;
+    if (!message.trim() && files.length === 0 || isProcessing) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -241,7 +244,8 @@ const AssistantPage: React.FC = () => {
 
     try {
       // Process with enhanced agent
-      const agentResponse = await processWithAgent(userMessage.content);
+      const agentResponse = await processWithAgent(userMessage.content, files);
+      setFiles([]); // Clear files after sending
       
       // Handle document generation if requested
       if (agentResponse.documentGeneration?.ready) {
@@ -253,8 +257,8 @@ const AssistantPage: React.FC = () => {
           
           agentResponse.generatedDocument = document;
           agentResponse.response += `\n\n✅ Document generated successfully! You can preview the document and download the PDF below.`;
-        } catch (docError) {
-          agentResponse.response += `\n\n❌ Failed to generate document: ${docError.message}`;
+        } catch (docError: any) {
+          agentResponse.response += `\n\n❌ Failed to generate document: ${docError?.message || docError}`;
         }
       }
       
@@ -435,6 +439,26 @@ const AssistantPage: React.FC = () => {
       default:
         return 'text-gray-500';
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+    const newFiles: any[] = [];
+    let loaded = 0;
+    Array.from(fileList).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          newFiles.push({ type: 'image', data: event.target?.result });
+          loaded++;
+          if (loaded === fileList.length) {
+            setFiles((prev) => [...prev, ...newFiles]);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    });
   };
 
   return (
@@ -842,6 +866,29 @@ const AssistantPage: React.FC = () => {
                   <div className="text-xs text-secondary">
                     Enter to send • Shift+Enter for new line
                   </div>
+                </div>
+                {/* Image upload */}
+                <div className="mt-2 flex items-center space-x-2">
+                  <label className="glass-panel px-3 py-2 rounded-lg cursor-pointer hover:bg-secondary/10">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileChange}
+                      disabled={isProcessing}
+                    />
+                    <span className="text-xs text-secondary">Attach Image</span>
+                  </label>
+                  {/* Show thumbnails of selected images */}
+                  {files.map((file, idx) => file.type === 'image' && (
+                    <img
+                      key={idx}
+                      src={file.data}
+                      alt="preview"
+                      className="w-8 h-8 object-cover rounded border border-gray-300"
+                    />
+                  ))}
                 </div>
               </div>
               
