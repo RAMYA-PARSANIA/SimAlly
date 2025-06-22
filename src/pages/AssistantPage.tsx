@@ -261,17 +261,6 @@ const AssistantPage: React.FC = () => {
           agentResponse.response += `\n\n❌ Failed to generate document: ${docError?.message || docError}`;
         }
       }
-
-      // Handle Gmail navigation
-      if (agentResponse.intent === 'gmail_operations') {
-        const gmailAction = agentResponse.actions.find(a => a.target === '/gmail');
-        if (gmailAction) {
-          agentResponse.response += `\n\n🔗 Opening Gmail interface...`;
-          setTimeout(() => {
-            navigate('/gmail');
-          }, 1500);
-        }
-      }
       
       // Create assistant response
       const assistantMessage: Message = {
@@ -306,8 +295,6 @@ const AssistantPage: React.FC = () => {
           navigate('/workspace');
         } else if (suggestion.parameters.target === 'calendar') {
           navigate('/workspace');
-        } else if (suggestion.parameters.target === '/gmail') {
-          navigate('/gmail');
         }
         break;
       case 'message':
@@ -494,7 +481,7 @@ const AssistantPage: React.FC = () => {
                   AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Advanced Intelligence • Document Generation • Data Analysis • Smart Actions • Gmail Integration
+                  Advanced Intelligence • Document Generation • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
@@ -563,10 +550,10 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                   
                   <GlassCard className="p-4 text-center" hover>
-                    <Mail className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Gmail Management</h3>
+                    <BarChart3 className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Productivity Analysis</h3>
                     <p className="text-xs text-secondary">
-                      "Check my emails" or "Open Gmail"
+                      "How productive was I this week?"
                     </p>
                   </GlassCard>
 
@@ -588,7 +575,7 @@ const AssistantPage: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-secondary mb-8">
-                  I can access your data, generate documents, manage Gmail, and provide personalized insights
+                  I can access your data, generate LaTeX documents, and provide personalized insights
                 </p>
                 
                 {!isGmailConnected && (
@@ -647,32 +634,6 @@ const AssistantPage: React.FC = () => {
                       
                       <p className="text-primary whitespace-pre-wrap mb-3">{msg.content}</p>
 
-                      {/* Suggestions */}
-                      {msg.agent?.suggestions && msg.agent.suggestions.length > 0 && (
-                        <div className="mt-4">
-                          <h4 className="font-semibold text-primary mb-3 flex items-center">
-                            <Zap className="w-4 h-4 mr-2" />
-                            Quick Actions
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {msg.agent.suggestions.map((suggestion, index) => (
-                              <button
-                                key={index}
-                                onClick={() => handleSuggestionClick(suggestion)}
-                                className="p-3 glass-panel rounded-lg text-left hover:border-gold-border transition-all group"
-                              >
-                                <div className="font-medium text-primary text-sm group-hover:text-gold-text">
-                                  {suggestion.title}
-                                </div>
-                                <div className="text-xs text-secondary mt-1">
-                                  {suggestion.description}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
                       {/* Generated Document Display */}
                       {msg.agent?.generatedDocument && (
                         <div className="mt-4 glass-panel p-4 rounded-lg border-orange-500/30">
@@ -683,35 +644,54 @@ const AssistantPage: React.FC = () => {
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium text-primary">Professional Document</p>
+                                <p className="font-medium text-primary">{msg.agent.generatedDocument.filename}</p>
                                 <p className="text-xs text-secondary">
-                                  HTML Format • Generated just now
+                                  {msg.agent.generatedDocument.type} • {msg.agent.generatedDocument.createdAt}
                                 </p>
                               </div>
                               
                               <div className="flex items-center space-x-2">
-                                <Button
-                                  onClick={async () => {
-                                    // Download HTML as PDF using html2pdf.js (client-side)
-                                    const blob = new Blob([msg.agent!.generatedDocument!.content], { type: 'text/html' });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = 'document.html';
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                    URL.revokeObjectURL(url);
-                                  }}
-                                  variant="secondary"
-                                  size="sm"
-                                  className="flex items-center space-x-1"
-                                >
-                                  <Download className="w-4 h-4" />
-                                  <span>Download</span>
-                                </Button>
+                                {/* Download button for PDFMake/HTML */}
+                                {msg.agent.generatedDocument.downloadUrl ? (
+                                  <Button
+                                    onClick={() => window.open(`http://localhost:8001${msg.agent.generatedDocument.downloadUrl}`, '_blank')}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    <span>Download</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    onClick={async () => {
+                                      // Download HTML as PDF using html2pdf.js (client-side)
+                                      const blob = new Blob([msg.agent.generatedDocument.content], { type: 'text/html' });
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = 'document.html';
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                      URL.revokeObjectURL(url);
+                                    }}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    <span>Download</span>
+                                  </Button>
+                                )}
                               </div>
                             </div>
+                            
+                            {msg.agent.generatedDocument.pdfError && (
+                              <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">
+                                ⚠️ {msg.agent.generatedDocument.pdfError}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
@@ -869,7 +849,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask me anything... (e.g., 'Check my Gmail', 'What tasks do I need to do?', 'Create a business letter', 'Start a meeting')"
+                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Create a business letter', 'Start a meeting', 'Generate a project report')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -879,6 +859,14 @@ const AssistantPage: React.FC = () => {
                   }}
                   disabled={isProcessing}
                 />
+                <div className="flex items-center justify-between mt-2">
+                  <div className="text-xs text-secondary">
+                    I can analyze data, manage tasks, control meetings, generate documents, and much more
+                  </div>
+                  <div className="text-xs text-secondary">
+                    Enter to send • Shift+Enter for new line
+                  </div>
+                </div>
                 {/* Image upload */}
                 <div className="mt-2 flex items-center space-x-2">
                   <label className="glass-panel px-3 py-2 rounded-lg cursor-pointer hover:bg-secondary/10">
@@ -901,14 +889,6 @@ const AssistantPage: React.FC = () => {
                       className="w-8 h-8 object-cover rounded border border-gray-300"
                     />
                   ))}
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="text-xs text-secondary">
-                    I can analyze data, manage tasks, control meetings, handle Gmail, generate documents, and much more
-                  </div>
-                  <div className="text-xs text-secondary">
-                    Enter to send • Shift+Enter for new line
-                  </div>
                 </div>
               </div>
               

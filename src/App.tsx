@@ -8,7 +8,6 @@ import AssistantPage from './pages/AssistantPage';
 import GameModePage from './pages/GameModePage';
 import MeetingPage from './pages/MeetingPage';
 import WorkspacePage from './pages/WorkspacePage';
-import GmailPage from './pages/GmailPage';
 
 function App() {
   return (
@@ -23,7 +22,6 @@ function App() {
               <Route path="/game-mode" element={<GameModePage />} />
               <Route path="/meetings" element={<MeetingPage />} />
               <Route path="/workspace" element={<WorkspacePage />} />
-              <Route path="/gmail" element={<GmailPage />} />
             </Routes>
           </div>
         </Router>
