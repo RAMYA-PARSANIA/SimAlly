@@ -47,7 +47,6 @@ const userSessions = new Map();
 app.post('/api/chat/agent-process', async (req, res) => {
   try {
     const { message, userId, context = {} } = req.body;
-    
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     // Enhanced intent detection with document generation capability
@@ -118,8 +117,14 @@ app.post('/api/chat/agent-process', async (req, res) => {
     `;
     
     const result = await model.generateContent(intentPrompt);
-    const response = result.response.text();
-    
+    let response = result.response.text();
+
+    // Remove markdown code block formatting if present (e.g., ```json ... ```
+    response = response.replace(/^```json\s*/i, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+
     try {
       const agentResponse = JSON.parse(response);
       
@@ -714,7 +719,7 @@ const getChatResponse = async (message, userId) => {
 };
 
 // =============================================================================
-// GMAIL FUNCTIONALITY (existing)
+// GMAIL FUNCTIONALITY - AI ASSISTED (NEW)
 // =============================================================================
 
 // Gmail OAuth - Get authorization URL
@@ -1081,110 +1086,65 @@ app.delete('/api/chat/history', (req, res) => {
 
 
 
-// Endpoint: Generate document PDF from user prompt using Gemini + latex.ytotech.com
+// Endpoint: Generate document content (HTML or PDFMake JSON) from user prompt using Gemini
 app.post('/api/documents/generate', async (req, res) => {
   try {
-    const { prompt, documentType = 'general' } = req.body;
+    const { prompt, documentType = 'general', format = 'html' } = req.body;
+
     if (!prompt || !prompt.trim()) {
       return res.status(400).json({ success: false, error: 'Document prompt is required' });
     }
 
-    // 1. Use Gemini to generate LaTeX code
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const latexPrompt = `
-      You are an expert LaTeX document generator. Create a professional, well-formatted LaTeX document based on this request:
+
+    // Choose prompt based on requested format
+    const generationPrompt = format === 'pdfmake' ? `
+      You are a document automation expert. Generate a valid, clean PDFMake document definition object (in pure JSON) for the following request:
 
       Request: "${prompt}"
-      Document Type: ${documentType}
+      Document Type: "${documentType}"
+
+      Return only a valid JSON structure that can be passed to pdfmake.createPdf(docDefinition).download().
+    ` : `
+      You are an expert document designer. Generate a modern, professional HTML layout for the following:
+
+      Request: "${prompt}"
+      Document Type: "${documentType}"
 
       Requirements:
-      1. Generate COMPLETE, VALID LaTeX code that compiles without errors
-      2. Use appropriate document class (article, report, letter, etc.)
-      3. Include only ESSENTIAL packages that are commonly available
-      4. Create professional-looking content with proper structure
-      5. Use sections, subsections, lists, tables, and other elements as appropriate
-      6. Include proper spacing, margins, and typography
-      7. Add placeholder content if the request is vague, but make it relevant
-      8. Ensure the document is publication-ready
-      9. AVOID exotic packages or fonts that might not be available online
-
-      Document types and their requirements:
-      - "letter": Use letter class, include date, address, signature
-      - "report": Use report class, include title page, table of contents, chapters
-      - "article": Use article class, include abstract, sections, references
-      - "resume": Professional CV format with sections for experience, education, skills
-      - "proposal": Business proposal format with executive summary, objectives, timeline
-      - "memo": Professional memo format with header, subject, body
-      - "general": Choose the most appropriate format based on content
-
-      IMPORTANT:
-      - Return ONLY the LaTeX code, no explanations or markdown formatting
-      - Use only standard packages: geometry, amsmath, graphicx, hyperref, fancyhdr
-      - Ensure UTF-8 compatibility
-      - Make the content substantial and professional
-      - Test that this would compile on a standard LaTeX installation
-
-      Example structure for reference:
-      \\documentclass[11pt,a4paper]{article}
-      \\usepackage[utf8]{inputenc}
-      \\usepackage[T1]{fontenc}
-      \\usepackage{geometry}
-      \\usepackage{amsmath}
-      \\usepackage{graphicx}
-      \\usepackage{hyperref}
-
-      \\geometry{margin=1in}
-
-      \\title{Document Title}
-      \\author{Author Name}
-      \\date{\\today}
-
-      \\begin{document}
-      \\maketitle
-
-      % Content here
-
-      \\end{document}
+      - Use semantic HTML structure (header, section, article)
+      - Use inline styles or Tailwind CSS class names (optional)
+      - Include placeholder images or icons using public links
+      - Use dummy values if user data is missing
+      - Ensure HTML is clean and ready to convert to PDF using html2pdf.js
+      - No script tags. No markdown. No LaTeX.
+      Return only the HTML as a string (no explanation).
     `;
-    const result = await model.generateContent(latexPrompt);
-    let latexCode = result.response.text().trim();
 
-    // Clean up LaTeX code (remove markdown formatting if present)
-    latexCode = latexCode
-      .replace(/^```latex\s*/gm, '')
-      .replace(/^```\s*/gm, '')
+    const result = await model.generateContent(generationPrompt);
+    let content = result.response.text().trim();
+
+    // Clean output if wrapped in code blocks
+    content = content
+      .replace(/^```(html|json)\s*/gm, '')
       .replace(/```$/gm, '')
       .trim();
 
-    // 2. Use latex.ytotech.com to compile LaTeX to PDF
-    const response = await fetch('https://latex.ytotech.com/builds/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        compiler: 'pdflatex',
-        resources: [
-          {
-            main: true,
-            file: 'main.tex',
-            content: latexCode
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      return res.status(500).json({ success: false, error: `LaTeX compilation failed: ${response.status} ${response.statusText}`, latexCode });
+    // PDFMake specific: ensure it's a valid JSON object
+    if (format === 'pdfmake') {
+      content = content.replace(/([{,])\s*([^"\s]+)\s*:/g, '$1"$2":'); // Quote keys
     }
 
-    const pdfBuffer = await response.buffer();
-    const pdfBase64 = pdfBuffer.toString('base64');
+    // Fallback for empty content
+    if (!content) {
+      return res.status(400).json({ success: false, error: 'No content generated. Please try a different prompt.' });
+    }
 
     res.json({
       success: true,
       document: {
-        latexCode,
-        pdfBase64,
-        message: 'PDF generated successfully using Gemini + latex.ytotech.com'
+        content,
+        message: `Document generated successfully as ${format === 'pdfmake' ? 'PDFMake JSON' : 'HTML'}`
       }
     });
   } catch (error) {

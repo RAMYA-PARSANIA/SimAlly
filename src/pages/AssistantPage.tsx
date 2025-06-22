@@ -37,6 +37,14 @@ interface AgentResponse {
   };
 }
 
+// Update GeneratedDocument interface for generic document (HTML/pdfmake)
+interface GeneratedDocument {
+  content: string;
+  downloadUrl?: string;
+  message?: string;
+  format?: string;
+}
+
 interface AgentAction {
   type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation';
   target: string;
@@ -62,16 +70,6 @@ interface Recommendation {
   description: string;
   priority: 'low' | 'medium' | 'high';
   action: string;
-}
-
-interface GeneratedDocument {
-  id: string;
-  filename: string;
-  downloadUrl: string;
-  latexCode: string;
-  type: string;
-  createdAt: string;
-  pdfError?: string;
 }
 
 const AssistantPage: React.FC = () => {
@@ -193,9 +191,9 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const generateDocument = async (prompt: string, documentType: string = 'general') => {
+  const generateDocument = async (prompt: string, documentType: string = 'general', format: string = 'html', download: boolean = false) => {
     setIsGeneratingDocument(true);
-    
+
     try {
       const response = await fetch('http://localhost:8001/api/documents/generate', {
         method: 'POST',
@@ -206,12 +204,13 @@ const AssistantPage: React.FC = () => {
         body: JSON.stringify({
           prompt,
           documentType,
-          userId: user?.id
+          format,
+          download
         })
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         setGeneratedDocuments(prev => [data.document, ...prev]);
         return data.document;
@@ -618,7 +617,6 @@ const AssistantPage: React.FC = () => {
                             <FileText className="w-4 h-4 mr-2 text-orange-500" />
                             Generated Document
                           </h4>
-                          
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <div>
@@ -639,15 +637,39 @@ const AssistantPage: React.FC = () => {
                                   <span>Preview</span>
                                 </Button>
                                 
-                                <Button
-                                  onClick={() => window.open(`http://localhost:8001${msg.agent.generatedDocument.downloadUrl}`, '_blank')}
-                                  variant="secondary"
-                                  size="sm"
-                                  className="flex items-center space-x-1"
-                                >
-                                  <Download className="w-4 h-4" />
-                                  <span>Download</span>
-                                </Button>
+                                {/* Download button for PDFMake/HTML */}
+                                {msg.agent.generatedDocument.downloadUrl ? (
+                                  <Button
+                                    onClick={() => window.open(`http://localhost:8001${msg.agent.generatedDocument.downloadUrl}`, '_blank')}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    <span>Download</span>
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    onClick={async () => {
+                                      // Download HTML as PDF using html2pdf.js (client-side)
+                                      const blob = new Blob([msg.agent.generatedDocument.content], { type: 'text/html' });
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement('a');
+                                      a.href = url;
+                                      a.download = 'document.html';
+                                      document.body.appendChild(a);
+                                      a.click();
+                                      document.body.removeChild(a);
+                                      URL.revokeObjectURL(url);
+                                    }}
+                                    variant="secondary"
+                                    size="sm"
+                                    className="flex items-center space-x-1"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                    <span>Download</span>
+                                  </Button>
+                                )}
                               </div>
                             </div>
                             
