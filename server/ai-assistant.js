@@ -1032,7 +1032,14 @@ const analyzeUserData = async (data, originalMessage, intent) => {
     `;
     
     const result = await model.generateContent(analysisPrompt);
-    const response = result.response.text();
+    let response = result.response.text();
+
+    // Clean output if wrapped in code blocks
+    response = response
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
     
     return JSON.parse(response);
   } catch (error) {
