@@ -92,6 +92,8 @@ app.get('/auth/gmail/callback', async (req, res) => {
       expiresAt: Date.now() + (tokens.expires_in * 1000)
     });
 
+    console.log(`Gmail connected for user ${userId}`);
+
     // Redirect back to frontend with success
     res.redirect(`http://localhost:5173/assistant?gmail_connected=true`);
   } catch (error) {
@@ -111,6 +113,8 @@ app.get('/api/gmail/status', (req, res) => {
 
     const tokens = gmailTokens.get(userId);
     const isConnected = tokens && tokens.expiresAt > Date.now();
+
+    console.log(`Gmail status check for user ${userId}: ${isConnected ? 'connected' : 'disconnected'}`);
 
     res.json({ 
       success: true, 
@@ -133,6 +137,7 @@ app.post('/api/gmail/disconnect', (req, res) => {
     }
 
     gmailTokens.delete(userId);
+    console.log(`Gmail disconnected for user ${userId}`);
     res.json({ success: true, message: 'Gmail disconnected successfully' });
   } catch (error) {
     console.error('Error disconnecting Gmail:', error);
@@ -175,6 +180,7 @@ const refreshTokenIfNeeded = async (userId) => {
         expiresAt: Date.now() + (credentials.expires_in * 1000)
       });
       
+      console.log(`Token refreshed for user ${userId}`);
       return true;
     } catch (error) {
       console.error('Token refresh failed:', error);
@@ -199,6 +205,8 @@ app.get('/api/gmail/unread', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
+    console.log(`Fetching unread emails for user ${userId}`);
+
     await refreshTokenIfNeeded(userId);
     const gmail = getGmailClient(userId);
 
@@ -212,6 +220,8 @@ app.get('/api/gmail/unread', async (req, res) => {
     if (!response.data.messages) {
       return res.json({ success: true, emails: [], totalCount: 0 });
     }
+
+    console.log(`Found ${response.data.messages.length} unread messages`);
 
     // Get detailed message data
     const emails = await Promise.all(
@@ -238,6 +248,8 @@ app.get('/api/gmail/unread', async (req, res) => {
       })
     );
 
+    console.log(`Returning ${emails.length} unread emails`);
+
     res.json({ 
       success: true, 
       emails,
@@ -259,6 +271,8 @@ app.get('/api/gmail/search-by-sender', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID and sender required' });
     }
 
+    console.log(`Searching emails from sender ${sender} for user ${userId}`);
+
     await refreshTokenIfNeeded(userId);
     const gmail = getGmailClient(userId);
 
@@ -272,6 +286,8 @@ app.get('/api/gmail/search-by-sender', async (req, res) => {
     if (!response.data.messages) {
       return res.json({ success: true, emails: [] });
     }
+
+    console.log(`Found ${response.data.messages.length} emails from ${sender}`);
 
     // Get detailed message data
     const emails = await Promise.all(
@@ -381,6 +397,8 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
 
+    console.log(`Deleting ${messageIds.length} emails for user ${userId}`);
+
     await refreshTokenIfNeeded(userId);
     const gmail = getGmailClient(userId);
 
@@ -405,6 +423,8 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
 
     const successful = results.filter(r => r.status === 'fulfilled').length;
     const failed = results.filter(r => r.status === 'rejected').length;
+
+    console.log(`Deleted ${successful} emails, failed ${failed}`);
 
     res.json({
       success: true,
@@ -431,6 +451,8 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
     if (!userId || !messageIds || !Array.isArray(messageIds)) {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
+
+    console.log(`Summarizing ${messageIds.length} emails for user ${userId}`);
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
@@ -512,6 +534,7 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
 
     try {
       const analysis = JSON.parse(response);
+      console.log(`Email analysis complete: ${analysis.tasks?.length || 0} tasks, ${analysis.events?.length || 0} events`);
       res.json({ success: true, ...analysis });
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
@@ -538,6 +561,8 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
     if (!userId || !messageIds || !Array.isArray(messageIds)) {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
+
+    console.log(`Extracting tasks and events from ${messageIds.length} emails for user ${userId}`);
 
     // First, get the email analysis
     const summaryResponse = await fetch(`http://localhost:${PORT}/api/gmail/summarize-emails`, {
@@ -572,6 +597,7 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
 
         if (!error) {
           createdTasks.push(newTask);
+          console.log(`Created task: ${task.title}`);
         }
       } catch (error) {
         console.error('Error creating task:', error);
@@ -600,12 +626,15 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
 
           if (!error) {
             createdEvents.push(newEvent);
+            console.log(`Created event: ${event.title}`);
           }
         }
       } catch (error) {
         console.error('Error creating event:', error);
       }
     }
+
+    console.log(`Extraction complete: ${createdTasks.length} tasks, ${createdEvents.length} events created`);
 
     res.json({
       success: true,
@@ -631,6 +660,8 @@ app.post('/api/chat/agent-process', async (req, res) => {
   try {
     const { message, userId, context = {} } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    console.log(`Processing agent request for user ${userId}: ${message}`);
     
     // Enhanced intent detection with Gmail capabilities
     const intentPrompt = `
@@ -693,11 +724,11 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - general_assistance: General help and questions
 
       Gmail examples:
-      - "Show me unread emails" → gmail_management intent, action: list_unread
-      - "Delete emails from sender@example.com" → gmail_management intent, action: delete_by_sender
-      - "Summarize my recent emails" → gmail_management intent, action: summarize_emails
-      - "Find tasks in my emails" → gmail_management intent, action: extract_tasks
-      - "Clean up promotional emails" → gmail_management intent, action: cleanup_emails
+      - "Show me unread emails" → gmail_management intent, subIntent: "list_unread"
+      - "Delete emails from sender@example.com" → gmail_management intent, subIntent: "search_sender"
+      - "Summarize my recent emails" → gmail_management intent, subIntent: "summarize_emails"
+      - "Find tasks in my emails" → gmail_management intent, subIntent: "extract_tasks"
+      - "Clean up promotional emails" → gmail_management intent, subIntent: "search_sender"
     `;
     
     const result = await model.generateContent(intentPrompt);
@@ -711,6 +742,8 @@ app.post('/api/chat/agent-process', async (req, res) => {
 
     try {
       const agentResponse = JSON.parse(response);
+      
+      console.log(`Agent response: intent=${agentResponse.intent}, subIntent=${agentResponse.subIntent}`);
       
       // Handle Gmail operations
       if (agentResponse.intent === 'gmail_management') {
