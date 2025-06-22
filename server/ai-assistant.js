@@ -39,6 +39,8 @@ const oauth2Client = new OAuth2Client(
 
 // Store user sessions (in production, use Redis or database)
 const userSessions = new Map();
+// WARNING: gmailTokens is in-memory only. Gmail connection will be lost on server restart.
+// For production, persist tokens in a database.
 const gmailTokens = new Map(); // Store Gmail tokens per user
 
 // =============================================================================
@@ -103,7 +105,7 @@ app.get('/auth/gmail/callback', async (req, res) => {
 });
 
 // Check Gmail connection status
-app.get('/api/gmail/status', (req, res) => {
+app.get('/api/gmail/status', async (req, res) => {
   try {
     const { userId } = req.query;
     
@@ -111,7 +113,27 @@ app.get('/api/gmail/status', (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    const tokens = gmailTokens.get(userId);
+    let tokens = gmailTokens.get(userId);
+
+    // Try to refresh token if expired and refresh_token is available
+    if (tokens && tokens.expiresAt <= Date.now() && tokens.refresh_token) {
+      try {
+        oauth2Client.setCredentials(tokens);
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        tokens = {
+          ...credentials,
+          expiresAt: Date.now() + (credentials.expires_in * 1000),
+          refresh_token: tokens.refresh_token // Google may not always return refresh_token
+        };
+        gmailTokens.set(userId, tokens);
+        console.log(`Refreshed Gmail token for user ${userId} in status check`);
+      } catch (err) {
+        console.error('Failed to refresh Gmail token in status check:', err);
+        gmailTokens.delete(userId);
+        tokens = null;
+      }
+    }
+
     const isConnected = tokens && tokens.expiresAt > Date.now();
 
     console.log(`Gmail status check for user ${userId}: ${isConnected ? 'connected' : 'disconnected'}`);
@@ -125,6 +147,13 @@ app.get('/api/gmail/status', (req, res) => {
     console.error('Error checking Gmail status:', error);
     res.status(500).json({ success: false, error: 'Failed to check status' });
   }
+});
+
+// (Optional) Debug endpoint to view token state for a user
+app.get('/api/gmail/debug-tokens', (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'User ID required' });
+  res.json(gmailTokens.get(userId) || {});
 });
 
 // Disconnect Gmail
