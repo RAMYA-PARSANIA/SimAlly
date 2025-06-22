@@ -1,8 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { google } = require('googleapis');
-const { OAuth2Client } = require('google-auth-library');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs-extra');
 const path = require('path');
@@ -30,13 +28,6 @@ fs.ensureDirSync(path.join(__dirname, 'downloads'));
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 
-// Gmail OAuth2 setup
-const oauth2Client = new OAuth2Client(
-  process.env.GMAIL_CLIENT_ID,
-  process.env.GMAIL_CLIENT_SECRET,
-  process.env.GMAIL_REDIRECT_URI
-);
-
 // Store user sessions (in production, use Redis or database)
 const userSessions = new Map();
 
@@ -46,28 +37,24 @@ const userSessions = new Map();
 
 app.post('/api/chat/agent-process', async (req, res) => {
   try {
-    const { message, userId, context = {}, files = [] } = req.body;
+    const { message, userId, context = {} } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
-    // Enhanced intent detection with Gmail operations
+    // Enhanced intent detection with document generation capability
     const intentPrompt = `
       You are SimAlly, an advanced AI agent that can help users with various tasks. Analyze this user message and determine the best way to help them.
 
       User message: "${message}"
       User context: ${JSON.stringify(context)}
-      Files attached: ${files.length > 0 ? 'Yes' : 'No'}
 
       Available capabilities:
       1. Task Management - View, create, update tasks
       2. Calendar Management - View events, schedule meetings
       3. Meeting Control - Start/join video meetings
-      4. Gmail Operations - List, search, delete, send emails (WITHIN ASSISTANT UI)
-      5. Workspace Navigation - Navigate to different sections
-      6. Data Analysis - Analyze user's tasks, calendar, productivity
-      7. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
-      8. General Assistance - Answer questions, provide help
-
-      IMPORTANT: For Gmail operations, NEVER navigate away from assistant. Always show email data in the assistant UI itself.
+      4. Workspace Navigation - Navigate to different sections
+      5. Data Analysis - Analyze user's tasks, calendar, productivity
+      6. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
+      7. General Assistance - Answer questions, provide help
 
       Respond with a comprehensive JSON that includes:
       {
@@ -76,19 +63,9 @@ app.post('/api/chat/agent-process', async (req, res) => {
         "confidence": 0.0-1.0,
         "requiresData": true/false,
         "dataQueries": ["list of data queries needed"],
-        "gmailOperation": {
-          "type": "list_unread|search_sender|delete_emails|send_email|none",
-          "parameters": {
-            "query": "search query for emails",
-            "sender": "sender email/name",
-            "recipient": "email recipient",
-            "subject": "email subject",
-            "body": "email body"
-          }
-        },
         "actions": [
           {
-            "type": "navigation|data_display|external_action|suggestion|document_generation|gmail_operation",
+            "type": "navigation|data_display|external_action|suggestion|document_generation",
             "target": "specific_target",
             "parameters": {}
           }
@@ -105,7 +82,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
       }
 
       Intent categories:
-      - gmail_operations: Email management (list, search, delete, send)
       - task_management: View, create, update tasks
       - calendar_management: View calendar, schedule events
       - meeting_control: Start/join meetings
@@ -114,24 +90,24 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - document_generation: Create documents (letters, reports, resumes, etc.)
       - general_assistance: General help and questions
 
-      Gmail operation examples:
-      - "Show me unread emails" → gmail_operations intent, type: "list_unread"
-      - "List emails from john@example.com" → gmail_operations intent, type: "search_sender", sender: "john@example.com"
-      - "Delete emails from spam@company.com" → gmail_operations intent, type: "delete_emails", sender: "spam@company.com"
-      - "Send email to sarah about meeting" → gmail_operations intent, type: "send_email"
+      Document generation examples:
+      - "Create a business letter" → document_generation intent, type: "letter"
+      - "Generate a project report" → document_generation intent, type: "report"
+      - "Write a professional resume" → document_generation intent, type: "resume"
+      - "Draft a proposal for..." → document_generation intent, type: "proposal"
+      - "Create a memo about..." → document_generation intent, type: "memo"
 
       Examples:
       - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
       - "Start a meeting" → meeting_control intent, navigate to meeting page
-      - "Show unread emails" → gmail_operations intent, list unread emails in UI
-      - "Delete emails from newsletter@company.com" → gmail_operations intent, show emails and ask for confirmation
+      - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
       - "Create a business letter to complain about service" → document_generation intent, generate letter
     `;
     
     const result = await model.generateContent(intentPrompt);
     let response = result.response.text();
 
-    // Remove markdown code block formatting if present
+    // Remove markdown code block formatting if present (e.g., ```json ... ```
     response = response.replace(/^```json\s*/i, '')
       .replace(/^```\s*/gm, '')
       .replace(/```$/gm, '')
@@ -142,6 +118,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       
       // Handle document generation
       if (agentResponse.intent === 'document_generation') {
+        // Extract document type and content from the message
         const documentType = agentResponse.actions.find(a => a.type === 'document_generation')?.parameters?.type || 'general';
         
         agentResponse.documentGeneration = {
@@ -149,12 +126,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
           type: documentType,
           ready: true
         };
-      }
-      
-      // Handle Gmail operations
-      if (agentResponse.intent === 'gmail_operations' && agentResponse.gmailOperation) {
-        agentResponse.requiresGmailData = true;
-        agentResponse.gmailQuery = agentResponse.gmailOperation;
       }
       
       // Fetch required data if needed
@@ -194,12 +165,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
               parameters: { target: 'tasks' }
             },
             {
-              title: 'Check Emails',
-              description: 'View your unread emails',
-              action: 'gmail',
-              parameters: { type: 'list_unread' }
-            },
-            {
               title: 'Start Meeting',
               description: 'Begin a new video meeting',
               action: 'navigate',
@@ -223,332 +188,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
     });
   }
 });
-
-// =============================================================================
-// REAL GMAIL API INTEGRATION
-// =============================================================================
-
-// Gmail OAuth - Get authorization URL
-app.get('/api/gmail/auth-url', (req, res) => {
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/gmail.modify'
-    ],
-  });
-  
-  res.json({ authUrl });
-});
-
-// Gmail OAuth - Handle callback
-app.post('/api/gmail/auth-callback', async (req, res) => {
-  try {
-    const { code, userId } = req.body;
-    const { tokens } = await oauth2Client.getAccessToken(code);
-    
-    // Store tokens for user
-    userSessions.set(userId, {
-      ...userSessions.get(userId),
-      gmailTokens: tokens
-    });
-    
-    res.json({ success: true, message: 'Gmail connected successfully' });
-  } catch (error) {
-    console.error('Gmail auth error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Check Gmail connection status
-app.get('/api/gmail/status', (req, res) => {
-  const { userId } = req.query;
-  const userSession = userSessions.get(userId);
-  
-  res.json({
-    connected: !!(userSession?.gmailTokens),
-    needsAuth: !(userSession?.gmailTokens)
-  });
-});
-
-// Real Gmail operations endpoint
-app.post('/api/gmail/operation', async (req, res) => {
-  try {
-    const { operation, parameters, userId } = req.body;
-    const userSession = userSessions.get(userId);
-    
-    if (!userSession?.gmailTokens) {
-      return res.status(401).json({
-        success: false,
-        error: 'Gmail not connected. Please connect your Gmail account first.',
-        needsAuth: true
-      });
-    }
-    
-    // Set up Gmail API client
-    oauth2Client.setCredentials(userSession.gmailTokens);
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    
-    let result = {};
-    
-    switch (operation.type) {
-      case 'list_unread':
-        result = await getUnreadEmails(gmail);
-        break;
-        
-      case 'search_sender':
-        const sender = parameters.sender || parameters.query;
-        result = await searchEmailsBySender(gmail, sender);
-        break;
-        
-      case 'search_query':
-        result = await searchEmails(gmail, parameters.query);
-        break;
-        
-      default:
-        result = { emails: [], totalCount: 0, query: '' };
-    }
-    
-    res.json({
-      success: true,
-      result
-    });
-  } catch (error) {
-    console.error('Gmail operation error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Real Gmail delete operation
-app.post('/api/gmail/delete', async (req, res) => {
-  try {
-    const { emailIds, userId } = req.body;
-    const userSession = userSessions.get(userId);
-    
-    if (!userSession?.gmailTokens) {
-      return res.status(401).json({
-        success: false,
-        error: 'Gmail not connected'
-      });
-    }
-    
-    oauth2Client.setCredentials(userSession.gmailTokens);
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    
-    // Delete emails one by one
-    const deletePromises = emailIds.map(id =>
-      gmail.users.messages.delete({
-        userId: 'me',
-        id: id
-      })
-    );
-    
-    await Promise.all(deletePromises);
-    
-    res.json({
-      success: true,
-      deletedCount: emailIds.length,
-      message: `Successfully deleted ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`
-    });
-  } catch (error) {
-    console.error('Gmail delete error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// Send Email
-app.post('/api/gmail/send', async (req, res) => {
-  try {
-    const { userId, to, subject, body, isHtml = false } = req.body;
-    const userSession = userSessions.get(userId);
-    
-    if (!userSession?.gmailTokens) {
-      return res.status(401).json({ success: false, error: 'Gmail not connected' });
-    }
-    
-    oauth2Client.setCredentials(userSession.gmailTokens);
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    
-    const emailContent = [
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      `Content-Type: ${isHtml ? 'text/html' : 'text/plain'}; charset=utf-8`,
-      '',
-      body
-    ].join('\n');
-    
-    const encodedEmail = Buffer.from(emailContent).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
-    
-    const result = await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: {
-        raw: encodedEmail
-      }
-    });
-    
-    res.json({ success: true, messageId: result.data.id });
-  } catch (error) {
-    console.error('Send email error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// =============================================================================
-// GMAIL HELPER FUNCTIONS
-// =============================================================================
-
-async function getUnreadEmails(gmail) {
-  try {
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: 'is:unread',
-      maxResults: 20
-    });
-    
-    const messages = response.data.messages || [];
-    const emails = await Promise.all(
-      messages.slice(0, 10).map(msg => getEmailDetails(gmail, msg.id))
-    );
-    
-    return {
-      emails: emails.filter(email => email !== null),
-      totalCount: response.data.resultSizeEstimate || 0,
-      query: 'is:unread'
-    };
-  } catch (error) {
-    console.error('Error getting unread emails:', error);
-    throw error;
-  }
-}
-
-async function searchEmailsBySender(gmail, sender) {
-  try {
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: `from:${sender}`,
-      maxResults: 20
-    });
-    
-    const messages = response.data.messages || [];
-    const emails = await Promise.all(
-      messages.slice(0, 10).map(msg => getEmailDetails(gmail, msg.id))
-    );
-    
-    return {
-      emails: emails.filter(email => email !== null),
-      totalCount: response.data.resultSizeEstimate || 0,
-      query: `from:${sender}`
-    };
-  } catch (error) {
-    console.error('Error searching emails by sender:', error);
-    throw error;
-  }
-}
-
-async function searchEmails(gmail, query) {
-  try {
-    const response = await gmail.users.messages.list({
-      userId: 'me',
-      q: query,
-      maxResults: 20
-    });
-    
-    const messages = response.data.messages || [];
-    const emails = await Promise.all(
-      messages.slice(0, 10).map(msg => getEmailDetails(gmail, msg.id))
-    );
-    
-    return {
-      emails: emails.filter(email => email !== null),
-      totalCount: response.data.resultSizeEstimate || 0,
-      query: query
-    };
-  } catch (error) {
-    console.error('Error searching emails:', error);
-    throw error;
-  }
-}
-
-async function getEmailDetails(gmail, messageId) {
-  try {
-    const response = await gmail.users.messages.get({
-      userId: 'me',
-      id: messageId
-    });
-    
-    const message = response.data;
-    const headers = message.payload?.headers || [];
-    
-    const getHeader = (name) => {
-      const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());
-      return header?.value || '';
-    };
-    
-    const subject = getHeader('Subject') || '(No Subject)';
-    const from = getHeader('From') || 'Unknown Sender';
-    const to = getHeader('To');
-    const date = getHeader('Date');
-    const isRead = !message.labelIds?.includes('UNREAD');
-    const hasAttachments = checkForAttachments(message.payload);
-    
-    return {
-      id: message.id,
-      subject,
-      from,
-      to,
-      date: formatDate(date),
-      snippet: message.snippet || '',
-      isRead,
-      hasAttachments,
-      labels: message.labelIds || []
-    };
-  } catch (error) {
-    console.error('Error getting email details:', error);
-    return null;
-  }
-}
-
-function checkForAttachments(payload) {
-  if (!payload) return false;
-  
-  if (payload.parts) {
-    return payload.parts.some(part => 
-      part.filename && part.filename.length > 0
-    );
-  }
-  
-  return false;
-}
-
-function formatDate(dateString) {
-  if (!dateString) return '';
-  
-  try {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - date.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 1) {
-      return 'Today';
-    } else if (diffDays === 2) {
-      return 'Yesterday';
-    } else if (diffDays <= 7) {
-      return `${diffDays - 1} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  } catch {
-    return dateString;
-  }
-}
 
 // Fetch user data based on queries
 const fetchUserData = async (userId, queries) => {
@@ -946,9 +585,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
     
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
-      1. Gmail operations (send, read, delete, unsubscribe, compose help)
-      2. Document generation (letters, reports, resumes, proposals, memos)
-      3. General chat/questions
+      1. Document generation (letters, reports, resumes, proposals, memos)
+      2. General chat/questions
       
       Analyze this user message and determine the intent, extract parameters, and provide a helpful response.
       
@@ -956,12 +594,10 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Respond in this exact JSON format:
       {
-        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, document_generation, chat",
+        "intent": "one of: document_generation, chat",
         "confidence": 0.0-1.0,
         "parameters": {
           // Extract relevant parameters based on intent
-          // For gmail_send: {"to": "email", "subject": "subject", "body": "body"}
-          // For gmail_read: {"count": number, "query": "search terms"}
           // For document_generation: {"type": "letter|report|resume|proposal|memo|general", "content": "description"}
           // For chat: {}
         },
@@ -969,7 +605,6 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       }
       
       Examples:
-      - "Send an email to john@example.com about the meeting" → gmail_send intent
       - "Create a business letter" → document_generation intent with type "letter"
       - "Generate a project report" → document_generation intent with type "report"
       - "What's the weather today?" → chat intent
@@ -1031,7 +666,7 @@ const getChatResponse = async (message, userId) => {
     
     const prompt = `
       You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
-      You can help with Gmail management, document generation, and general questions.
+      You can help with document generation and general questions.
       
       ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
       
@@ -1221,7 +856,7 @@ app.post('/api/documents/generate', async (req, res) => {
       Requirements:
       - Use semantic HTML structure (header, section, article)
       - Use inline styles or Tailwind CSS class names (optional)
-      - Make it visually appealing and professional
+      - Include placeholder images or icons using public links
       - Use dummy values if user data is missing
       - Ensure HTML is clean and ready to convert to PDF using html2pdf.js
       - No script tags. No markdown. No LaTeX.
@@ -1268,7 +903,6 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     services: {
-      gmail: 'ready (real API)',
       meetings: 'ready',
       chatbot: 'ready',
       intentDetection: 'ready',
@@ -1284,15 +918,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '8.0.0',
-    services: ['Real Gmail API', 'Advanced AI Agent', 'Document Generation', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
+    version: '9.0.0',
+    services: ['Advanced AI Agent', 'Document Generation', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Real Gmail API, Advanced AI Agent, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
+  console.log('Features: Advanced AI Agent, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;

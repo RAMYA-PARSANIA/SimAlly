@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp, FileText, Download, Eye, Code, Copy, Check, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp, FileText, Download, Eye, Code, Copy, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
-import EmailListDisplay from '../components/EmailListDisplay';
-import { ProcessedEmail } from '../types/gmail';
 
 interface Message {
   id: string;
@@ -22,8 +20,6 @@ interface AgentResponse {
   subIntent: string;
   confidence: number;
   requiresData: boolean;
-  requiresGmailData?: boolean;
-  gmailQuery?: GmailQuery;
   dataQueries?: string[];
   actions: AgentAction[];
   response: string;
@@ -40,22 +36,6 @@ interface AgentResponse {
     ready: boolean;
   };
   generatedDocument?: GeneratedDocument;
-  gmailData?: {
-    emails: ProcessedEmail[];
-    totalCount: number;
-    query: string;
-  };
-}
-
-interface GmailQuery {
-  type: 'list_unread' | 'search_sender' | 'delete_emails' | 'send_email' | 'none';
-  parameters: {
-    query?: string;
-    sender?: string;
-    recipient?: string;
-    subject?: string;
-    body?: string;
-  };
 }
 
 // Update GeneratedDocument interface for generic document (HTML/pdfmake)
@@ -67,7 +47,7 @@ interface GeneratedDocument {
 }
 
 interface AgentAction {
-  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation' | 'gmail_operation';
+  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation';
   target: string;
   parameters: any;
 }
@@ -100,14 +80,10 @@ const AssistantPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isGmailConnected, setIsGmailConnected] = useState(false);
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
   const [generatedDocuments, setGeneratedDocuments] = useState<GeneratedDocument[]>([]);
   const [showLatexCode, setShowLatexCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [files, setFiles] = useState<any[]>([]);
-  const [gmailAuthUrl, setGmailAuthUrl] = useState<string | null>(null);
-  const [showGmailAuth, setShowGmailAuth] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -141,10 +117,9 @@ const AssistantPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history and check Gmail status on mount
+  // Load chat history on mount
   useEffect(() => {
     loadChatHistory();
-    checkGmailStatus();
   }, []);
 
   const loadChatHistory = async () => {
@@ -168,18 +143,6 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const checkGmailStatus = async () => {
-    try {
-      const response = await fetch(`http://localhost:8001/api/gmail/status?userId=${user?.id}`, {
-        credentials: 'include'
-      });
-      const data = await response.json();
-      setIsGmailConnected(data.connected);
-    } catch (error) {
-      console.error('Failed to check Gmail status:', error);
-    }
-  };
-
   const handleBack = () => {
     navigate('/dashboard');
   };
@@ -194,7 +157,7 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const processWithAgent = async (userMessage: string, filesToSend: any[] = []): Promise<AgentResponse> => {
+  const processWithAgent = async (userMessage: string): Promise<AgentResponse> => {
     try {
       const response = await fetch('http://localhost:8001/api/chat/agent-process', {
         method: 'POST',
@@ -208,15 +171,14 @@ const AssistantPage: React.FC = () => {
           context: {
             currentPage: 'assistant',
             timestamp: new Date().toISOString()
-          },
-          files: filesToSend
+          }
         })
       });
 
       const data = await response.json();
-      if (data.success && data.agent) return data.agent;
-      throw new Error('Agent response failed');
+      return data.success ? data.agent : null;
     } catch (error) {
+      console.error('Agent processing failed:', error);
       return {
         intent: 'general_assistance',
         subIntent: 'error',
@@ -226,113 +188,6 @@ const AssistantPage: React.FC = () => {
         response: 'I apologize, but I encountered an error processing your request. Please try again.',
         suggestions: []
       };
-    }
-  };
-
-  const handleGmailOperation = async (gmailQuery: GmailQuery): Promise<any> => {
-    try {
-      const response = await fetch('http://localhost:8001/api/gmail/operation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          operation: gmailQuery,
-          parameters: gmailQuery.parameters,
-          userId: user?.id
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        return data.result;
-      } else if (data.needsAuth) {
-        // Show Gmail auth prompt
-        setShowGmailAuth(true);
-        await getGmailAuthUrl();
-        throw new Error('Gmail authentication required. Please connect your Gmail account.');
-      }
-      throw new Error(data.error || 'Gmail operation failed');
-    } catch (error) {
-      console.error('Gmail operation failed:', error);
-      throw error;
-    }
-  };
-
-  const getGmailAuthUrl = async () => {
-    try {
-      const response = await fetch('http://localhost:8001/api/gmail/auth-url', {
-        credentials: 'include'
-      });
-      const data = await response.json();
-      setGmailAuthUrl(data.authUrl);
-    } catch (error) {
-      console.error('Failed to get Gmail auth URL:', error);
-    }
-  };
-
-  const connectGmail = () => {
-    if (gmailAuthUrl) {
-      // Open Gmail OAuth in popup
-      const popup = window.open(
-        gmailAuthUrl,
-        'gmail-auth',
-        'width=500,height=600,scrollbars=yes,resizable=yes'
-      );
-
-      // Listen for popup close (user completed auth)
-      const checkClosed = setInterval(() => {
-        if (popup?.closed) {
-          clearInterval(checkClosed);
-          // Check Gmail status again
-          setTimeout(() => {
-            checkGmailStatus();
-            setShowGmailAuth(false);
-          }, 1000);
-        }
-      }, 1000);
-    }
-  };
-
-  const handleGmailDelete = async (emailIds: string[]) => {
-    try {
-      const response = await fetch('http://localhost:8001/api/gmail/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          emailIds,
-          userId: user?.id
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        // Add success message
-        const successMessage: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: `✅ ${data.message}`,
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, successMessage]);
-        return true;
-      }
-      throw new Error(data.error || 'Delete operation failed');
-    } catch (error) {
-      console.error('Gmail delete failed:', error);
-      // Add error message
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `❌ Failed to delete emails: ${error.message}`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      return false;
     }
   };
 
@@ -371,7 +226,7 @@ const AssistantPage: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!message.trim() && files.length === 0 || isProcessing) return;
+    if (!message.trim() || isProcessing) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -386,19 +241,7 @@ const AssistantPage: React.FC = () => {
 
     try {
       // Process with enhanced agent
-      const agentResponse = await processWithAgent(userMessage.content, files);
-      setFiles([]); // Clear files after sending
-      
-      // Handle Gmail operations
-      if (agentResponse.requiresGmailData && agentResponse.gmailQuery) {
-        try {
-          const gmailData = await handleGmailOperation(agentResponse.gmailQuery);
-          agentResponse.gmailData = gmailData;
-          agentResponse.response += `\n\nI found ${gmailData.totalCount} email${gmailData.totalCount !== 1 ? 's' : ''} matching your criteria.`;
-        } catch (gmailError: any) {
-          agentResponse.response += `\n\n❌ Gmail operation failed: ${gmailError?.message || gmailError}`;
-        }
-      }
+      const agentResponse = await processWithAgent(userMessage.content);
       
       // Handle document generation if requested
       if (agentResponse.documentGeneration?.ready) {
@@ -411,7 +254,7 @@ const AssistantPage: React.FC = () => {
           agentResponse.generatedDocument = document;
           agentResponse.response += `\n\n✅ Document generated successfully! You can preview the document and download the PDF below.`;
         } catch (docError: any) {
-          agentResponse.response += `\n\n❌ Failed to generate document: ${docError?.message || docError}`;
+          agentResponse.response += `\n\n❌ Failed to generate document: ${docError.message}`;
         }
       }
       
@@ -455,9 +298,6 @@ const AssistantPage: React.FC = () => {
         break;
       case 'document':
         setMessage(`Create a ${suggestion.parameters.type || 'professional'} document`);
-        break;
-      case 'gmail':
-        setMessage(suggestion.parameters.query || suggestion.title);
         break;
       default:
         console.log('Suggestion clicked:', suggestion);
@@ -516,26 +356,6 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList) return;
-    const newFiles: any[] = [];
-    let loaded = 0;
-    Array.from(fileList).forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          newFiles.push({ type: 'image', data: event.target?.result });
-          loaded++;
-          if (loaded === fileList.length) {
-            setFiles((prev) => [...prev, ...newFiles]);
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-  };
-
   const getIntentIcon = (intent?: string) => {
     switch (intent) {
       case 'task_management':
@@ -544,8 +364,6 @@ const AssistantPage: React.FC = () => {
         return <Calendar className="w-4 h-4" />;
       case 'meeting_control':
         return <Video className="w-4 h-4" />;
-      case 'gmail_operations':
-        return <Mail className="w-4 h-4" />;
       case 'productivity_analysis':
         return <BarChart3 className="w-4 h-4" />;
       case 'document_generation':
@@ -563,8 +381,6 @@ const AssistantPage: React.FC = () => {
         return 'text-green-500';
       case 'meeting_control':
         return 'text-purple-500';
-      case 'gmail_operations':
-        return 'text-red-500';
       case 'productivity_analysis':
         return 'text-yellow-500';
       case 'document_generation':
@@ -620,7 +436,7 @@ const AssistantPage: React.FC = () => {
                   AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Advanced Intelligence • Real Gmail API • Document Generation • Data Analysis • Smart Actions
+                  Advanced Intelligence • Document Generation • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
@@ -631,10 +447,6 @@ const AssistantPage: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                   <span className="text-xs text-secondary">Agent Active</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
-                  <span className="text-xs text-secondary">Gmail {isGmailConnected ? 'Connected' : 'Disconnected'}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 rounded-full bg-green-500" />
@@ -656,51 +468,6 @@ const AssistantPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Gmail Auth Modal */}
-      {showGmailAuth && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-md"
-          >
-            <GlassCard className="p-8" goldBorder>
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <Mail className="w-6 h-6 text-red-500" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-primary">Connect Gmail</h2>
-                  <p className="text-sm text-secondary">Required for email operations</p>
-                </div>
-              </div>
-              
-              <p className="text-secondary mb-6">
-                To perform Gmail operations like viewing, searching, and deleting emails, you need to connect your Gmail account.
-              </p>
-
-              <div className="flex space-x-3">
-                <Button
-                  onClick={() => setShowGmailAuth(false)}
-                  variant="secondary"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={connectGmail}
-                  variant="premium"
-                  className="flex-1"
-                  disabled={!gmailAuthUrl}
-                >
-                  Connect Gmail
-                </Button>
-              </div>
-            </GlassCard>
-          </motion.div>
-        </div>
-      )}
-
       {/* Main Chat Interface */}
       <main className="flex flex-col h-[calc(100vh-80px)]">
         {/* Messages Area */}
@@ -720,7 +487,7 @@ const AssistantPage: React.FC = () => {
                 </h2>
                 <p className="text-secondary mb-8 max-w-3xl mx-auto">
                   I can analyze your data, provide insights, manage your tasks and calendar, control meetings, 
-                  handle Gmail operations directly in this interface, generate professional documents, and much more. Just tell me what you need in natural language!
+                  generate professional documents, and much more. Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
@@ -734,10 +501,10 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                   
                   <GlassCard className="p-4 text-center" hover>
-                    <Mail className="w-8 h-8 text-red-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Gmail Operations</h3>
+                    <BarChart3 className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Productivity Analysis</h3>
                     <p className="text-xs text-secondary">
-                      "Show me unread emails"
+                      "How productive was I this week?"
                     </p>
                   </GlassCard>
 
@@ -759,24 +526,8 @@ const AssistantPage: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-secondary mb-8">
-                  I can access your data, handle Gmail operations, and provide personalized insights
+                  I can access your data, generate documents, and provide personalized insights
                 </p>
-                
-                {!isGmailConnected && (
-                  <div className="mt-8">
-                    <Button
-                      onClick={() => {
-                        setShowGmailAuth(true);
-                        getGmailAuthUrl();
-                      }}
-                      variant="secondary"
-                      className="inline-flex items-center space-x-2"
-                    >
-                      <Mail className="w-4 h-4" />
-                      <span>Connect Gmail</span>
-                    </Button>
-                  </div>
-                )}
               </motion.div>
             )}
 
@@ -820,18 +571,6 @@ const AssistantPage: React.FC = () => {
                       )}
                       
                       <p className="text-primary whitespace-pre-wrap mb-3">{msg.content}</p>
-
-                      {/* Gmail Data Display */}
-                      {msg.agent?.gmailData && (
-                        <div className="mt-4">
-                          <EmailListDisplay
-                            emails={msg.agent.gmailData.emails}
-                            title={`Gmail Results`}
-                            onDeleteSelected={handleGmailDelete}
-                            showActions={msg.agent.gmailQuery?.type === 'delete_emails' || msg.agent.gmailQuery?.type === 'search_sender'}
-                          />
-                        </div>
-                      )}
 
                       {/* Generated Document Display */}
                       {msg.agent?.generatedDocument && (
@@ -1048,7 +787,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask me anything... (e.g., 'Show unread emails', 'Delete emails from spam@company.com', 'Create a business letter', 'Start a meeting')"
+                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Create a business letter', 'Start a meeting', 'Generate a project report')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1060,34 +799,11 @@ const AssistantPage: React.FC = () => {
                 />
                 <div className="flex items-center justify-between mt-2">
                   <div className="text-xs text-secondary">
-                    I can handle Gmail operations, analyze data, manage tasks, control meetings, generate documents, and much more
+                    I can analyze data, manage tasks, control meetings, generate documents, and much more
                   </div>
                   <div className="text-xs text-secondary">
                     Enter to send • Shift+Enter for new line
                   </div>
-                </div>
-                {/* Image upload */}
-                <div className="mt-2 flex items-center space-x-2">
-                  <label className="glass-panel px-3 py-2 rounded-lg cursor-pointer hover:bg-secondary/10">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleFileChange}
-                      disabled={isProcessing}
-                    />
-                    <span className="text-xs text-secondary">Attach Image</span>
-                  </label>
-                  {/* Show thumbnails of selected images */}
-                  {files.map((file, idx) => file.type === 'image' && (
-                    <img
-                      key={idx}
-                      src={file.data}
-                      alt="preview"
-                      className="w-8 h-8 object-cover rounded border border-gray-300"
-                    />
-                  ))}
                 </div>
               </div>
               
