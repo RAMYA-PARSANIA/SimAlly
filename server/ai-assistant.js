@@ -46,7 +46,7 @@ const userSessions = new Map();
 
 app.post('/api/chat/agent-process', async (req, res) => {
   try {
-    const { message, userId, context = {} } = req.body;
+    const { message, userId, context = {}, files = [] } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
     // Enhanced intent detection with document generation capability
@@ -55,12 +55,13 @@ app.post('/api/chat/agent-process', async (req, res) => {
 
       User message: "${message}"
       User context: ${JSON.stringify(context)}
+      ${files.length > 0 ? `User has attached ${files.length} file(s)` : ''}
 
       Available capabilities:
       1. Task Management - View, create, update tasks
       2. Calendar Management - View events, schedule meetings
       3. Meeting Control - Start/join video meetings
-      4. Gmail Operations - Send, read, manage emails
+      4. Gmail Operations - Send, read, manage emails, open Gmail interface
       5. Workspace Navigation - Navigate to different sections
       6. Data Analysis - Analyze user's tasks, calendar, productivity
       7. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
@@ -95,11 +96,17 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - task_management: View, create, update tasks
       - calendar_management: View calendar, schedule events
       - meeting_control: Start/join meetings
-      - gmail_operations: Email management
+      - gmail_operations: Email management, open Gmail interface
       - workspace_navigation: Navigate to different sections
       - productivity_analysis: Analyze user's productivity
       - document_generation: Create documents (letters, reports, resumes, etc.)
       - general_assistance: General help and questions
+
+      Gmail operations examples:
+      - "Check my emails" → gmail_operations intent, action: navigate to /gmail
+      - "Open Gmail" → gmail_operations intent, action: navigate to /gmail
+      - "Send an email" → gmail_operations intent, action: navigate to /gmail with compose
+      - "Read my messages" → gmail_operations intent, action: navigate to /gmail
 
       Document generation examples:
       - "Create a business letter" → document_generation intent, type: "letter"
@@ -112,7 +119,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
       - "Start a meeting" → meeting_control intent, navigate to meeting page
       - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
-      - "Send email to John" → gmail_operations intent, compose email
+      - "Check my Gmail" → gmail_operations intent, navigate to /gmail
       - "Create a business letter to complain about service" → document_generation intent, generate letter
     `;
     
@@ -138,6 +145,17 @@ app.post('/api/chat/agent-process', async (req, res) => {
           type: documentType,
           ready: true
         };
+      }
+
+      // Handle Gmail operations
+      if (agentResponse.intent === 'gmail_operations') {
+        agentResponse.actions.push({
+          type: 'navigation',
+          target: '/gmail',
+          parameters: {
+            openCompose: message.toLowerCase().includes('send') || message.toLowerCase().includes('compose')
+          }
+        });
       }
       
       // Fetch required data if needed
@@ -175,6 +193,12 @@ app.post('/api/chat/agent-process', async (req, res) => {
               description: 'See all your current tasks and their status',
               action: 'navigate',
               parameters: { target: 'tasks' }
+            },
+            {
+              title: 'Check Gmail',
+              description: 'Open your Gmail interface',
+              action: 'navigate',
+              parameters: { target: '/gmail' }
             },
             {
               title: 'Start Meeting',
@@ -597,7 +621,7 @@ app.post('/api/chat/detect-intent', async (req, res) => {
     
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
-      1. Gmail operations (send, read, delete, unsubscribe, compose help)
+      1. Gmail operations (send, read, delete, unsubscribe, compose help, open Gmail interface)
       2. Document generation (letters, reports, resumes, proposals, memos)
       3. General chat/questions
       
@@ -607,12 +631,13 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Respond in this exact JSON format:
       {
-        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, document_generation, chat",
+        "intent": "one of: gmail_send, gmail_read, gmail_delete, gmail_unsubscribe, gmail_compose_help, gmail_open, document_generation, chat",
         "confidence": 0.0-1.0,
         "parameters": {
           // Extract relevant parameters based on intent
           // For gmail_send: {"to": "email", "subject": "subject", "body": "body"}
           // For gmail_read: {"count": number, "query": "search terms"}
+          // For gmail_open: {}
           // For document_generation: {"type": "letter|report|resume|proposal|memo|general", "content": "description"}
           // For chat: {}
         },
@@ -621,6 +646,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Examples:
       - "Send an email to john@example.com about the meeting" → gmail_send intent
+      - "Check my emails" → gmail_open intent
+      - "Open Gmail" → gmail_open intent
       - "Create a business letter" → document_generation intent with type "letter"
       - "Generate a project report" → document_generation intent with type "report"
       - "What's the weather today?" → chat intent
@@ -1084,8 +1111,6 @@ app.delete('/api/chat/history', (req, res) => {
   }
 });
 
-
-
 // Endpoint: Generate document content (HTML or PDFMake JSON) from user prompt using Gemini
 app.post('/api/documents/generate', async (req, res) => {
   try {
@@ -1187,8 +1212,5 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log('Features: Advanced AI Agent, Online Document Generation, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
-
-
-
 
 module.exports = app;
