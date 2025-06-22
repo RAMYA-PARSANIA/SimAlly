@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createClient } = require('@supabase/supabase-js');
+const { google } = require('googleapis');
+const { OAuth2Client } = require('google-auth-library');
 const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -28,11 +30,601 @@ fs.ensureDirSync(path.join(__dirname, 'downloads'));
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
 
+// Gmail OAuth2 setup
+const oauth2Client = new OAuth2Client(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI
+);
+
 // Store user sessions (in production, use Redis or database)
 const userSessions = new Map();
+const gmailTokens = new Map(); // Store Gmail tokens per user
 
 // =============================================================================
-// ENHANCED INTENT DETECTION & AGENT SYSTEM
+// GMAIL AUTHENTICATION & SETUP
+// =============================================================================
+
+// Gmail OAuth2 authorization URL
+app.get('/api/gmail/auth-url', (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    const scopes = [
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/gmail.compose'
+    ];
+
+    const authUrl = oauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: scopes,
+      state: userId, // Pass userId in state for callback
+      prompt: 'consent'
+    });
+
+    res.json({ success: true, authUrl });
+  } catch (error) {
+    console.error('Error generating auth URL:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate auth URL' });
+  }
+});
+
+// Gmail OAuth2 callback
+app.get('/auth/gmail/callback', async (req, res) => {
+  try {
+    const { code, state: userId } = req.query;
+
+    if (!code || !userId) {
+      return res.status(400).send('Missing authorization code or user ID');
+    }
+
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    
+    // Store tokens for user
+    gmailTokens.set(userId, {
+      ...tokens,
+      expiresAt: Date.now() + (tokens.expires_in * 1000)
+    });
+
+    // Redirect back to frontend with success
+    res.redirect(`http://localhost:5173/assistant?gmail_connected=true`);
+  } catch (error) {
+    console.error('Gmail OAuth callback error:', error);
+    res.redirect(`http://localhost:5173/assistant?gmail_error=true`);
+  }
+});
+
+// Check Gmail connection status
+app.get('/api/gmail/status', (req, res) => {
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    const tokens = gmailTokens.get(userId);
+    const isConnected = tokens && tokens.expiresAt > Date.now();
+
+    res.json({ 
+      success: true, 
+      connected: isConnected,
+      email: tokens?.email || null
+    });
+  } catch (error) {
+    console.error('Error checking Gmail status:', error);
+    res.status(500).json({ success: false, error: 'Failed to check status' });
+  }
+});
+
+// Disconnect Gmail
+app.post('/api/gmail/disconnect', (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    gmailTokens.delete(userId);
+    res.json({ success: true, message: 'Gmail disconnected successfully' });
+  } catch (error) {
+    console.error('Error disconnecting Gmail:', error);
+    res.status(500).json({ success: false, error: 'Failed to disconnect Gmail' });
+  }
+});
+
+// =============================================================================
+// GMAIL API HELPERS
+// =============================================================================
+
+const getGmailClient = (userId) => {
+  const tokens = gmailTokens.get(userId);
+  if (!tokens || tokens.expiresAt <= Date.now()) {
+    throw new Error('Gmail not connected or token expired');
+  }
+
+  const client = new OAuth2Client(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    process.env.GMAIL_REDIRECT_URI
+  );
+  
+  client.setCredentials(tokens);
+  return google.gmail({ version: 'v1', auth: client });
+};
+
+const refreshTokenIfNeeded = async (userId) => {
+  const tokens = gmailTokens.get(userId);
+  if (!tokens) return false;
+
+  // Refresh if token expires in next 5 minutes
+  if (tokens.expiresAt - Date.now() < 5 * 60 * 1000) {
+    try {
+      oauth2Client.setCredentials(tokens);
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      
+      gmailTokens.set(userId, {
+        ...credentials,
+        expiresAt: Date.now() + (credentials.expires_in * 1000)
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      gmailTokens.delete(userId);
+      return false;
+    }
+  }
+  
+  return true;
+};
+
+// =============================================================================
+// GMAIL EMAIL OPERATIONS
+// =============================================================================
+
+// Get unread emails
+app.get('/api/gmail/unread', async (req, res) => {
+  try {
+    const { userId, maxResults = 20 } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    await refreshTokenIfNeeded(userId);
+    const gmail = getGmailClient(userId);
+
+    // Get unread message IDs
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'is:unread',
+      maxResults: parseInt(maxResults)
+    });
+
+    if (!response.data.messages) {
+      return res.json({ success: true, emails: [], totalCount: 0 });
+    }
+
+    // Get detailed message data
+    const emails = await Promise.all(
+      response.data.messages.map(async (msg) => {
+        const detail = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date']
+        });
+
+        const headers = detail.data.payload.headers;
+        const getHeader = (name) => headers.find(h => h.name === name)?.value || '';
+
+        return {
+          id: msg.id,
+          threadId: msg.threadId,
+          from: getHeader('From'),
+          subject: getHeader('Subject') || '(No Subject)',
+          date: getHeader('Date'),
+          snippet: detail.data.snippet,
+          isUnread: true
+        };
+      })
+    );
+
+    res.json({ 
+      success: true, 
+      emails,
+      totalCount: response.data.resultSizeEstimate || 0
+    });
+
+  } catch (error) {
+    console.error('Error fetching unread emails:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch unread emails' });
+  }
+});
+
+// Search emails by sender
+app.get('/api/gmail/search-by-sender', async (req, res) => {
+  try {
+    const { userId, sender, maxResults = 50 } = req.query;
+    
+    if (!userId || !sender) {
+      return res.status(400).json({ success: false, error: 'User ID and sender required' });
+    }
+
+    await refreshTokenIfNeeded(userId);
+    const gmail = getGmailClient(userId);
+
+    // Search for emails from sender
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: `from:${sender}`,
+      maxResults: parseInt(maxResults)
+    });
+
+    if (!response.data.messages) {
+      return res.json({ success: true, emails: [] });
+    }
+
+    // Get detailed message data
+    const emails = await Promise.all(
+      response.data.messages.map(async (msg) => {
+        const detail = await gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date']
+        });
+
+        const headers = detail.data.payload.headers;
+        const getHeader = (name) => headers.find(h => h.name === name)?.value || '';
+
+        return {
+          id: msg.id,
+          threadId: msg.threadId,
+          from: getHeader('From'),
+          subject: getHeader('Subject') || '(No Subject)',
+          date: getHeader('Date'),
+          snippet: detail.data.snippet,
+          isUnread: detail.data.labelIds?.includes('UNREAD') || false
+        };
+      })
+    );
+
+    res.json({ success: true, emails });
+
+  } catch (error) {
+    console.error('Error searching emails by sender:', error);
+    res.status(500).json({ success: false, error: 'Failed to search emails' });
+  }
+});
+
+// Get email content for summarization
+app.get('/api/gmail/email-content/:messageId', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const { messageId } = req.params;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    await refreshTokenIfNeeded(userId);
+    const gmail = getGmailClient(userId);
+
+    const response = await gmail.users.messages.get({
+      userId: 'me',
+      id: messageId,
+      format: 'full'
+    });
+
+    const message = response.data;
+    const headers = message.payload.headers;
+    const getHeader = (name) => headers.find(h => h.name === name)?.value || '';
+
+    // Extract email body
+    let body = '';
+    const extractBody = (payload) => {
+      if (payload.body && payload.body.data) {
+        return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+      }
+      
+      if (payload.parts) {
+        for (const part of payload.parts) {
+          if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
+            if (part.body && part.body.data) {
+              return Buffer.from(part.body.data, 'base64').toString('utf-8');
+            }
+          }
+          
+          const nested = extractBody(part);
+          if (nested) return nested;
+        }
+      }
+      
+      return '';
+    };
+
+    body = extractBody(message.payload) || message.snippet || '';
+
+    res.json({
+      success: true,
+      email: {
+        id: messageId,
+        from: getHeader('From'),
+        subject: getHeader('Subject'),
+        date: getHeader('Date'),
+        body: body.substring(0, 5000), // Limit body size
+        snippet: message.snippet
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching email content:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch email content' });
+  }
+});
+
+// Delete emails
+app.post('/api/gmail/delete-emails', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
+    }
+
+    await refreshTokenIfNeeded(userId);
+    const gmail = getGmailClient(userId);
+
+    // Delete emails in batches
+    const batchSize = 10;
+    const results = [];
+    
+    for (let i = 0; i < messageIds.length; i += batchSize) {
+      const batch = messageIds.slice(i, i + batchSize);
+      
+      const batchResults = await Promise.allSettled(
+        batch.map(id => 
+          gmail.users.messages.delete({
+            userId: 'me',
+            id: id
+          })
+        )
+      );
+      
+      results.push(...batchResults);
+    }
+
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+
+    res.json({
+      success: true,
+      deleted: successful,
+      failed: failed,
+      total: messageIds.length
+    });
+
+  } catch (error) {
+    console.error('Error deleting emails:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete emails' });
+  }
+});
+
+// =============================================================================
+// AI EMAIL PROCESSING
+// =============================================================================
+
+// Summarize emails
+app.post('/api/gmail/summarize-emails', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    
+    // Get email contents
+    const emails = [];
+    for (const messageId of messageIds.slice(0, 10)) { // Limit to 10 emails
+      try {
+        const contentResponse = await fetch(`http://localhost:${PORT}/api/gmail/email-content/${messageId}?userId=${userId}`);
+        const contentData = await contentResponse.json();
+        
+        if (contentData.success) {
+          emails.push(contentData.email);
+        }
+      } catch (error) {
+        console.error(`Error fetching email ${messageId}:`, error);
+      }
+    }
+
+    if (emails.length === 0) {
+      return res.json({ success: true, summary: 'No emails to summarize', tasks: [], events: [] });
+    }
+
+    const prompt = `
+      Analyze these emails and provide:
+      1. A concise summary of all emails
+      2. Extract any tasks, deadlines, or action items
+      3. Identify any events, meetings, or calendar items
+      4. Group similar emails together
+      
+      Emails:
+      ${emails.map((email, i) => `
+        Email ${i + 1}:
+        From: ${email.from}
+        Subject: ${email.subject}
+        Date: ${email.date}
+        Content: ${email.body}
+        ---
+      `).join('\n')}
+      
+      Respond in JSON format:
+      {
+        "summary": "Overall summary of all emails",
+        "groups": [
+          {
+            "category": "Category name",
+            "emails": ["email subjects"],
+            "summary": "Summary of this group"
+          }
+        ],
+        "tasks": [
+          {
+            "title": "Task title",
+            "description": "Task description",
+            "priority": "low|medium|high|urgent",
+            "dueDate": "YYYY-MM-DD or null",
+            "source": "Email subject that mentioned this task"
+          }
+        ],
+        "events": [
+          {
+            "title": "Event title",
+            "description": "Event description",
+            "startTime": "YYYY-MM-DD HH:mm or null",
+            "endTime": "YYYY-MM-DD HH:mm or null",
+            "source": "Email subject that mentioned this event"
+          }
+        ]
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    let response = result.response.text();
+
+    // Clean response
+    response = response.replace(/^```json\s*/i, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+
+    try {
+      const analysis = JSON.parse(response);
+      res.json({ success: true, ...analysis });
+    } catch (parseError) {
+      console.error('Failed to parse AI response:', parseError);
+      res.json({
+        success: true,
+        summary: 'Successfully analyzed emails, but formatting failed',
+        groups: [],
+        tasks: [],
+        events: []
+      });
+    }
+
+  } catch (error) {
+    console.error('Error summarizing emails:', error);
+    res.status(500).json({ success: false, error: 'Failed to summarize emails' });
+  }
+});
+
+// Extract tasks and events from emails and add to user's workspace
+app.post('/api/gmail/extract-tasks-events', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
+    }
+
+    // First, get the email analysis
+    const summaryResponse = await fetch(`http://localhost:${PORT}/api/gmail/summarize-emails`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, messageIds })
+    });
+
+    const summaryData = await summaryResponse.json();
+    
+    if (!summaryData.success) {
+      return res.status(500).json({ success: false, error: 'Failed to analyze emails' });
+    }
+
+    const { tasks = [], events = [] } = summaryData;
+    
+    // Add tasks to user's task list
+    const createdTasks = [];
+    for (const task of tasks) {
+      try {
+        const { data: newTask, error } = await supabase
+          .from('tasks')
+          .insert({
+            title: task.title,
+            description: `${task.description}\n\nSource: ${task.source}`,
+            priority: task.priority || 'medium',
+            due_date: task.dueDate || null,
+            created_by: userId
+          })
+          .select()
+          .single();
+
+        if (!error) {
+          createdTasks.push(newTask);
+        }
+      } catch (error) {
+        console.error('Error creating task:', error);
+      }
+    }
+
+    // Add events to user's calendar
+    const createdEvents = [];
+    for (const event of events) {
+      try {
+        if (event.startTime) {
+          const startTime = new Date(event.startTime);
+          const endTime = event.endTime ? new Date(event.endTime) : new Date(startTime.getTime() + 60 * 60 * 1000);
+
+          const { data: newEvent, error } = await supabase
+            .from('calendar_events')
+            .insert({
+              title: event.title,
+              description: `${event.description}\n\nSource: ${event.source}`,
+              start_time: startTime.toISOString(),
+              end_time: endTime.toISOString(),
+              user_id: userId
+            })
+            .select()
+            .single();
+
+          if (!error) {
+            createdEvents.push(newEvent);
+          }
+        }
+      } catch (error) {
+        console.error('Error creating event:', error);
+      }
+    }
+
+    res.json({
+      success: true,
+      summary: summaryData.summary,
+      groups: summaryData.groups,
+      tasksCreated: createdTasks.length,
+      eventsCreated: createdEvents.length,
+      tasks: createdTasks,
+      events: createdEvents
+    });
+
+  } catch (error) {
+    console.error('Error extracting tasks and events:', error);
+    res.status(500).json({ success: false, error: 'Failed to extract tasks and events' });
+  }
+});
+
+// =============================================================================
+// ENHANCED INTENT DETECTION & AGENT SYSTEM (Updated with Gmail)
 // =============================================================================
 
 app.post('/api/chat/agent-process', async (req, res) => {
@@ -40,9 +632,9 @@ app.post('/api/chat/agent-process', async (req, res) => {
     const { message, userId, context = {} } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
-    // Enhanced intent detection with document generation capability
+    // Enhanced intent detection with Gmail capabilities
     const intentPrompt = `
-      You are SimAlly, an advanced AI agent that can help users with various tasks. Analyze this user message and determine the best way to help them.
+      You are SimAlly, an advanced AI agent that can help users with various tasks including Gmail management. Analyze this user message and determine the best way to help them.
 
       User message: "${message}"
       User context: ${JSON.stringify(context)}
@@ -54,7 +646,16 @@ app.post('/api/chat/agent-process', async (req, res) => {
       4. Workspace Navigation - Navigate to different sections
       5. Data Analysis - Analyze user's tasks, calendar, productivity
       6. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
-      7. General Assistance - Answer questions, provide help
+      7. Gmail Management - Read, summarize, delete emails, extract tasks/events
+      8. General Assistance - Answer questions, provide help
+
+      Gmail capabilities include:
+      - List unread emails
+      - Search emails by sender
+      - Summarize email content
+      - Delete emails (bulk or selective)
+      - Extract tasks and events from emails
+      - Email cleanup and organization
 
       Respond with a comprehensive JSON that includes:
       {
@@ -65,7 +666,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
         "dataQueries": ["list of data queries needed"],
         "actions": [
           {
-            "type": "navigation|data_display|external_action|suggestion|document_generation",
+            "type": "navigation|data_display|external_action|suggestion|document_generation|gmail_operation",
             "target": "specific_target",
             "parameters": {}
           }
@@ -88,26 +689,21 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - workspace_navigation: Navigate to different sections
       - productivity_analysis: Analyze user's productivity
       - document_generation: Create documents (letters, reports, resumes, etc.)
+      - gmail_management: Email operations and management
       - general_assistance: General help and questions
 
-      Document generation examples:
-      - "Create a business letter" → document_generation intent, type: "letter"
-      - "Generate a project report" → document_generation intent, type: "report"
-      - "Write a professional resume" → document_generation intent, type: "resume"
-      - "Draft a proposal for..." → document_generation intent, type: "proposal"
-      - "Create a memo about..." → document_generation intent, type: "memo"
-
-      Examples:
-      - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
-      - "Start a meeting" → meeting_control intent, navigate to meeting page
-      - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
-      - "Create a business letter to complain about service" → document_generation intent, generate letter
+      Gmail examples:
+      - "Show me unread emails" → gmail_management intent, action: list_unread
+      - "Delete emails from sender@example.com" → gmail_management intent, action: delete_by_sender
+      - "Summarize my recent emails" → gmail_management intent, action: summarize_emails
+      - "Find tasks in my emails" → gmail_management intent, action: extract_tasks
+      - "Clean up promotional emails" → gmail_management intent, action: cleanup_emails
     `;
     
     const result = await model.generateContent(intentPrompt);
     let response = result.response.text();
 
-    // Remove markdown code block formatting if present (e.g., ```json ... ```
+    // Remove markdown code block formatting if present
     response = response.replace(/^```json\s*/i, '')
       .replace(/^```\s*/gm, '')
       .replace(/```$/gm, '')
@@ -116,9 +712,16 @@ app.post('/api/chat/agent-process', async (req, res) => {
     try {
       const agentResponse = JSON.parse(response);
       
+      // Handle Gmail operations
+      if (agentResponse.intent === 'gmail_management') {
+        agentResponse.gmailOperation = {
+          action: agentResponse.subIntent,
+          ready: true
+        };
+      }
+      
       // Handle document generation
       if (agentResponse.intent === 'document_generation') {
-        // Extract document type and content from the message
         const documentType = agentResponse.actions.find(a => a.type === 'document_generation')?.parameters?.type || 'general';
         
         agentResponse.documentGeneration = {
@@ -165,6 +768,12 @@ app.post('/api/chat/agent-process', async (req, res) => {
               parameters: { target: 'tasks' }
             },
             {
+              title: 'Check Emails',
+              description: 'View your unread emails',
+              action: 'gmail',
+              parameters: { operation: 'list_unread' }
+            },
+            {
               title: 'Start Meeting',
               description: 'Begin a new video meeting',
               action: 'navigate',
@@ -189,7 +798,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
   }
 });
 
-// Fetch user data based on queries
+// Fetch user data based on queries (updated to include Gmail)
 const fetchUserData = async (userId, queries) => {
   const data = {};
   
@@ -211,6 +820,9 @@ const fetchUserData = async (userId, queries) => {
         case 'productivity':
           data.productivity = await fetchProductivityData(userId);
           break;
+        case 'gmail':
+          data.gmail = await fetchGmailData(userId);
+          break;
       }
     }
   } catch (error) {
@@ -218,6 +830,29 @@ const fetchUserData = async (userId, queries) => {
   }
   
   return data;
+};
+
+const fetchGmailData = async (userId) => {
+  try {
+    // Check if Gmail is connected
+    const tokens = gmailTokens.get(userId);
+    if (!tokens || tokens.expiresAt <= Date.now()) {
+      return { connected: false };
+    }
+
+    // Get unread count
+    const unreadResponse = await fetch(`http://localhost:${PORT}/api/gmail/unread?userId=${userId}&maxResults=5`);
+    const unreadData = await unreadResponse.json();
+
+    return {
+      connected: true,
+      unreadCount: unreadData.totalCount || 0,
+      recentUnread: unreadData.emails || []
+    };
+  } catch (error) {
+    console.error('Error fetching Gmail data:', error);
+    return { connected: false };
+  }
 };
 
 const fetchUserTasks = async (userId) => {
@@ -354,7 +989,7 @@ const getUserTaskIds = async (userId) => {
   return data?.map(t => t.task_id).join(',') || '';
 };
 
-// Analyze user data and provide insights
+// Analyze user data and provide insights (updated with Gmail)
 const analyzeUserData = async (data, originalMessage, intent) => {
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -371,7 +1006,8 @@ const analyzeUserData = async (data, originalMessage, intent) => {
       2. Specific actionable recommendations
       3. Priority items they should focus on
       4. Productivity suggestions
-      5. An enhanced response that directly addresses their question with data
+      5. Gmail insights if available
+      6. An enhanced response that directly addresses their question with data
       
       Respond in JSON format:
       {
@@ -410,9 +1046,10 @@ const analyzeUserData = async (data, originalMessage, intent) => {
 };
 
 // =============================================================================
-// CHAT MESSAGE PROCESSING FOR TASK DETECTION (existing functionality)
+// EXISTING FUNCTIONALITY (Meeting AI, Chat, Documents, etc.)
 // =============================================================================
 
+// Chat message processing for task detection (existing functionality)
 app.post('/api/chat/process-message', async (req, res) => {
   try {
     const { message, messageId, channelId, senderId, mentions = [], userId } = req.body;
@@ -573,10 +1210,7 @@ const createTaskFromMessage = async (taskData, createdBy, sourceMessageId, menti
   }
 };
 
-// =============================================================================
-// LEGACY INTENT DETECTION (for backward compatibility)
-// =============================================================================
-
+// Legacy intent detection (for backward compatibility)
 app.post('/api/chat/detect-intent', async (req, res) => {
   try {
     const { message, userId } = req.body;
@@ -586,7 +1220,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
     const intentPrompt = `
       You are an intelligent intent classifier for an AI assistant that can handle:
       1. Document generation (letters, reports, resumes, proposals, memos)
-      2. General chat/questions
+      2. Gmail management (read, summarize, delete emails)
+      3. General chat/questions
       
       Analyze this user message and determine the intent, extract parameters, and provide a helpful response.
       
@@ -594,11 +1229,12 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Respond in this exact JSON format:
       {
-        "intent": "one of: document_generation, chat",
+        "intent": "one of: document_generation, gmail_management, chat",
         "confidence": 0.0-1.0,
         "parameters": {
           // Extract relevant parameters based on intent
           // For document_generation: {"type": "letter|report|resume|proposal|memo|general", "content": "description"}
+          // For gmail_management: {"action": "list_unread|search_sender|summarize|delete|cleanup", "target": "specific target if any"}
           // For chat: {}
         },
         "response": "A helpful response to the user explaining what you'll do or asking for clarification"
@@ -606,7 +1242,8 @@ app.post('/api/chat/detect-intent', async (req, res) => {
       
       Examples:
       - "Create a business letter" → document_generation intent with type "letter"
-      - "Generate a project report" → document_generation intent with type "report"
+      - "Show me unread emails" → gmail_management intent with action "list_unread"
+      - "Delete emails from spam@example.com" → gmail_management intent with action "delete", target "spam@example.com"
       - "What's the weather today?" → chat intent
       
       Be intelligent about parameter extraction and provide clear, helpful responses.
@@ -666,7 +1303,7 @@ const getChatResponse = async (message, userId) => {
     
     const prompt = `
       You are SimAlly, a professional AI assistant. You are helpful, knowledgeable, and maintain a professional yet friendly tone.
-      You can help with document generation and general questions.
+      You can help with document generation, Gmail management, and general questions.
       
       ${conversationContext ? `Previous conversation:\n${conversationContext}\n\n` : ''}
       
@@ -702,11 +1339,7 @@ const getChatResponse = async (message, userId) => {
   }
 };
 
-// =============================================================================
-// MEETING AI FUNCTIONALITY (existing)
-// =============================================================================
-
-// Generate auto notes from meeting transcript
+// Meeting AI functionality (existing)
 app.post('/api/meetings/auto-notes', async (req, res) => {
   try {
     const { text, speaker, userId } = req.body;
@@ -778,11 +1411,7 @@ app.post('/api/meetings/summary', async (req, res) => {
   }
 });
 
-// =============================================================================
-// GENERIC CHATBOT (existing)
-// =============================================================================
-
-// Chat with AI (legacy endpoint for direct chat)
+// Generic chatbot (existing)
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, userId, conversationHistory = [] } = req.body;
@@ -828,7 +1457,7 @@ app.delete('/api/chat/history', (req, res) => {
   }
 });
 
-// Endpoint: Generate document content (HTML or PDFMake JSON) from user prompt using Gemini
+// Document generation (existing)
 app.post('/api/documents/generate', async (req, res) => {
   try {
     const { prompt, documentType = 'general', format = 'html' } = req.body;
@@ -909,24 +1538,35 @@ app.get('/api/health', (req, res) => {
       taskDetection: 'ready',
       agentSystem: 'ready',
       documentGeneration: 'ready',
+      gmailIntegration: 'ready',
       supabase: 'ready'
     },
-    activeSessions: userSessions.size
+    activeSessions: userSessions.size,
+    gmailConnections: gmailTokens.size
   });
 });
 
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '9.0.0',
-    services: ['Advanced AI Agent', 'Document Generation', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
+    version: '10.0.0',
+    services: [
+      'Advanced AI Agent', 
+      'Gmail Integration', 
+      'Document Generation', 
+      'Meeting AI', 
+      'Intent Detection', 
+      'Task Detection', 
+      'Workspace Chat', 
+      'Data Analysis'
+    ]
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Advanced AI Agent, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
+  console.log('Features: Advanced AI Agent, Gmail Integration, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;
