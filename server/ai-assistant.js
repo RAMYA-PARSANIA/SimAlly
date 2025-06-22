@@ -39,9 +39,118 @@ const oauth2Client = new OAuth2Client(
 
 // Store user sessions (in production, use Redis or database)
 const userSessions = new Map();
-// WARNING: gmailTokens is in-memory only. Gmail connection will be lost on server restart.
-// For production, persist tokens in a database.
-const gmailTokens = new Map(); // Store Gmail tokens per user
+
+// =============================================================================
+// GMAIL TOKEN PERSISTENCE FUNCTIONS
+// =============================================================================
+
+const storeGmailTokens = async (userId, tokens) => {
+  try {
+    const tokenData = {
+      user_id: userId,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      token_type: tokens.token_type || 'Bearer',
+      expires_at: new Date(Date.now() + (tokens.expires_in * 1000)).toISOString(),
+      scope: tokens.scope,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Upsert the token data
+    const { error } = await supabase
+      .from('gmail_tokens')
+      .upsert(tokenData, { onConflict: 'user_id' });
+
+    if (error) {
+      console.error('Error storing Gmail tokens:', error);
+      return false;
+    }
+
+    console.log(`Gmail tokens stored for user ${userId}`);
+    return true;
+  } catch (error) {
+    console.error('Error storing Gmail tokens:', error);
+    return false;
+  }
+};
+
+const getGmailTokens = async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('gmail_tokens')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.log(`No Gmail tokens found for user ${userId}`);
+      return null;
+    }
+
+    // Check if token is expired
+    const expiresAt = new Date(data.expires_at);
+    const now = new Date();
+    
+    if (expiresAt <= now) {
+      console.log(`Gmail tokens expired for user ${userId}`);
+      return null;
+    }
+
+    console.log(`Gmail tokens retrieved for user ${userId}`);
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expires_in: Math.floor((expiresAt.getTime() - now.getTime()) / 1000),
+      scope: data.scope,
+      expiresAt: expiresAt.getTime()
+    };
+  } catch (error) {
+    console.error('Error retrieving Gmail tokens:', error);
+    return null;
+  }
+};
+
+const deleteGmailTokens = async (userId) => {
+  try {
+    const { error } = await supabase
+      .from('gmail_tokens')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error deleting Gmail tokens:', error);
+      return false;
+    }
+
+    console.log(`Gmail tokens deleted for user ${userId}`);
+    return true;
+  } catch (error) {
+    console.error('Error deleting Gmail tokens:', error);
+    return false;
+  }
+};
+
+const refreshGmailTokens = async (userId, refreshToken) => {
+  try {
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    
+    const success = await storeGmailTokens(userId, credentials);
+    if (success) {
+      console.log(`Gmail tokens refreshed for user ${userId}`);
+      return credentials;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error refreshing Gmail tokens:', error);
+    // If refresh fails, delete the stored tokens
+    await deleteGmailTokens(userId);
+    return null;
+  }
+};
 
 // =============================================================================
 // GMAIL AUTHENTICATION & SETUP
@@ -88,16 +197,16 @@ app.get('/auth/gmail/callback', async (req, res) => {
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
     
-    // Store tokens for user
-    gmailTokens.set(userId, {
-      ...tokens,
-      expiresAt: Date.now() + (tokens.expires_in * 1000)
-    });
-
-    console.log(`Gmail connected for user ${userId}`);
-
-    // Redirect back to frontend with success
-    res.redirect(`http://localhost:5173/assistant?gmail_connected=true`);
+    // Store tokens in database
+    const success = await storeGmailTokens(userId, tokens);
+    
+    if (success) {
+      console.log(`Gmail connected for user ${userId}`);
+      // Redirect back to frontend with success
+      res.redirect(`http://localhost:5173/assistant?gmail_connected=true`);
+    } else {
+      res.redirect(`http://localhost:5173/assistant?gmail_error=true`);
+    }
   } catch (error) {
     console.error('Gmail OAuth callback error:', error);
     res.redirect(`http://localhost:5173/assistant?gmail_error=true`);
@@ -113,31 +222,12 @@ app.get('/api/gmail/status', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    let tokens = gmailTokens.get(userId);
-
-    // Try to refresh token if expired and refresh_token is available
-    if (tokens && tokens.expiresAt <= Date.now() && tokens.refresh_token) {
-      try {
-        oauth2Client.setCredentials(tokens);
-        const { credentials } = await oauth2Client.refreshAccessToken();
-        tokens = {
-          ...credentials,
-          expiresAt: Date.now() + (credentials.expires_in * 1000),
-          refresh_token: tokens.refresh_token // Google may not always return refresh_token
-        };
-        gmailTokens.set(userId, tokens);
-        console.log(`Refreshed Gmail token for user ${userId} in status check`);
-      } catch (err) {
-        console.error('Failed to refresh Gmail token in status check:', err);
-        gmailTokens.delete(userId);
-        tokens = null;
-      }
-    }
-
-    const isConnected = tokens && tokens.expiresAt > Date.now();
+    console.log(`Gmail status check for user ${userId}: checking...`);
+    const tokens = await getGmailTokens(userId);
+    const isConnected = tokens !== null;
 
     console.log(`Gmail status check for user ${userId}: ${isConnected ? 'connected' : 'disconnected'}`);
-
+    
     res.json({ 
       success: true, 
       connected: isConnected,
@@ -149,15 +239,8 @@ app.get('/api/gmail/status', async (req, res) => {
   }
 });
 
-// (Optional) Debug endpoint to view token state for a user
-app.get('/api/gmail/debug-tokens', (req, res) => {
-  const { userId } = req.query;
-  if (!userId) return res.status(400).json({ error: 'User ID required' });
-  res.json(gmailTokens.get(userId) || {});
-});
-
 // Disconnect Gmail
-app.post('/api/gmail/disconnect', (req, res) => {
+app.post('/api/gmail/disconnect', async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -165,9 +248,13 @@ app.post('/api/gmail/disconnect', (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    gmailTokens.delete(userId);
-    console.log(`Gmail disconnected for user ${userId}`);
-    res.json({ success: true, message: 'Gmail disconnected successfully' });
+    const success = await deleteGmailTokens(userId);
+    
+    if (success) {
+      res.json({ success: true, message: 'Gmail disconnected successfully' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to disconnect Gmail' });
+    }
   } catch (error) {
     console.error('Error disconnecting Gmail:', error);
     res.status(500).json({ success: false, error: 'Failed to disconnect Gmail' });
@@ -178,10 +265,22 @@ app.post('/api/gmail/disconnect', (req, res) => {
 // GMAIL API HELPERS
 // =============================================================================
 
-const getGmailClient = (userId) => {
-  const tokens = gmailTokens.get(userId);
-  if (!tokens || tokens.expiresAt <= Date.now()) {
+const getGmailClient = async (userId) => {
+  const tokens = await getGmailTokens(userId);
+  if (!tokens) {
     throw new Error('Gmail not connected or token expired');
+  }
+
+  // Check if token needs refresh (refresh if expires in next 5 minutes)
+  const now = Date.now();
+  if (tokens.expiresAt - now < 5 * 60 * 1000 && tokens.refresh_token) {
+    console.log(`Refreshing Gmail tokens for user ${userId}`);
+    const refreshedTokens = await refreshGmailTokens(userId, tokens.refresh_token);
+    if (!refreshedTokens) {
+      throw new Error('Failed to refresh Gmail tokens');
+    }
+    // Update tokens with refreshed ones
+    Object.assign(tokens, refreshedTokens);
   }
 
   const client = new OAuth2Client(
@@ -190,35 +289,13 @@ const getGmailClient = (userId) => {
     process.env.GMAIL_REDIRECT_URI
   );
   
-  client.setCredentials(tokens);
-  return google.gmail({ version: 'v1', auth: client });
-};
-
-const refreshTokenIfNeeded = async (userId) => {
-  const tokens = gmailTokens.get(userId);
-  if (!tokens) return false;
-
-  // Refresh if token expires in next 5 minutes
-  if (tokens.expiresAt - Date.now() < 5 * 60 * 1000) {
-    try {
-      oauth2Client.setCredentials(tokens);
-      const { credentials } = await oauth2Client.refreshAccessToken();
-      
-      gmailTokens.set(userId, {
-        ...credentials,
-        expiresAt: Date.now() + (credentials.expires_in * 1000)
-      });
-      
-      console.log(`Token refreshed for user ${userId}`);
-      return true;
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      gmailTokens.delete(userId);
-      return false;
-    }
-  }
+  client.setCredentials({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    token_type: tokens.token_type
+  });
   
-  return true;
+  return google.gmail({ version: 'v1', auth: client });
 };
 
 // =============================================================================
@@ -234,10 +311,7 @@ app.get('/api/gmail/unread', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    console.log(`Fetching unread emails for user ${userId}`);
-
-    await refreshTokenIfNeeded(userId);
-    const gmail = getGmailClient(userId);
+    const gmail = await getGmailClient(userId);
 
     // Get unread message IDs
     const response = await gmail.users.messages.list({
@@ -249,8 +323,6 @@ app.get('/api/gmail/unread', async (req, res) => {
     if (!response.data.messages) {
       return res.json({ success: true, emails: [], totalCount: 0 });
     }
-
-    console.log(`Found ${response.data.messages.length} unread messages`);
 
     // Get detailed message data
     const emails = await Promise.all(
@@ -277,8 +349,6 @@ app.get('/api/gmail/unread', async (req, res) => {
       })
     );
 
-    console.log(`Returning ${emails.length} unread emails`);
-
     res.json({ 
       success: true, 
       emails,
@@ -287,7 +357,11 @@ app.get('/api/gmail/unread', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching unread emails:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch unread emails' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to fetch unread emails' });
+    }
   }
 });
 
@@ -300,10 +374,7 @@ app.get('/api/gmail/search-by-sender', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID and sender required' });
     }
 
-    console.log(`Searching emails from sender ${sender} for user ${userId}`);
-
-    await refreshTokenIfNeeded(userId);
-    const gmail = getGmailClient(userId);
+    const gmail = await getGmailClient(userId);
 
     // Search for emails from sender
     const response = await gmail.users.messages.list({
@@ -315,8 +386,6 @@ app.get('/api/gmail/search-by-sender', async (req, res) => {
     if (!response.data.messages) {
       return res.json({ success: true, emails: [] });
     }
-
-    console.log(`Found ${response.data.messages.length} emails from ${sender}`);
 
     // Get detailed message data
     const emails = await Promise.all(
@@ -347,7 +416,11 @@ app.get('/api/gmail/search-by-sender', async (req, res) => {
 
   } catch (error) {
     console.error('Error searching emails by sender:', error);
-    res.status(500).json({ success: false, error: 'Failed to search emails' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to search emails' });
+    }
   }
 });
 
@@ -361,8 +434,7 @@ app.get('/api/gmail/email-content/:messageId', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    await refreshTokenIfNeeded(userId);
-    const gmail = getGmailClient(userId);
+    const gmail = await getGmailClient(userId);
 
     const response = await gmail.users.messages.get({
       userId: 'me',
@@ -413,7 +485,11 @@ app.get('/api/gmail/email-content/:messageId', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching email content:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch email content' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to fetch email content' });
+    }
   }
 });
 
@@ -426,10 +502,7 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
 
-    console.log(`Deleting ${messageIds.length} emails for user ${userId}`);
-
-    await refreshTokenIfNeeded(userId);
-    const gmail = getGmailClient(userId);
+    const gmail = await getGmailClient(userId);
 
     // Delete emails in batches
     const batchSize = 10;
@@ -453,8 +526,6 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
     const successful = results.filter(r => r.status === 'fulfilled').length;
     const failed = results.filter(r => r.status === 'rejected').length;
 
-    console.log(`Deleted ${successful} emails, failed ${failed}`);
-
     res.json({
       success: true,
       deleted: successful,
@@ -464,7 +535,11 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
 
   } catch (error) {
     console.error('Error deleting emails:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete emails' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to delete emails' });
+    }
   }
 });
 
@@ -480,8 +555,6 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
     if (!userId || !messageIds || !Array.isArray(messageIds)) {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
-
-    console.log(`Summarizing ${messageIds.length} emails for user ${userId}`);
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
@@ -563,7 +636,6 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
 
     try {
       const analysis = JSON.parse(response);
-      console.log(`Email analysis complete: ${analysis.tasks?.length || 0} tasks, ${analysis.events?.length || 0} events`);
       res.json({ success: true, ...analysis });
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
@@ -578,7 +650,11 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
 
   } catch (error) {
     console.error('Error summarizing emails:', error);
-    res.status(500).json({ success: false, error: 'Failed to summarize emails' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to summarize emails' });
+    }
   }
 });
 
@@ -590,8 +666,6 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
     if (!userId || !messageIds || !Array.isArray(messageIds)) {
       return res.status(400).json({ success: false, error: 'User ID and message IDs required' });
     }
-
-    console.log(`Extracting tasks and events from ${messageIds.length} emails for user ${userId}`);
 
     // First, get the email analysis
     const summaryResponse = await fetch(`http://localhost:${PORT}/api/gmail/summarize-emails`, {
@@ -626,7 +700,6 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
 
         if (!error) {
           createdTasks.push(newTask);
-          console.log(`Created task: ${task.title}`);
         }
       } catch (error) {
         console.error('Error creating task:', error);
@@ -655,15 +728,12 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
 
           if (!error) {
             createdEvents.push(newEvent);
-            console.log(`Created event: ${event.title}`);
           }
         }
       } catch (error) {
         console.error('Error creating event:', error);
       }
     }
-
-    console.log(`Extraction complete: ${createdTasks.length} tasks, ${createdEvents.length} events created`);
 
     res.json({
       success: true,
@@ -677,7 +747,11 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
 
   } catch (error) {
     console.error('Error extracting tasks and events:', error);
-    res.status(500).json({ success: false, error: 'Failed to extract tasks and events' });
+    if (error.message.includes('Gmail not connected')) {
+      res.status(401).json({ success: false, error: 'Gmail not connected' });
+    } else {
+      res.status(500).json({ success: false, error: 'Failed to extract tasks and events' });
+    }
   }
 });
 
@@ -689,8 +763,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
   try {
     const { message, userId, context = {} } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
-    console.log(`Processing agent request for user ${userId}: ${message}`);
     
     // Enhanced intent detection with Gmail capabilities
     const intentPrompt = `
@@ -753,11 +825,11 @@ app.post('/api/chat/agent-process', async (req, res) => {
       - general_assistance: General help and questions
 
       Gmail examples:
-      - "Show me unread emails" → gmail_management intent, subIntent: "list_unread"
-      - "Delete emails from sender@example.com" → gmail_management intent, subIntent: "search_sender"
-      - "Summarize my recent emails" → gmail_management intent, subIntent: "summarize_emails"
-      - "Find tasks in my emails" → gmail_management intent, subIntent: "extract_tasks"
-      - "Clean up promotional emails" → gmail_management intent, subIntent: "search_sender"
+      - "Show me unread emails" → gmail_management intent, action: list_unread
+      - "Delete emails from sender@example.com" → gmail_management intent, action: delete_by_sender
+      - "Summarize my recent emails" → gmail_management intent, action: summarize_emails
+      - "Find tasks in my emails" → gmail_management intent, action: extract_tasks
+      - "Clean up promotional emails" → gmail_management intent, action: cleanup_emails
     `;
     
     const result = await model.generateContent(intentPrompt);
@@ -771,8 +843,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
 
     try {
       const agentResponse = JSON.parse(response);
-      
-      console.log(`Agent response: intent=${agentResponse.intent}, subIntent=${agentResponse.subIntent}`);
       
       // Handle Gmail operations
       if (agentResponse.intent === 'gmail_management') {
@@ -897,8 +967,8 @@ const fetchUserData = async (userId, queries) => {
 const fetchGmailData = async (userId) => {
   try {
     // Check if Gmail is connected
-    const tokens = gmailTokens.get(userId);
-    if (!tokens || tokens.expiresAt <= Date.now()) {
+    const tokens = await getGmailTokens(userId);
+    if (!tokens) {
       return { connected: false };
     }
 
@@ -1610,18 +1680,17 @@ app.get('/api/health', (req, res) => {
       gmailIntegration: 'ready',
       supabase: 'ready'
     },
-    activeSessions: userSessions.size,
-    gmailConnections: gmailTokens.size
+    activeSessions: userSessions.size
   });
 });
 
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '10.0.0',
+    version: '11.0.0',
     services: [
       'Advanced AI Agent', 
-      'Gmail Integration', 
+      'Gmail Integration with Persistent Storage', 
       'Document Generation', 
       'Meeting AI', 
       'Intent Detection', 
@@ -1635,7 +1704,7 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Advanced AI Agent, Gmail Integration, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
+  console.log('Features: Advanced AI Agent, Gmail Integration with Database Storage, Document Generation, Intent Detection, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;
