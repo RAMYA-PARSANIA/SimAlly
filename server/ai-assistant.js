@@ -41,315 +41,6 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
-// DOCUMENT GENERATION FEATURE - Using Online LaTeX Compilation
-// =============================================================================
-
-// Function to compile LaTeX using online service
-const compileLatexOnline = async (latexCode) => {
-  try {
-    // Using LaTeX.Online API (free service)
-    const response = await fetch('https://latex.ytotech.com/builds/sync', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        compiler: 'pdflatex',
-        resources: [
-          {
-            main: true,
-            file: 'main.tex',
-            content: latexCode
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`LaTeX compilation failed: ${response.status} ${response.statusText}`);
-    }
-
-    const pdfBuffer = await response.buffer();
-    return pdfBuffer;
-  } catch (error) {
-    console.error('Online LaTeX compilation error:', error);
-    
-    // Fallback: Try alternative service (Overleaf API alternative)
-    try {
-      const fallbackResponse = await fetch('https://texlive.net/cgi-bin/latexcgi', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          filecontents: latexCode,
-          filename: 'document.tex',
-          engine: 'pdflatex'
-        })
-      });
-
-      if (fallbackResponse.ok) {
-        return await fallbackResponse.buffer();
-      }
-    } catch (fallbackError) {
-      console.error('Fallback LaTeX compilation also failed:', fallbackError);
-    }
-    
-    throw error;
-  }
-};
-
-app.post('/api/documents/generate', async (req, res) => {
-  try {
-    const { prompt, documentType = 'general', userId } = req.body;
-    
-    if (!prompt || !prompt.trim()) {
-      return res.status(400).json({
-        success: false,
-        error: 'Document prompt is required'
-      });
-    }
-
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    
-    const latexPrompt = `
-      You are an expert LaTeX document generator. Create a professional, well-formatted LaTeX document based on this request:
-      
-      Request: "${prompt}"
-      Document Type: ${documentType}
-      
-      Requirements:
-      1. Generate COMPLETE, VALID LaTeX code that compiles without errors
-      2. Use appropriate document class (article, report, letter, etc.)
-      3. Include only ESSENTIAL packages that are commonly available
-      4. Create professional-looking content with proper structure
-      5. Use sections, subsections, lists, tables, and other elements as appropriate
-      6. Include proper spacing, margins, and typography
-      7. Add placeholder content if the request is vague, but make it relevant
-      8. Ensure the document is publication-ready
-      9. AVOID exotic packages or fonts that might not be available online
-      
-      Document types and their requirements:
-      - "letter": Use letter class, include date, address, signature
-      - "report": Use report class, include title page, table of contents, chapters
-      - "article": Use article class, include abstract, sections, references
-      - "resume": Professional CV format with sections for experience, education, skills
-      - "proposal": Business proposal format with executive summary, objectives, timeline
-      - "memo": Professional memo format with header, subject, body
-      - "general": Choose the most appropriate format based on content
-      
-      IMPORTANT: 
-      - Return ONLY the LaTeX code, no explanations or markdown formatting
-      - Use only standard packages: geometry, amsmath, graphicx, hyperref, fancyhdr
-      - Ensure UTF-8 compatibility
-      - Make the content substantial and professional
-      - Test that this would compile on a standard LaTeX installation
-      
-      Example structure for reference:
-      \\documentclass[11pt,a4paper]{article}
-      \\usepackage[utf8]{inputenc}
-      \\usepackage[T1]{fontenc}
-      \\usepackage{geometry}
-      \\usepackage{amsmath}
-      \\usepackage{graphicx}
-      \\usepackage{hyperref}
-      
-      \\geometry{margin=1in}
-      
-      \\title{Document Title}
-      \\author{Author Name}
-      \\date{\\today}
-      
-      \\begin{document}
-      \\maketitle
-      
-      % Content here
-      
-      \\end{document}
-    `;
-    
-    const result = await model.generateContent(latexPrompt);
-    const latexCode = result.response.text().trim();
-    
-    // Clean up the LaTeX code (remove any markdown formatting if present)
-    const cleanLatexCode = latexCode
-      .replace(/^```latex\s*/gm, '')
-      .replace(/^```\s*/gm, '')
-      .replace(/```$/gm, '')
-      .trim();
-    
-    // Generate unique filename
-    const documentId = uuidv4();
-    const filename = `document_${documentId}`;
-    const texPath = path.join(__dirname, 'downloads', `${filename}.tex`);
-    const pdfPath = path.join(__dirname, 'downloads', `${filename}.pdf`);
-    
-    // Save LaTeX file
-    await fs.writeFile(texPath, cleanLatexCode, 'utf8');
-    
-    // Generate PDF using online service
-    try {
-      console.log('Compiling LaTeX online...');
-      const pdfBuffer = await compileLatexOnline(cleanLatexCode);
-      await fs.writeFile(pdfPath, pdfBuffer);
-      
-      console.log('PDF generated successfully');
-      
-      res.json({
-        success: true,
-        document: {
-          id: documentId,
-          filename: `${filename}.pdf`,
-          downloadUrl: `/downloads/${filename}.pdf`,
-          latexCode: cleanLatexCode,
-          type: documentType,
-          createdAt: new Date().toISOString(),
-          texDownloadUrl: `/downloads/${filename}.tex`
-        }
-      });
-      
-    } catch (pdfError) {
-      console.error('PDF generation error:', pdfError);
-      
-      // If PDF generation fails, still return the LaTeX code
-      res.json({
-        success: true,
-        document: {
-          id: documentId,
-          filename: `${filename}.tex`,
-          downloadUrl: `/downloads/${filename}.tex`,
-          latexCode: cleanLatexCode,
-          type: documentType,
-          createdAt: new Date().toISOString(),
-          pdfError: 'PDF generation failed, but LaTeX code is available. You can compile it manually on Overleaf or similar services.'
-        }
-      });
-    }
-    
-  } catch (error) {
-    console.error('Document generation error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate document. Please try again.'
-    });
-  }
-});
-
-// Get document preview (for LaTeX code viewing)
-app.get('/api/documents/:documentId/preview', async (req, res) => {
-  try {
-    const { documentId } = req.params;
-    const texPath = path.join(__dirname, 'downloads', `document_${documentId}.tex`);
-    
-    if (await fs.pathExists(texPath)) {
-      const latexCode = await fs.readFile(texPath, 'utf8');
-      res.json({
-        success: true,
-        latexCode
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Document not found'
-      });
-    }
-  } catch (error) {
-    console.error('Document preview error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to load document preview'
-    });
-  }
-});
-
-// Alternative endpoint to try different LaTeX services
-app.post('/api/documents/compile-latex', async (req, res) => {
-  try {
-    const { latexCode, service = 'latex-online' } = req.body;
-    
-    if (!latexCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'LaTeX code is required'
-      });
-    }
-
-    let pdfBuffer;
-    
-    if (service === 'latex-online') {
-      // Primary service: LaTeX.Online
-      const response = await fetch('https://latex.ytotech.com/builds/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          compiler: 'pdflatex',
-          resources: [
-            {
-              main: true,
-              file: 'main.tex',
-              content: latexCode
-            }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`LaTeX compilation failed: ${response.status}`);
-      }
-
-      pdfBuffer = await response.buffer();
-    }
-    
-    // Save PDF
-    const documentId = uuidv4();
-    const filename = `compiled_${documentId}.pdf`;
-    const pdfPath = path.join(__dirname, 'downloads', filename);
-    
-    await fs.writeFile(pdfPath, pdfBuffer);
-    
-    res.json({
-      success: true,
-      downloadUrl: `/downloads/${filename}`,
-      filename: filename
-    });
-    
-  } catch (error) {
-    console.error('LaTeX compilation error:', error);
-    res.status(500).json({
-      success: false,
-      error: `LaTeX compilation failed: ${error.message}`
-    });
-  }
-});
-
-// Clean up old documents (run periodically)
-const cleanupOldDocuments = async () => {
-  try {
-    const downloadsDir = path.join(__dirname, 'downloads');
-    const files = await fs.readdir(downloadsDir);
-    const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-    
-    for (const file of files) {
-      const filePath = path.join(downloadsDir, file);
-      const stats = await fs.stat(filePath);
-      
-      if (now - stats.mtime.getTime() > maxAge) {
-        await fs.remove(filePath);
-        console.log(`Cleaned up old document: ${file}`);
-      }
-    }
-  } catch (error) {
-    console.error('Cleanup error:', error);
-  }
-};
-
-// Run cleanup every hour
-setInterval(cleanupOldDocuments, 60 * 60 * 1000);
-
-// =============================================================================
 // ENHANCED INTENT DETECTION & AGENT SYSTEM
 // =============================================================================
 
@@ -1388,6 +1079,120 @@ app.delete('/api/chat/history', (req, res) => {
   }
 });
 
+
+
+// Endpoint: Generate document PDF from user prompt using Gemini + latex.ytotech.com
+app.post('/api/documents/generate', async (req, res) => {
+  try {
+    const { prompt, documentType = 'general' } = req.body;
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({ success: false, error: 'Document prompt is required' });
+    }
+
+    // 1. Use Gemini to generate LaTeX code
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const latexPrompt = `
+      You are an expert LaTeX document generator. Create a professional, well-formatted LaTeX document based on this request:
+
+      Request: "${prompt}"
+      Document Type: ${documentType}
+
+      Requirements:
+      1. Generate COMPLETE, VALID LaTeX code that compiles without errors
+      2. Use appropriate document class (article, report, letter, etc.)
+      3. Include only ESSENTIAL packages that are commonly available
+      4. Create professional-looking content with proper structure
+      5. Use sections, subsections, lists, tables, and other elements as appropriate
+      6. Include proper spacing, margins, and typography
+      7. Add placeholder content if the request is vague, but make it relevant
+      8. Ensure the document is publication-ready
+      9. AVOID exotic packages or fonts that might not be available online
+
+      Document types and their requirements:
+      - "letter": Use letter class, include date, address, signature
+      - "report": Use report class, include title page, table of contents, chapters
+      - "article": Use article class, include abstract, sections, references
+      - "resume": Professional CV format with sections for experience, education, skills
+      - "proposal": Business proposal format with executive summary, objectives, timeline
+      - "memo": Professional memo format with header, subject, body
+      - "general": Choose the most appropriate format based on content
+
+      IMPORTANT:
+      - Return ONLY the LaTeX code, no explanations or markdown formatting
+      - Use only standard packages: geometry, amsmath, graphicx, hyperref, fancyhdr
+      - Ensure UTF-8 compatibility
+      - Make the content substantial and professional
+      - Test that this would compile on a standard LaTeX installation
+
+      Example structure for reference:
+      \\documentclass[11pt,a4paper]{article}
+      \\usepackage[utf8]{inputenc}
+      \\usepackage[T1]{fontenc}
+      \\usepackage{geometry}
+      \\usepackage{amsmath}
+      \\usepackage{graphicx}
+      \\usepackage{hyperref}
+
+      \\geometry{margin=1in}
+
+      \\title{Document Title}
+      \\author{Author Name}
+      \\date{\\today}
+
+      \\begin{document}
+      \\maketitle
+
+      % Content here
+
+      \\end{document}
+    `;
+    const result = await model.generateContent(latexPrompt);
+    let latexCode = result.response.text().trim();
+
+    // Clean up LaTeX code (remove markdown formatting if present)
+    latexCode = latexCode
+      .replace(/^```latex\s*/gm, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+
+    // 2. Use latex.ytotech.com to compile LaTeX to PDF
+    const response = await fetch('https://latex.ytotech.com/builds/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        compiler: 'pdflatex',
+        resources: [
+          {
+            main: true,
+            file: 'main.tex',
+            content: latexCode
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      return res.status(500).json({ success: false, error: `LaTeX compilation failed: ${response.status} ${response.statusText}`, latexCode });
+    }
+
+    const pdfBuffer = await response.buffer();
+    const pdfBase64 = pdfBuffer.toString('base64');
+
+    res.json({
+      success: true,
+      document: {
+        latexCode,
+        pdfBase64,
+        message: 'PDF generated successfully using Gemini + latex.ytotech.com'
+      }
+    });
+  } catch (error) {
+    console.error('Document generation error:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate document' });
+  }
+});
+
 // =============================================================================
 // HEALTH CHECK & SERVER
 // =============================================================================
@@ -1422,5 +1227,8 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log('Features: Advanced AI Agent, Online Document Generation, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
+
+
+
 
 module.exports = app;
