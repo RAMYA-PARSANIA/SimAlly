@@ -4,10 +4,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const { createClient } = require('@supabase/supabase-js');
-const latex = require('node-latex');
 const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
@@ -41,8 +41,63 @@ const oauth2Client = new OAuth2Client(
 const userSessions = new Map();
 
 // =============================================================================
-// DOCUMENT GENERATION FEATURE
+// DOCUMENT GENERATION FEATURE - Using Online LaTeX Compilation
 // =============================================================================
+
+// Function to compile LaTeX using online service
+const compileLatexOnline = async (latexCode) => {
+  try {
+    // Using LaTeX.Online API (free service)
+    const response = await fetch('https://latex.ytotech.com/builds/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        compiler: 'pdflatex',
+        resources: [
+          {
+            main: true,
+            file: 'main.tex',
+            content: latexCode
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`LaTeX compilation failed: ${response.status} ${response.statusText}`);
+    }
+
+    const pdfBuffer = await response.buffer();
+    return pdfBuffer;
+  } catch (error) {
+    console.error('Online LaTeX compilation error:', error);
+    
+    // Fallback: Try alternative service (Overleaf API alternative)
+    try {
+      const fallbackResponse = await fetch('https://texlive.net/cgi-bin/latexcgi', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          filecontents: latexCode,
+          filename: 'document.tex',
+          engine: 'pdflatex'
+        })
+      });
+
+      if (fallbackResponse.ok) {
+        return await fallbackResponse.buffer();
+      }
+    } catch (fallbackError) {
+      console.error('Fallback LaTeX compilation also failed:', fallbackError);
+    }
+    
+    throw error;
+  }
+};
 
 app.post('/api/documents/generate', async (req, res) => {
   try {
@@ -66,12 +121,13 @@ app.post('/api/documents/generate', async (req, res) => {
       Requirements:
       1. Generate COMPLETE, VALID LaTeX code that compiles without errors
       2. Use appropriate document class (article, report, letter, etc.)
-      3. Include necessary packages for formatting, fonts, and layout
+      3. Include only ESSENTIAL packages that are commonly available
       4. Create professional-looking content with proper structure
       5. Use sections, subsections, lists, tables, and other elements as appropriate
       6. Include proper spacing, margins, and typography
       7. Add placeholder content if the request is vague, but make it relevant
       8. Ensure the document is publication-ready
+      9. AVOID exotic packages or fonts that might not be available online
       
       Document types and their requirements:
       - "letter": Use letter class, include date, address, signature
@@ -84,10 +140,10 @@ app.post('/api/documents/generate', async (req, res) => {
       
       IMPORTANT: 
       - Return ONLY the LaTeX code, no explanations or markdown formatting
-      - Ensure all packages are commonly available
-      - Use UTF-8 encoding
-      - Include \\usepackage[utf8]{inputenc} for character support
+      - Use only standard packages: geometry, amsmath, graphicx, hyperref, fancyhdr
+      - Ensure UTF-8 compatibility
       - Make the content substantial and professional
+      - Test that this would compile on a standard LaTeX installation
       
       Example structure for reference:
       \\documentclass[11pt,a4paper]{article}
@@ -131,19 +187,13 @@ app.post('/api/documents/generate', async (req, res) => {
     // Save LaTeX file
     await fs.writeFile(texPath, cleanLatexCode, 'utf8');
     
-    // Generate PDF
+    // Generate PDF using online service
     try {
-      const pdfStream = latex(cleanLatexCode, {
-        inputs: path.join(__dirname, 'downloads'),
-        cmd: 'pdflatex',
-        passes: 2 // Run twice for proper references
-      });
-      
-      const pdfBuffer = await streamToBuffer(pdfStream);
+      console.log('Compiling LaTeX online...');
+      const pdfBuffer = await compileLatexOnline(cleanLatexCode);
       await fs.writeFile(pdfPath, pdfBuffer);
       
-      // Clean up tex file
-      await fs.remove(texPath);
+      console.log('PDF generated successfully');
       
       res.json({
         success: true,
@@ -153,7 +203,8 @@ app.post('/api/documents/generate', async (req, res) => {
           downloadUrl: `/downloads/${filename}.pdf`,
           latexCode: cleanLatexCode,
           type: documentType,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          texDownloadUrl: `/downloads/${filename}.tex`
         }
       });
       
@@ -170,7 +221,7 @@ app.post('/api/documents/generate', async (req, res) => {
           latexCode: cleanLatexCode,
           type: documentType,
           createdAt: new Date().toISOString(),
-          pdfError: 'PDF generation failed, but LaTeX code is available'
+          pdfError: 'PDF generation failed, but LaTeX code is available. You can compile it manually on Overleaf or similar services.'
         }
       });
     }
@@ -183,16 +234,6 @@ app.post('/api/documents/generate', async (req, res) => {
     });
   }
 });
-
-// Helper function to convert stream to buffer
-function streamToBuffer(stream) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    stream.on('data', chunk => chunks.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-    stream.on('error', reject);
-  });
-}
 
 // Get document preview (for LaTeX code viewing)
 app.get('/api/documents/:documentId/preview', async (req, res) => {
@@ -217,6 +258,68 @@ app.get('/api/documents/:documentId/preview', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to load document preview'
+    });
+  }
+});
+
+// Alternative endpoint to try different LaTeX services
+app.post('/api/documents/compile-latex', async (req, res) => {
+  try {
+    const { latexCode, service = 'latex-online' } = req.body;
+    
+    if (!latexCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'LaTeX code is required'
+      });
+    }
+
+    let pdfBuffer;
+    
+    if (service === 'latex-online') {
+      // Primary service: LaTeX.Online
+      const response = await fetch('https://latex.ytotech.com/builds/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          compiler: 'pdflatex',
+          resources: [
+            {
+              main: true,
+              file: 'main.tex',
+              content: latexCode
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`LaTeX compilation failed: ${response.status}`);
+      }
+
+      pdfBuffer = await response.buffer();
+    }
+    
+    // Save PDF
+    const documentId = uuidv4();
+    const filename = `compiled_${documentId}.pdf`;
+    const pdfPath = path.join(__dirname, 'downloads', filename);
+    
+    await fs.writeFile(pdfPath, pdfBuffer);
+    
+    res.json({
+      success: true,
+      downloadUrl: `/downloads/${filename}`,
+      filename: filename
+    });
+    
+  } catch (error) {
+    console.error('LaTeX compilation error:', error);
+    res.status(500).json({
+      success: false,
+      error: `LaTeX compilation failed: ${error.message}`
     });
   }
 });
@@ -1299,7 +1402,7 @@ app.get('/api/health', (req, res) => {
       intentDetection: 'ready',
       taskDetection: 'ready',
       agentSystem: 'ready',
-      documentGeneration: 'ready',
+      documentGeneration: 'ready (online LaTeX)',
       supabase: 'ready'
     },
     activeSessions: userSessions.size
@@ -1309,15 +1412,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant Backend',
-    version: '6.0.0',
-    services: ['Advanced AI Agent', 'Document Generation', 'Gmail', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
+    version: '7.0.0',
+    services: ['Advanced AI Agent', 'Online Document Generation', 'Gmail', 'Meeting AI', 'Intent Detection', 'Task Detection', 'Workspace Chat', 'Data Analysis']
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant Backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log('Features: Advanced AI Agent, Document Generation, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
+  console.log('Features: Advanced AI Agent, Online Document Generation, Intent Detection, Gmail, Meeting AI, Task Detection, Workspace Chat, Data Analysis');
 });
 
 module.exports = app;
