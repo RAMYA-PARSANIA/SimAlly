@@ -252,7 +252,7 @@ const AssistantPage: React.FC = () => {
           );
           
           agentResponse.generatedDocument = document;
-          agentResponse.response += `\n\n✅ Document generated successfully! You can preview the LaTeX code and download the PDF below.`;
+          agentResponse.response += `\n\n✅ Document generated successfully! You can preview the document and download the PDF below.`;
         } catch (docError) {
           agentResponse.response += `\n\n❌ Failed to generate document: ${docError.message}`;
         }
@@ -312,7 +312,7 @@ const AssistantPage: React.FC = () => {
       const documentMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `✅ Document generated successfully! You can preview the LaTeX code and download the PDF.`,
+        content: `✅ Document generated successfully! You can preview the document and download the PDF.`,
         timestamp: new Date(),
         agent: {
           intent: 'document_generation',
@@ -475,7 +475,7 @@ const AssistantPage: React.FC = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 rounded-full bg-green-500" />
-                  <span className="text-xs text-secondary">LaTeX</span>
+                  <span className="text-xs text-secondary">Document Generation</span>
                 </div>
               </div>
               
@@ -627,16 +627,6 @@ const AssistantPage: React.FC = () => {
                               </div>
                               
                               <div className="flex items-center space-x-2">
-                                <Button
-                                  onClick={() => setShowLatexCode(msg.agent.generatedDocument.latexCode)}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="flex items-center space-x-1"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                  <span>Preview</span>
-                                </Button>
-                                
                                 {/* Download button for PDFMake/HTML */}
                                 {msg.agent.generatedDocument.downloadUrl ? (
                                   <Button
@@ -791,28 +781,6 @@ const AssistantPage: React.FC = () => {
                           </div>
                         </div>
                       )}
-
-                      {/* Suggestions */}
-                      {msg.agent?.suggestions && msg.agent.suggestions.length > 0 && (
-                        <div className="mt-4">
-                          <h4 className="font-semibold text-primary mb-3 flex items-center">
-                            <Zap className="w-4 h-4 mr-2" />
-                            Quick Actions
-                          </h4>
-                          <div className="flex flex-wrap gap-2">
-                            {msg.agent.suggestions.map((suggestion, index) => (
-                              <button
-                                key={index}
-                                onClick={() => handleSuggestionClick(suggestion)}
-                                className="glass-panel px-3 py-2 rounded-lg glass-panel-hover text-sm flex items-center space-x-2"
-                              >
-                                <span>{suggestion.title}</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                       
                       <div className="text-xs text-secondary mt-3">
                         {msg.timestamp.toLocaleTimeString()}
@@ -912,53 +880,6 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </main>
-
-      {/* LaTeX Code Preview Modal */}
-      {showLatexCode && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-4xl max-h-[80vh] overflow-hidden"
-          >
-            <GlassCard className="p-6" goldBorder>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold gradient-gold-silver flex items-center">
-                  <Code className="w-5 h-5 mr-2" />
-                  LaTeX Source Code
-                </h3>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    onClick={() => copyLatexCode(showLatexCode)}
-                    variant="ghost"
-                    size="sm"
-                    className="flex items-center space-x-1"
-                  >
-                    {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                    <span>{copied ? 'Copied!' : 'Copy'}</span>
-                  </Button>
-                  <button
-                    onClick={() => setShowLatexCode(null)}
-                    className="text-secondary hover:text-primary"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-              
-              <div className="glass-panel p-4 rounded-lg bg-gray-900/50 max-h-96 overflow-y-auto">
-                <pre className="text-sm text-green-400 font-mono whitespace-pre-wrap">
-                  {showLatexCode}
-                </pre>
-              </div>
-              
-              <div className="mt-4 text-xs text-secondary">
-                💡 You can copy this LaTeX code and compile it with any LaTeX editor like Overleaf, TeXShop, or MiKTeX.
-              </div>
-            </GlassCard>
-          </motion.div>
-        </div>
-      )}
     </div>
   );
 };
