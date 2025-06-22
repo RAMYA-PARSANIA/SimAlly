@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
+import EmailListDisplay from '../components/EmailListDisplay';
+import { ProcessedEmail } from '../types/gmail';
 
 interface Message {
   id: string;
@@ -20,6 +22,8 @@ interface AgentResponse {
   subIntent: string;
   confidence: number;
   requiresData: boolean;
+  requiresGmailData?: boolean;
+  gmailQuery?: GmailQuery;
   dataQueries?: string[];
   actions: AgentAction[];
   response: string;
@@ -36,6 +40,22 @@ interface AgentResponse {
     ready: boolean;
   };
   generatedDocument?: GeneratedDocument;
+  gmailData?: {
+    emails: ProcessedEmail[];
+    totalCount: number;
+    query: string;
+  };
+}
+
+interface GmailQuery {
+  type: 'list_unread' | 'search_sender' | 'delete_emails' | 'send_email' | 'none';
+  parameters: {
+    query?: string;
+    sender?: string;
+    recipient?: string;
+    subject?: string;
+    body?: string;
+  };
 }
 
 // Update GeneratedDocument interface for generic document (HTML/pdfmake)
@@ -47,7 +67,7 @@ interface GeneratedDocument {
 }
 
 interface AgentAction {
-  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation';
+  type: 'navigation' | 'data_display' | 'external_action' | 'suggestion' | 'document_generation' | 'gmail_operation';
   target: string;
   parameters: any;
 }
@@ -194,6 +214,73 @@ const AssistantPage: React.FC = () => {
     }
   };
 
+  const handleGmailOperation = async (gmailQuery: GmailQuery): Promise<any> => {
+    try {
+      const response = await fetch('http://localhost:8001/api/gmail/operation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          operation: gmailQuery,
+          parameters: gmailQuery.parameters,
+          userId: user?.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        return data.result;
+      }
+      throw new Error(data.error || 'Gmail operation failed');
+    } catch (error) {
+      console.error('Gmail operation failed:', error);
+      throw error;
+    }
+  };
+
+  const handleGmailDelete = async (emailIds: string[]) => {
+    try {
+      const response = await fetch('http://localhost:8001/api/gmail/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          emailIds,
+          userId: user?.id
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        // Add success message
+        const successMessage: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: `✅ ${data.message}`,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, successMessage]);
+        return true;
+      }
+      throw new Error(data.error || 'Delete operation failed');
+    } catch (error) {
+      console.error('Gmail delete failed:', error);
+      // Add error message
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `❌ Failed to delete emails: ${error.message}`,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      return false;
+    }
+  };
+
   const generateDocument = async (prompt: string, documentType: string = 'general', format: string = 'html', download: boolean = false) => {
     setIsGeneratingDocument(true);
 
@@ -246,6 +333,17 @@ const AssistantPage: React.FC = () => {
       // Process with enhanced agent
       const agentResponse = await processWithAgent(userMessage.content, files);
       setFiles([]); // Clear files after sending
+      
+      // Handle Gmail operations
+      if (agentResponse.requiresGmailData && agentResponse.gmailQuery) {
+        try {
+          const gmailData = await handleGmailOperation(agentResponse.gmailQuery);
+          agentResponse.gmailData = gmailData;
+          agentResponse.response += `\n\nI found ${gmailData.totalCount} email${gmailData.totalCount !== 1 ? 's' : ''} matching your criteria.`;
+        } catch (gmailError: any) {
+          agentResponse.response += `\n\n❌ Gmail operation failed: ${gmailError?.message || gmailError}`;
+        }
+      }
       
       // Handle document generation if requested
       if (agentResponse.documentGeneration?.ready) {
@@ -302,6 +400,9 @@ const AssistantPage: React.FC = () => {
         break;
       case 'document':
         setMessage(`Create a ${suggestion.parameters.type || 'professional'} document`);
+        break;
+      case 'gmail':
+        setMessage(suggestion.parameters.query || suggestion.title);
         break;
       default:
         console.log('Suggestion clicked:', suggestion);
@@ -481,7 +582,7 @@ const AssistantPage: React.FC = () => {
                   AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Advanced Intelligence • Document Generation • Data Analysis • Smart Actions
+                  Advanced Intelligence • Gmail Operations • Document Generation • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
@@ -536,7 +637,7 @@ const AssistantPage: React.FC = () => {
                 </h2>
                 <p className="text-secondary mb-8 max-w-3xl mx-auto">
                   I can analyze your data, provide insights, manage your tasks and calendar, control meetings, 
-                  handle Gmail operations, generate professional documents, and much more. Just tell me what you need in natural language!
+                  handle Gmail operations directly in this interface, generate professional documents, and much more. Just tell me what you need in natural language!
                 </p>
                 
                 {/* Quick Actions */}
@@ -550,10 +651,10 @@ const AssistantPage: React.FC = () => {
                   </GlassCard>
                   
                   <GlassCard className="p-4 text-center" hover>
-                    <BarChart3 className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-                    <h3 className="font-semibold text-primary mb-1">Productivity Analysis</h3>
+                    <Mail className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                    <h3 className="font-semibold text-primary mb-1">Gmail Operations</h3>
                     <p className="text-xs text-secondary">
-                      "How productive was I this week?"
+                      "Show me unread emails"
                     </p>
                   </GlassCard>
 
@@ -575,7 +676,7 @@ const AssistantPage: React.FC = () => {
                 </div>
 
                 <p className="text-xs text-secondary mb-8">
-                  I can access your data, generate LaTeX documents, and provide personalized insights
+                  I can access your data, handle Gmail operations, and provide personalized insights
                 </p>
                 
                 {!isGmailConnected && (
@@ -634,6 +735,18 @@ const AssistantPage: React.FC = () => {
                       
                       <p className="text-primary whitespace-pre-wrap mb-3">{msg.content}</p>
 
+                      {/* Gmail Data Display */}
+                      {msg.agent?.gmailData && (
+                        <div className="mt-4">
+                          <EmailListDisplay
+                            emails={msg.agent.gmailData.emails}
+                            title={`Gmail Results`}
+                            onDeleteSelected={handleGmailDelete}
+                            showActions={msg.agent.gmailQuery?.type === 'delete_emails' || msg.agent.gmailQuery?.type === 'search_sender'}
+                          />
+                        </div>
+                      )}
+
                       {/* Generated Document Display */}
                       {msg.agent?.generatedDocument && (
                         <div className="mt-4 glass-panel p-4 rounded-lg border-orange-500/30">
@@ -644,54 +757,35 @@ const AssistantPage: React.FC = () => {
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium text-primary">{msg.agent.generatedDocument.filename}</p>
+                                <p className="font-medium text-primary">Professional Document</p>
                                 <p className="text-xs text-secondary">
-                                  {msg.agent.generatedDocument.type} • {msg.agent.generatedDocument.createdAt}
+                                  HTML Format • Generated just now
                                 </p>
                               </div>
                               
                               <div className="flex items-center space-x-2">
-                                {/* Download button for PDFMake/HTML */}
-                                {msg.agent.generatedDocument.downloadUrl ? (
-                                  <Button
-                                    onClick={() => window.open(`http://localhost:8001${msg.agent.generatedDocument.downloadUrl}`, '_blank')}
-                                    variant="secondary"
-                                    size="sm"
-                                    className="flex items-center space-x-1"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    <span>Download</span>
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    onClick={async () => {
-                                      // Download HTML as PDF using html2pdf.js (client-side)
-                                      const blob = new Blob([msg.agent.generatedDocument.content], { type: 'text/html' });
-                                      const url = URL.createObjectURL(blob);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = 'document.html';
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      document.body.removeChild(a);
-                                      URL.revokeObjectURL(url);
-                                    }}
-                                    variant="secondary"
-                                    size="sm"
-                                    className="flex items-center space-x-1"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    <span>Download</span>
-                                  </Button>
-                                )}
+                                <Button
+                                  onClick={async () => {
+                                    // Download HTML as PDF using html2pdf.js (client-side)
+                                    const blob = new Blob([msg.agent.generatedDocument.content], { type: 'text/html' });
+                                    const url = URL.createObjectURL(blob);
+                                    const a = document.createElement('a');
+                                    a.href = url;
+                                    a.download = 'document.html';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    URL.revokeObjectURL(url);
+                                  }}
+                                  variant="secondary"
+                                  size="sm"
+                                  className="flex items-center space-x-1"
+                                >
+                                  <Download className="w-4 h-4" />
+                                  <span>Download</span>
+                                </Button>
                               </div>
                             </div>
-                            
-                            {msg.agent.generatedDocument.pdfError && (
-                              <div className="p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-400 text-xs">
-                                ⚠️ {msg.agent.generatedDocument.pdfError}
-                              </div>
-                            )}
                           </div>
                         </div>
                       )}
@@ -805,6 +899,25 @@ const AssistantPage: React.FC = () => {
                           </div>
                         </div>
                       )}
+
+                      {/* Suggestions */}
+                      {msg.agent?.suggestions && msg.agent.suggestions.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-semibold text-primary mb-3">Suggestions</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {msg.agent.suggestions.map((suggestion, index) => (
+                              <button
+                                key={index}
+                                onClick={() => handleSuggestionClick(suggestion)}
+                                className="p-3 glass-panel rounded-lg text-left hover:border-gold-border transition-all"
+                              >
+                                <div className="font-medium text-sm text-primary">{suggestion.title}</div>
+                                <div className="text-xs text-secondary mt-1">{suggestion.description}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="text-xs text-secondary mt-3">
                         {msg.timestamp.toLocaleTimeString()}
@@ -849,7 +962,7 @@ const AssistantPage: React.FC = () => {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Ask me anything... (e.g., 'What tasks do I need to do?', 'Create a business letter', 'Start a meeting', 'Generate a project report')"
+                  placeholder="Ask me anything... (e.g., 'Show unread emails', 'Delete emails from spam@company.com', 'Create a business letter', 'Start a meeting')"
                   className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
@@ -861,7 +974,7 @@ const AssistantPage: React.FC = () => {
                 />
                 <div className="flex items-center justify-between mt-2">
                   <div className="text-xs text-secondary">
-                    I can analyze data, manage tasks, control meetings, generate documents, and much more
+                    I can handle Gmail operations, analyze data, manage tasks, control meetings, generate documents, and much more
                   </div>
                   <div className="text-xs text-secondary">
                     Enter to send • Shift+Enter for new line

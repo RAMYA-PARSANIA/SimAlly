@@ -46,25 +46,28 @@ const userSessions = new Map();
 
 app.post('/api/chat/agent-process', async (req, res) => {
   try {
-    const { message, userId, context = {} } = req.body;
+    const { message, userId, context = {}, files = [] } = req.body;
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     
-    // Enhanced intent detection with document generation capability
+    // Enhanced intent detection with Gmail operations
     const intentPrompt = `
       You are SimAlly, an advanced AI agent that can help users with various tasks. Analyze this user message and determine the best way to help them.
 
       User message: "${message}"
       User context: ${JSON.stringify(context)}
+      Files attached: ${files.length > 0 ? 'Yes' : 'No'}
 
       Available capabilities:
       1. Task Management - View, create, update tasks
       2. Calendar Management - View events, schedule meetings
       3. Meeting Control - Start/join video meetings
-      4. Gmail Operations - Send, read, manage emails
+      4. Gmail Operations - List, search, delete, send emails (WITHIN ASSISTANT UI)
       5. Workspace Navigation - Navigate to different sections
       6. Data Analysis - Analyze user's tasks, calendar, productivity
       7. Document Generation - Create professional documents (letters, reports, resumes, proposals, memos)
       8. General Assistance - Answer questions, provide help
+
+      IMPORTANT: For Gmail operations, NEVER navigate away from assistant. Always show email data in the assistant UI itself.
 
       Respond with a comprehensive JSON that includes:
       {
@@ -73,9 +76,19 @@ app.post('/api/chat/agent-process', async (req, res) => {
         "confidence": 0.0-1.0,
         "requiresData": true/false,
         "dataQueries": ["list of data queries needed"],
+        "gmailOperation": {
+          "type": "list_unread|search_sender|delete_emails|send_email|none",
+          "parameters": {
+            "query": "search query for emails",
+            "sender": "sender email/name",
+            "recipient": "email recipient",
+            "subject": "email subject",
+            "body": "email body"
+          }
+        },
         "actions": [
           {
-            "type": "navigation|data_display|external_action|suggestion|document_generation",
+            "type": "navigation|data_display|external_action|suggestion|document_generation|gmail_operation",
             "target": "specific_target",
             "parameters": {}
           }
@@ -92,34 +105,33 @@ app.post('/api/chat/agent-process', async (req, res) => {
       }
 
       Intent categories:
+      - gmail_operations: Email management (list, search, delete, send)
       - task_management: View, create, update tasks
       - calendar_management: View calendar, schedule events
       - meeting_control: Start/join meetings
-      - gmail_operations: Email management
       - workspace_navigation: Navigate to different sections
       - productivity_analysis: Analyze user's productivity
       - document_generation: Create documents (letters, reports, resumes, etc.)
       - general_assistance: General help and questions
 
-      Document generation examples:
-      - "Create a business letter" → document_generation intent, type: "letter"
-      - "Generate a project report" → document_generation intent, type: "report"
-      - "Write a professional resume" → document_generation intent, type: "resume"
-      - "Draft a proposal for..." → document_generation intent, type: "proposal"
-      - "Create a memo about..." → document_generation intent, type: "memo"
+      Gmail operation examples:
+      - "Show me unread emails" → gmail_operations intent, type: "list_unread"
+      - "List emails from john@example.com" → gmail_operations intent, type: "search_sender", sender: "john@example.com"
+      - "Delete emails from spam@company.com" → gmail_operations intent, type: "delete_emails", sender: "spam@company.com"
+      - "Send email to sarah about meeting" → gmail_operations intent, type: "send_email"
 
       Examples:
       - "What tasks do I need to do?" → task_management intent, requiresData: true, show tasks with analysis
       - "Start a meeting" → meeting_control intent, navigate to meeting page
-      - "How productive was I this week?" → productivity_analysis intent, analyze tasks/calendar
-      - "Send email to John" → gmail_operations intent, compose email
+      - "Show unread emails" → gmail_operations intent, list unread emails in UI
+      - "Delete emails from newsletter@company.com" → gmail_operations intent, show emails and ask for confirmation
       - "Create a business letter to complain about service" → document_generation intent, generate letter
     `;
     
     const result = await model.generateContent(intentPrompt);
     let response = result.response.text();
 
-    // Remove markdown code block formatting if present (e.g., ```json ... ```
+    // Remove markdown code block formatting if present
     response = response.replace(/^```json\s*/i, '')
       .replace(/^```\s*/gm, '')
       .replace(/```$/gm, '')
@@ -130,7 +142,6 @@ app.post('/api/chat/agent-process', async (req, res) => {
       
       // Handle document generation
       if (agentResponse.intent === 'document_generation') {
-        // Extract document type and content from the message
         const documentType = agentResponse.actions.find(a => a.type === 'document_generation')?.parameters?.type || 'general';
         
         agentResponse.documentGeneration = {
@@ -138,6 +149,12 @@ app.post('/api/chat/agent-process', async (req, res) => {
           type: documentType,
           ready: true
         };
+      }
+      
+      // Handle Gmail operations
+      if (agentResponse.intent === 'gmail_operations' && agentResponse.gmailOperation) {
+        agentResponse.requiresGmailData = true;
+        agentResponse.gmailQuery = agentResponse.gmailOperation;
       }
       
       // Fetch required data if needed
@@ -177,6 +194,12 @@ app.post('/api/chat/agent-process', async (req, res) => {
               parameters: { target: 'tasks' }
             },
             {
+              title: 'Check Emails',
+              description: 'View your unread emails',
+              action: 'gmail',
+              parameters: { type: 'list_unread' }
+            },
+            {
               title: 'Start Meeting',
               description: 'Begin a new video meeting',
               action: 'navigate',
@@ -194,6 +217,135 @@ app.post('/api/chat/agent-process', async (req, res) => {
     }
   } catch (error) {
     console.error('Agent processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Gmail operations endpoint
+app.post('/api/gmail/operation', async (req, res) => {
+  try {
+    const { operation, parameters, userId } = req.body;
+    
+    // This is a mock implementation - in real app, you'd integrate with Gmail API
+    // For now, return mock data to demonstrate the UI
+    
+    let result = {};
+    
+    switch (operation.type) {
+      case 'list_unread':
+        result = {
+          emails: [
+            {
+              id: '1',
+              subject: 'Important: Project Update Required',
+              from: 'manager@company.com',
+              date: 'Today',
+              snippet: 'Please review the latest project updates and provide your feedback by end of day...',
+              isRead: false,
+              hasAttachments: true,
+              labels: ['INBOX', 'UNREAD']
+            },
+            {
+              id: '2',
+              subject: 'Weekly Newsletter - Tech Updates',
+              from: 'newsletter@techsite.com',
+              date: 'Yesterday',
+              snippet: 'This week in technology: AI breakthroughs, new frameworks, and industry insights...',
+              isRead: false,
+              hasAttachments: false,
+              labels: ['INBOX', 'UNREAD']
+            },
+            {
+              id: '3',
+              subject: 'Meeting Reminder: Team Standup',
+              from: 'calendar@company.com',
+              date: '2 days ago',
+              snippet: 'Reminder: Team standup meeting scheduled for tomorrow at 9:00 AM...',
+              isRead: false,
+              hasAttachments: false,
+              labels: ['INBOX', 'UNREAD']
+            }
+          ],
+          totalCount: 3,
+          query: 'is:unread'
+        };
+        break;
+        
+      case 'search_sender':
+        const sender = parameters.sender || parameters.query;
+        result = {
+          emails: [
+            {
+              id: '4',
+              subject: 'Re: Your recent order',
+              from: sender,
+              date: '3 days ago',
+              snippet: 'Thank you for your recent purchase. Your order has been processed...',
+              isRead: true,
+              hasAttachments: false,
+              labels: ['INBOX']
+            },
+            {
+              id: '5',
+              subject: 'Special offer just for you!',
+              from: sender,
+              date: '1 week ago',
+              snippet: 'Don\'t miss out on our exclusive deals and promotions...',
+              isRead: false,
+              hasAttachments: true,
+              labels: ['INBOX', 'UNREAD']
+            },
+            {
+              id: '6',
+              subject: 'Newsletter: Latest Updates',
+              from: sender,
+              date: '2 weeks ago',
+              snippet: 'Stay updated with our latest news and product announcements...',
+              isRead: true,
+              hasAttachments: false,
+              labels: ['INBOX']
+            }
+          ],
+          totalCount: 3,
+          query: `from:${sender}`
+        };
+        break;
+        
+      default:
+        result = { emails: [], totalCount: 0, query: '' };
+    }
+    
+    res.json({
+      success: true,
+      result
+    });
+  } catch (error) {
+    console.error('Gmail operation error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Mock Gmail delete operation
+app.post('/api/gmail/delete', async (req, res) => {
+  try {
+    const { emailIds, userId } = req.body;
+    
+    // Mock deletion - in real app, this would call Gmail API
+    console.log(`Mock: Deleting emails ${emailIds.join(', ')} for user ${userId}`);
+    
+    res.json({
+      success: true,
+      deletedCount: emailIds.length,
+      message: `Successfully deleted ${emailIds.length} email${emailIds.length !== 1 ? 's' : ''}`
+    });
+  } catch (error) {
+    console.error('Gmail delete error:', error);
     res.status(500).json({
       success: false,
       error: error.message
