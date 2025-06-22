@@ -28,7 +28,10 @@ fs.ensureDirSync(path.join(__dirname, 'downloads'));
 
 // Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY);
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY // Use service role key for backend
+);
 
 // Gmail OAuth2 setup
 const oauth2Client = new OAuth2Client(
