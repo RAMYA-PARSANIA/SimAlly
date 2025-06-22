@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp, FileText, Download, Eye, Code, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Mic, MicOff, Send, Mail, MessageSquare, Loader2, User, Bot, Settings, Trash2, CheckSquare, Calendar, Video, BarChart3, ArrowRight, ExternalLink, Zap, Target, TrendingUp, FileText, Download, Eye, Code, Copy, Check, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -106,6 +106,8 @@ const AssistantPage: React.FC = () => {
   const [showLatexCode, setShowLatexCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [files, setFiles] = useState<any[]>([]);
+  const [gmailAuthUrl, setGmailAuthUrl] = useState<string | null>(null);
+  const [showGmailAuth, setShowGmailAuth] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognition = useRef<any>(null);
 
@@ -139,9 +141,10 @@ const AssistantPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Load chat history on mount
+  // Load chat history and check Gmail status on mount
   useEffect(() => {
     loadChatHistory();
+    checkGmailStatus();
   }, []);
 
   const loadChatHistory = async () => {
@@ -162,6 +165,18 @@ const AssistantPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to load chat history:', error);
+    }
+  };
+
+  const checkGmailStatus = async () => {
+    try {
+      const response = await fetch(`http://localhost:8001/api/gmail/status?userId=${user?.id}`, {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setIsGmailConnected(data.connected);
+    } catch (error) {
+      console.error('Failed to check Gmail status:', error);
     }
   };
 
@@ -232,11 +247,51 @@ const AssistantPage: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         return data.result;
+      } else if (data.needsAuth) {
+        // Show Gmail auth prompt
+        setShowGmailAuth(true);
+        await getGmailAuthUrl();
+        throw new Error('Gmail authentication required. Please connect your Gmail account.');
       }
       throw new Error(data.error || 'Gmail operation failed');
     } catch (error) {
       console.error('Gmail operation failed:', error);
       throw error;
+    }
+  };
+
+  const getGmailAuthUrl = async () => {
+    try {
+      const response = await fetch('http://localhost:8001/api/gmail/auth-url', {
+        credentials: 'include'
+      });
+      const data = await response.json();
+      setGmailAuthUrl(data.authUrl);
+    } catch (error) {
+      console.error('Failed to get Gmail auth URL:', error);
+    }
+  };
+
+  const connectGmail = () => {
+    if (gmailAuthUrl) {
+      // Open Gmail OAuth in popup
+      const popup = window.open(
+        gmailAuthUrl,
+        'gmail-auth',
+        'width=500,height=600,scrollbars=yes,resizable=yes'
+      );
+
+      // Listen for popup close (user completed auth)
+      const checkClosed = setInterval(() => {
+        if (popup?.closed) {
+          clearInterval(checkClosed);
+          // Check Gmail status again
+          setTimeout(() => {
+            checkGmailStatus();
+            setShowGmailAuth(false);
+          }, 1000);
+        }
+      }, 1000);
     }
   };
 
@@ -461,21 +516,24 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const connectGmail = async () => {
-    try {
-      const response = await fetch('http://localhost:8001/api/gmail/auth-url', {
-        credentials: 'include'
-      });
-      const data = await response.json();
-      
-      if (data.authUrl) {
-        window.open(data.authUrl, '_blank', 'width=500,height=600');
-        // In a real app, you'd handle the OAuth callback
-        setIsGmailConnected(true);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+    const newFiles: any[] = [];
+    let loaded = 0;
+    Array.from(fileList).forEach((file) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          newFiles.push({ type: 'image', data: event.target?.result });
+          loaded++;
+          if (loaded === fileList.length) {
+            setFiles((prev) => [...prev, ...newFiles]);
+          }
+        };
+        reader.readAsDataURL(file);
       }
-    } catch (error) {
-      console.error('Gmail connection failed:', error);
-    }
+    });
   };
 
   const getIntentIcon = (intent?: string) => {
@@ -542,26 +600,6 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList) return;
-    const newFiles: any[] = [];
-    let loaded = 0;
-    Array.from(fileList).forEach((file) => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          newFiles.push({ type: 'image', data: event.target?.result });
-          loaded++;
-          if (loaded === fileList.length) {
-            setFiles((prev) => [...prev, ...newFiles]);
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-  };
-
   return (
     <div className="min-h-screen bg-primary">
       {/* Header */}
@@ -582,7 +620,7 @@ const AssistantPage: React.FC = () => {
                   AI Agent Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Advanced Intelligence • Gmail Operations • Document Generation • Data Analysis • Smart Actions
+                  Advanced Intelligence • Real Gmail API • Document Generation • Data Analysis • Smart Actions
                 </p>
               </div>
             </div>
@@ -596,7 +634,7 @@ const AssistantPage: React.FC = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className={`w-2 h-2 rounded-full ${isGmailConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
-                  <span className="text-xs text-secondary">Gmail</span>
+                  <span className="text-xs text-secondary">Gmail {isGmailConnected ? 'Connected' : 'Disconnected'}</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 rounded-full bg-green-500" />
@@ -617,6 +655,51 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Gmail Auth Modal */}
+      {showGmailAuth && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-full max-w-md"
+          >
+            <GlassCard className="p-8" goldBorder>
+              <div className="flex items-center space-x-3 mb-6">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                  <Mail className="w-6 h-6 text-red-500" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-primary">Connect Gmail</h2>
+                  <p className="text-sm text-secondary">Required for email operations</p>
+                </div>
+              </div>
+              
+              <p className="text-secondary mb-6">
+                To perform Gmail operations like viewing, searching, and deleting emails, you need to connect your Gmail account.
+              </p>
+
+              <div className="flex space-x-3">
+                <Button
+                  onClick={() => setShowGmailAuth(false)}
+                  variant="secondary"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={connectGmail}
+                  variant="premium"
+                  className="flex-1"
+                  disabled={!gmailAuthUrl}
+                >
+                  Connect Gmail
+                </Button>
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      )}
 
       {/* Main Chat Interface */}
       <main className="flex flex-col h-[calc(100vh-80px)]">
@@ -682,7 +765,10 @@ const AssistantPage: React.FC = () => {
                 {!isGmailConnected && (
                   <div className="mt-8">
                     <Button
-                      onClick={connectGmail}
+                      onClick={() => {
+                        setShowGmailAuth(true);
+                        getGmailAuthUrl();
+                      }}
                       variant="secondary"
                       className="inline-flex items-center space-x-2"
                     >
