@@ -214,7 +214,7 @@ app.get('/api/gmail/auth-url', (req, res) => {
     }
 
     const scopes = [
-      'https://mail.google.com/',
+      'https://mail.google.com',
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/gmail.compose'

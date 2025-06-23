@@ -36,7 +36,7 @@ interface GmailStatus {
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading } = useAuth();
+  const { user, loading } = useAuth(); // Added loading state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -50,8 +50,9 @@ const AssistantPage: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // Wait for authentication to complete before checking user status
     if (loading) {
-      return;
+      return; // Don't do anything while authentication is loading
     }
 
     if (!user) {
@@ -71,7 +72,7 @@ const AssistantPage: React.FC = () => {
     }
 
     checkGmailStatus();
-  }, [user, loading, navigate, location]);
+  }, [user, loading, navigate, location]); // Added loading to dependencies
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -541,8 +542,6 @@ const AssistantPage: React.FC = () => {
                   ? `📧 Found ${updatedEmails.length} unread emails:`
                   : message.data.operation === 'search_sender'
                   ? `📧 Found ${updatedEmails.length} emails from "${message.data.sender}":`
-                  : message.data.operation === 'search_emails'
-                  ? `🔍 Found ${updatedEmails.length} emails matching "${message.data.searchQuery}":`
                   : message.content
               };
             }
@@ -915,6 +914,7 @@ const AssistantPage: React.FC = () => {
     );
   };
 
+  // Show loading state while authentication is being verified
   if (loading) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
