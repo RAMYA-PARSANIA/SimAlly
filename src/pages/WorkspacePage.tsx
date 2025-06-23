@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -114,10 +114,34 @@ const WorkspacePage: React.FC = () => {
     navigate('/dashboard');
   };
 
-  const handleSendMessage = async (content: string, mentions: string[] = []) => {
+  const uploadFile = async (file: File): Promise<string> => {
+    // In a real implementation, you would upload to a cloud storage service
+    // For now, we'll create a mock URL
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const mockUrl = `https://example.com/uploads/${file.name}`;
+        resolve(mockUrl);
+      }, 1000);
+    });
+  };
+
+  const handleSendMessage = async (content: string, mentions: string[] = [], attachments: File[] = []) => {
     if (!activeChannel || !user) return;
 
     try {
+      // Upload attachments first
+      const uploadedAttachments = [];
+      for (const file of attachments) {
+        const url = await uploadFile(file);
+        uploadedAttachments.push({
+          id: Date.now().toString() + Math.random(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          url: url
+        });
+      }
+
       // Send message to database
       const { data: messageData, error } = await supabase
         .from('messages')
@@ -125,7 +149,8 @@ const WorkspacePage: React.FC = () => {
           channel_id: activeChannel.id,
           sender_id: user.id,
           content,
-          type: 'text'
+          type: 'text',
+          metadata: uploadedAttachments.length > 0 ? { attachments: uploadedAttachments } : {}
         })
         .select(`
           *,
@@ -138,8 +163,10 @@ const WorkspacePage: React.FC = () => {
         return;
       }
 
-      // Process with AI for task detection
-      await processMessageForTasks(messageData, mentions);
+      // Process with AI for task detection (only for text messages)
+      if (content && content !== '[Media]') {
+        await processMessageForTasks(messageData, mentions);
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -263,7 +290,7 @@ const WorkspacePage: React.FC = () => {
                   Workspace
                 </h1>
                 <p className="text-xs text-secondary">
-                  {activeChannel?.name || 'Select a channel'}
+                  {activeChannel?.name || 'Select a channel'} • Media sharing enabled
                 </p>
               </div>
             </div>

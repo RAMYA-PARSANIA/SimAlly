@@ -70,17 +70,31 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   };
 
   const getTasksForDate = (date: Date) => {
-    const dateString = date.toISOString().split('T')[0];
-    return tasks.filter(task => 
-      task.due_date && task.due_date.startsWith(dateString)
-    );
+    // Fix: Use local date comparison to avoid timezone issues
+    const localDateString = date.getFullYear() + '-' + 
+      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(date.getDate()).padStart(2, '0');
+    
+    return tasks.filter(task => {
+      if (!task.due_date) return false;
+      
+      // Extract date part from due_date (YYYY-MM-DD)
+      const taskDateString = task.due_date.split('T')[0];
+      return taskDateString === localDateString;
+    });
   };
 
   const getEventsForDate = (date: Date) => {
-    const dateString = date.toISOString().split('T')[0];
-    return events.filter(event => 
-      event.start_time.startsWith(dateString)
-    );
+    // Fix: Use local date comparison to avoid timezone issues
+    const localDateString = date.getFullYear() + '-' + 
+      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(date.getDate()).padStart(2, '0');
+    
+    return events.filter(event => {
+      // Extract date part from start_time (YYYY-MM-DD)
+      const eventDateString = event.start_time.split('T')[0];
+      return eventDateString === localDateString;
+    });
   };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -102,6 +116,16 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
 
   const formatMonthYear = (date: Date) => {
     return date.toLocaleDateString([], { month: 'long', year: 'numeric' });
+  };
+
+  const formatDateForDisplay = (dateString: string) => {
+    // Parse the date string and format for display
+    const date = new Date(dateString);
+    return date.toLocaleDateString([], { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
   };
 
   const days = getDaysInMonth(currentDate);
@@ -212,7 +236,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                       <div
                         key={task.id}
                         className="p-1 rounded text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 truncate"
-                        title={task.title}
+                        title={`Task: ${task.title} (Due: ${formatDateForDisplay(task.due_date!)})`}
                       >
                         <CheckSquare className="w-3 h-3 inline mr-1" />
                         {task.title}
@@ -224,7 +248,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                       <div
                         key={event.id}
                         className="p-1 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 truncate"
-                        title={event.title}
+                        title={`Event: ${event.title}`}
                       >
                         <Clock className="w-3 h-3 inline mr-1" />
                         {event.title}
@@ -274,7 +298,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-primary truncate">{task.title}</h4>
                     <p className="text-xs text-secondary">
-                      Due: {new Date(task.due_date!).toLocaleDateString()}
+                      Due: {formatDateForDisplay(task.due_date!)}
                     </p>
                   </div>
                 </div>

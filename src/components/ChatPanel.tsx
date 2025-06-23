@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin } from 'lucide-react';
+import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin, Image, FileText, Download, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { type Channel, type Message } from '../lib/supabase';
@@ -8,19 +8,22 @@ import Button from './ui/Button';
 interface ChatPanelProps {
   channel: Channel | null;
   messages: Message[];
-  onSendMessage: (content: string, mentions?: string[]) => void;
+  onSendMessage: (content: string, mentions?: string[], attachments?: File[]) => void;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage }) => {
   const { user } = useAuth();
   const [messageInput, setMessageInput] = useState('');
   const [mentions, setMentions] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -35,7 +38,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
   }, [messageInput]);
 
   const handleSendMessage = () => {
-    if (!messageInput.trim() || !channel) return;
+    if ((!messageInput.trim() && attachments.length === 0) || !channel) return;
 
     let content = messageInput.trim();
     
@@ -44,9 +47,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
       content = `@${replyingTo.sender?.username || 'user'} ${content}`;
     }
 
-    onSendMessage(content, mentions);
+    onSendMessage(content || '[Media]', mentions, attachments);
     setMessageInput('');
     setMentions([]);
+    setAttachments([]);
     setReplyingTo(null);
     setEditingMessage(null);
   };
@@ -74,6 +78,32 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     // Show typing indicator
     setIsTyping(true);
     setTimeout(() => setIsTyping(false), 1000);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setAttachments(prev => [...prev, ...files]);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    setAttachments(prev => [...prev, ...files]);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const formatTime = (timestamp: string) => {
@@ -130,6 +160,84 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     });
   };
 
+  const renderAttachment = (attachment: any, messageId: string) => {
+    const fileType = attachment.type?.split('/')[0];
+    const fileName = attachment.name || 'Unknown file';
+    const fileSize = attachment.size ? `${(attachment.size / 1024 / 1024).toFixed(1)}MB` : '';
+
+    switch (fileType) {
+      case 'image':
+        return (
+          <div key={attachment.id} className="mt-2 rounded-lg overflow-hidden max-w-sm">
+            <img 
+              src={attachment.url} 
+              alt={fileName}
+              className="w-full h-auto max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+              onClick={() => window.open(attachment.url, '_blank')}
+            />
+            <div className="p-2 bg-black/20 text-xs text-white">
+              {fileName} • {fileSize}
+            </div>
+          </div>
+        );
+      
+      case 'video':
+        return (
+          <div key={attachment.id} className="mt-2 rounded-lg overflow-hidden max-w-sm">
+            <video 
+              controls 
+              className="w-full h-auto max-h-64"
+              preload="metadata"
+            >
+              <source src={attachment.url} type={attachment.type} />
+              Your browser does not support the video tag.
+            </video>
+            <div className="p-2 bg-black/20 text-xs text-white">
+              {fileName} • {fileSize}
+            </div>
+          </div>
+        );
+      
+      case 'audio':
+        return (
+          <div key={attachment.id} className="mt-2 glass-panel rounded-lg p-3 max-w-sm">
+            <div className="flex items-center space-x-3">
+              <Volume2 className="w-5 h-5 text-secondary" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-primary">{fileName}</p>
+                <p className="text-xs text-secondary">{fileSize}</p>
+              </div>
+            </div>
+            <audio controls className="w-full mt-2">
+              <source src={attachment.url} type={attachment.type} />
+              Your browser does not support the audio tag.
+            </audio>
+          </div>
+        );
+      
+      default:
+        return (
+          <div key={attachment.id} className="mt-2 glass-panel rounded-lg p-3 max-w-sm">
+            <div className="flex items-center space-x-3">
+              <FileText className="w-5 h-5 text-secondary" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-primary">{fileName}</p>
+                <p className="text-xs text-secondary">{fileSize}</p>
+              </div>
+              <Button
+                onClick={() => window.open(attachment.url, '_blank')}
+                variant="ghost"
+                size="sm"
+                className="p-1"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        );
+    }
+  };
+
   const handleReply = (message: Message) => {
     setReplyingTo(message);
     inputRef.current?.focus();
@@ -149,6 +257,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     inputRef.current?.focus();
   };
 
+  const getFileIcon = (file: File) => {
+    const type = file.type.split('/')[0];
+    switch (type) {
+      case 'image': return <Image className="w-4 h-4" />;
+      case 'video': return <Play className="w-4 h-4" />;
+      case 'audio': return <Volume2 className="w-4 h-4" />;
+      default: return <FileText className="w-4 h-4" />;
+    }
+  };
+
   if (!channel) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -162,7 +280,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
   }
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div 
+      className={`flex-1 flex flex-col ${dragOver ? 'bg-blue-500/10' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
       {/* Channel Header */}
       <div className="glass-panel border-b silver-border p-4">
         <div className="flex items-center justify-between">
@@ -188,6 +311,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
           </div>
         </div>
       </div>
+
+      {/* Drag & Drop Overlay */}
+      {dragOver && (
+        <div className="absolute inset-0 bg-blue-500/20 border-2 border-dashed border-blue-500 flex items-center justify-center z-10">
+          <div className="text-center">
+            <Paperclip className="w-12 h-12 text-blue-500 mx-auto mb-4" />
+            <p className="text-blue-500 font-medium">Drop files here to share</p>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -246,9 +379,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
                     )}
 
                     {/* Message content */}
-                    <div className="text-primary whitespace-pre-wrap">
-                      {renderMessageContent(message.content)}
-                    </div>
+                    {message.content && message.content !== '[Media]' && (
+                      <div className="text-primary whitespace-pre-wrap">
+                        {renderMessageContent(message.content)}
+                      </div>
+                    )}
+
+                    {/* Attachments */}
+                    {message.metadata?.attachments && message.metadata.attachments.map((attachment: any) => 
+                      renderAttachment(attachment, message.id)
+                    )}
 
                     {/* Task metadata */}
                     {message.type === 'ai_task_creation' && message.metadata?.task_id && (
@@ -350,6 +490,34 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
         </div>
       )}
 
+      {/* Attachments Preview */}
+      {attachments.length > 0 && (
+        <div className="px-4 py-2 glass-panel border-t silver-border">
+          <div className="flex items-center space-x-2 mb-2">
+            <Paperclip className="w-4 h-4 text-secondary" />
+            <span className="text-sm font-medium text-primary">
+              {attachments.length} file{attachments.length > 1 ? 's' : ''} attached
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((file, index) => (
+              <div key={index} className="flex items-center space-x-2 glass-panel rounded-lg p-2">
+                {getFileIcon(file)}
+                <span className="text-xs text-primary truncate max-w-32">
+                  {file.name}
+                </span>
+                <button
+                  onClick={() => removeAttachment(index)}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Message Input */}
       <div className="glass-panel border-t silver-border p-4">
         <div className="flex items-end space-x-4">
@@ -373,11 +541,24 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
                 >
                   <Smile className="w-4 h-4 text-secondary" />
                 </button>
-                <button className="p-1 hover:bg-surface rounded">
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1 hover:bg-surface rounded"
+                >
                   <Paperclip className="w-4 h-4 text-secondary" />
                 </button>
               </div>
             </div>
+            
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar"
+            />
             
             {/* Emoji picker */}
             {showEmojiPicker && (
@@ -415,7 +596,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
             variant="premium"
             size="sm"
             className="p-3"
-            disabled={!messageInput.trim()}
+            disabled={!messageInput.trim() && attachments.length === 0}
           >
             <Send className="w-4 h-4" />
           </Button>

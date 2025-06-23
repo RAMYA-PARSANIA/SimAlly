@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus } from 'lucide-react';
+import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus, Link, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
 import GlassCard from './ui/GlassCard';
@@ -19,7 +19,10 @@ const ChannelList: React.FC<ChannelListProps> = ({
   onCreateChannel
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedChannelForInvite, setSelectedChannelForInvite] = useState<Channel | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [copied, setCopied] = useState(false);
   const [newChannel, setNewChannel] = useState({
     name: '',
     description: '',
@@ -40,6 +43,48 @@ const ChannelList: React.FC<ChannelListProps> = ({
     onCreateChannel(newChannel.name, newChannel.description, newChannel.type);
     setNewChannel({ name: '', description: '', type: 'public' });
     setShowCreateModal(false);
+  };
+
+  const handleInviteToChannel = (channel: Channel) => {
+    setSelectedChannelForInvite(channel);
+    setShowInviteModal(true);
+  };
+
+  const generateInviteLink = (channel: Channel) => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/workspace/invite/${channel.id}`;
+  };
+
+  const copyInviteLink = async () => {
+    if (!selectedChannelForInvite) return;
+    
+    const inviteLink = generateInviteLink(selectedChannelForInvite);
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy invite link:', error);
+    }
+  };
+
+  const shareViaEmail = () => {
+    if (!selectedChannelForInvite) return;
+    
+    const inviteLink = generateInviteLink(selectedChannelForInvite);
+    const subject = encodeURIComponent(`Join ${selectedChannelForInvite.name} channel`);
+    const body = encodeURIComponent(`Hi!
+
+I'd like to invite you to join the "${selectedChannelForInvite.name}" channel in our workspace.
+
+${selectedChannelForInvite.description ? `About this channel: ${selectedChannelForInvite.description}` : ''}
+
+Click the link below to join:
+${inviteLink}
+
+See you there!`);
+    
+    window.open(`mailto:?subject=${subject}&body=${body}`);
   };
 
   const getChannelIcon = (channel: Channel) => {
@@ -99,41 +144,45 @@ const ChannelList: React.FC<ChannelListProps> = ({
             </h3>
             <div className="space-y-1">
               {publicChannels.map((channel) => (
-                <motion.button
+                <motion.div
                   key={channel.id}
-                  onClick={() => onChannelSelect(channel)}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
-                    activeChannel?.id === channel.id
-                      ? 'bg-gradient-gold-silver text-white'
-                      : 'text-secondary hover:text-primary hover:bg-surface'
-                  }`}
+                  className="group relative"
                   whileHover={{ x: 4 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {getChannelIcon(channel)}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{formatChannelName(channel)}</div>
-                    {channel.description && (
-                      <div className="text-xs opacity-75 truncate">
-                        {channel.description}
-                      </div>
-                    )}
-                    {channel.member_count && (
-                      <div className="text-xs opacity-75">
-                        {channel.member_count} members
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Unread indicator */}
-                  {channel.unread_count && channel.unread_count > 0 && (
-                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">
-                        {channel.unread_count > 9 ? '9+' : channel.unread_count}
-                      </span>
+                  <button
+                    onClick={() => onChannelSelect(channel)}
+                    className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
+                      activeChannel?.id === channel.id
+                        ? 'bg-gradient-gold-silver text-white'
+                        : 'text-secondary hover:text-primary hover:bg-surface'
+                    }`}
+                  >
+                    {getChannelIcon(channel)}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{formatChannelName(channel)}</div>
+                      {channel.description && (
+                        <div className="text-xs opacity-75 truncate">
+                          {channel.description}
+                        </div>
+                      )}
+                      {channel.member_count && (
+                        <div className="text-xs opacity-75">
+                          {channel.member_count} members
+                        </div>
+                      )}
                     </div>
-                  )}
-                </motion.button>
+                    
+                    {/* Unread indicator */}
+                    {channel.unread_count && channel.unread_count > 0 && (
+                      <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">
+                          {channel.unread_count > 9 ? '9+' : channel.unread_count}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -148,41 +197,57 @@ const ChannelList: React.FC<ChannelListProps> = ({
             </h3>
             <div className="space-y-1">
               {privateChannels.map((channel) => (
-                <motion.button
+                <motion.div
                   key={channel.id}
-                  onClick={() => onChannelSelect(channel)}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
-                    activeChannel?.id === channel.id
-                      ? 'bg-gradient-gold-silver text-white'
-                      : 'text-secondary hover:text-primary hover:bg-surface'
-                  }`}
+                  className="group relative"
                   whileHover={{ x: 4 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {getChannelIcon(channel)}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{formatChannelName(channel)}</div>
-                    {channel.description && (
-                      <div className="text-xs opacity-75 truncate">
-                        {channel.description}
-                      </div>
-                    )}
-                    {channel.member_count && (
-                      <div className="text-xs opacity-75">
-                        {channel.member_count} members
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Unread indicator */}
-                  {channel.unread_count && channel.unread_count > 0 && (
-                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-xs text-white font-bold">
-                        {channel.unread_count > 9 ? '9+' : channel.unread_count}
-                      </span>
+                  <button
+                    onClick={() => onChannelSelect(channel)}
+                    className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
+                      activeChannel?.id === channel.id
+                        ? 'bg-gradient-gold-silver text-white'
+                        : 'text-secondary hover:text-primary hover:bg-surface'
+                    }`}
+                  >
+                    {getChannelIcon(channel)}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{formatChannelName(channel)}</div>
+                      {channel.description && (
+                        <div className="text-xs opacity-75 truncate">
+                          {channel.description}
+                        </div>
+                      )}
+                      {channel.member_count && (
+                        <div className="text-xs opacity-75">
+                          {channel.member_count} members
+                        </div>
+                      )}
                     </div>
-                  )}
-                </motion.button>
+                    
+                    {/* Unread indicator */}
+                    {channel.unread_count && channel.unread_count > 0 && (
+                      <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-bold">
+                          {channel.unread_count > 9 ? '9+' : channel.unread_count}
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                  
+                  {/* Invite button for private channels */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleInviteToChannel(channel);
+                    }}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface rounded"
+                    title="Invite to channel"
+                  >
+                    <UserPlus className="w-3 h-3 text-secondary" />
+                  </button>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -352,6 +417,89 @@ const ChannelList: React.FC<ChannelListProps> = ({
                     disabled={!newChannel.name.trim()}
                   >
                     Create Channel
+                  </Button>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Invite Modal */}
+      <AnimatePresence>
+        {showInviteModal && selectedChannelForInvite && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md"
+            >
+              <GlassCard className="p-6" goldBorder>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold gradient-gold-silver">
+                    Invite to #{selectedChannelForInvite.name}
+                  </h3>
+                  <button
+                    onClick={() => setShowInviteModal(false)}
+                    className="text-secondary hover:text-primary"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Invite Link
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={generateInviteLink(selectedChannelForInvite)}
+                        readOnly
+                        className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10 text-sm"
+                      />
+                      <Button
+                        onClick={copyInviteLink}
+                        variant="ghost"
+                        size="sm"
+                        className="px-3"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-secondary mt-1">
+                      Share this link to invite people to the channel
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Button
+                      onClick={shareViaEmail}
+                      variant="secondary"
+                      className="w-full justify-start"
+                    >
+                      <Link className="w-4 h-4 mr-2" />
+                      Share via Email
+                    </Button>
+                  </div>
+
+                  {selectedChannelForInvite.description && (
+                    <div className="p-3 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30">
+                      <p className="text-sm text-blue-400 font-medium mb-1">Channel Description:</p>
+                      <p className="text-sm text-secondary">{selectedChannelForInvite.description}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  <Button
+                    onClick={() => setShowInviteModal(false)}
+                    variant="secondary"
+                    className="w-full"
+                  >
+                    Done
                   </Button>
                 </div>
               </GlassCard>
