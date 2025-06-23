@@ -35,7 +35,7 @@ interface GmailStatus {
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, loading } = useAuth(); // Added loading state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -47,6 +47,11 @@ const AssistantPage: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    // Wait for authentication to complete before checking user status
+    if (loading) {
+      return; // Don't do anything while authentication is loading
+    }
+
     if (!user) {
       navigate('/');
       return;
@@ -66,7 +71,7 @@ const AssistantPage: React.FC = () => {
     }
 
     checkGmailStatus();
-  }, [user, navigate, location]);
+  }, [user, loading, navigate, location]); // Added loading to dependencies
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -487,6 +492,29 @@ const AssistantPage: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
+          // Update messages to remove deleted emails from email lists
+          setMessages(prev => prev.map(message => {
+            if (message.type === 'gmail_operation' && message.data?.emails) {
+              const updatedEmails = message.data.emails.filter((email: GmailEmail) => 
+                !selectedEmails.has(email.id)
+              );
+              
+              return {
+                ...message,
+                data: {
+                  ...message.data,
+                  emails: updatedEmails
+                },
+                content: message.data.operation === 'list_unread' 
+                  ? `📧 Found ${updatedEmails.length} unread emails:`
+                  : message.data.operation === 'search_sender'
+                  ? `📧 Found ${updatedEmails.length} emails from "${message.data.sender}":`
+                  : message.content
+              };
+            }
+            return message;
+          }));
+
           setSelectedEmails(new Set());
           setShowEmailActions(false);
           
@@ -730,6 +758,19 @@ const AssistantPage: React.FC = () => {
       </motion.div>
     );
   };
+
+  // Show loading state while authentication is being verified
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
+          <h3 className="text-xl font-bold text-primary mb-2">Loading Assistant...</h3>
+          <p className="text-secondary">Verifying your session</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
