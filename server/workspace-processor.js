@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-
+require('dotenv').config();
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -12,7 +12,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 class WorkspaceProcessor {
   constructor() {
-    this.model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   }
 
   async processMessage(messageData) {

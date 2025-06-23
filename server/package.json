@@ -10,7 +10,9 @@
     "dev:ai": "nodemon ai-assistant.js",
     "start:media": "node media-server.js",
     "dev:media": "nodemon media-server.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:media\""
+    "start:workspace": "node workspace-processor.js",
+    "dev:workspace": "nodemon workspace-processor.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:ai\" \"npm run dev:media\" \"npm run dev:workspace\""
   },
   "dependencies": {
     "@daily-co/daily-js": "^0.56.0",
