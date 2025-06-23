@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -24,6 +24,7 @@ interface GmailEmail {
   date: string;
   snippet: string;
   isUnread: boolean;
+  body?: string; // Full email body
 }
 
 interface GmailStatus {
@@ -35,7 +36,7 @@ interface GmailStatus {
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading } = useAuth(); // Added loading state
+  const { user, loading } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -43,13 +44,14 @@ const AssistantPage: React.FC = () => {
   const [isCheckingGmail, setIsCheckingGmail] = useState(true);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [showEmailActions, setShowEmailActions] = useState(false);
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const [loadingEmailBodies, setLoadingEmailBodies] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    // Wait for authentication to complete before checking user status
     if (loading) {
-      return; // Don't do anything while authentication is loading
+      return;
     }
 
     if (!user) {
@@ -57,21 +59,19 @@ const AssistantPage: React.FC = () => {
       return;
     }
 
-    // Check for Gmail connection success from URL
     const urlParams = new URLSearchParams(location.search);
     if (urlParams.get('gmail_connected') === 'true') {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '✅ Gmail connected successfully! You can now ask me to show your emails, summarize them, or help manage your inbox.',
+        content: '✅ Gmail connected successfully! You can now ask me to show your emails, search them, or help manage your inbox.',
         timestamp: new Date()
       }]);
-      // Clean up URL
       window.history.replaceState({}, '', location.pathname);
     }
 
     checkGmailStatus();
-  }, [user, loading, navigate, location]); // Added loading to dependencies
+  }, [user, loading, navigate, location]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -156,7 +156,6 @@ const AssistantPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      // First, detect intent and get agent response
       const agentResponse = await fetch('http://localhost:8001/api/chat/agent-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,15 +176,12 @@ const AssistantPage: React.FC = () => {
       if (agentData.success && agentData.agent) {
         const agent = agentData.agent;
         
-        // Handle Gmail operations
         if (agent.intent === 'gmail_management' && gmailStatus.connected) {
           await handleGmailOperation(agent, userMessage.content);
         }
-        // Handle document generation
         else if (agent.intent === 'document_generation') {
           await handleDocumentGeneration(agent, userMessage.content);
         }
-        // Handle general chat
         else {
           const assistantMessage: ChatMessage = {
             id: (Date.now() + 1).toString(),
@@ -244,8 +240,44 @@ const AssistantPage: React.FC = () => {
           }
           break;
 
+        case 'search_emails':
+          // Extract search query from message
+          const searchMatch = originalMessage.match(/search|find|show.*emails?.*(?:with|containing|about|for)\s+(.+)/i);
+          if (!searchMatch) {
+            assistantMessage = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: 'Please specify what you want to search for in your emails.',
+              timestamp: new Date()
+            };
+            break;
+          }
+
+          const searchQuery = searchMatch[1].trim();
+          response = await fetch(`http://localhost:8001/api/gmail/search?userId=${user.id}&query=${encodeURIComponent(searchQuery)}&maxResults=10`, {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              assistantMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: `🔍 Found ${data.emails.length} emails matching "${searchQuery}":`,
+                timestamp: new Date(),
+                type: 'gmail_operation',
+                data: { operation: 'search_emails', emails: data.emails, searchQuery }
+              };
+            } else {
+              throw new Error('Failed to search emails');
+            }
+          } else {
+            throw new Error('Gmail API request failed');
+          }
+          break;
+
         case 'search_sender':
-          // Extract sender from message
           const senderMatch = originalMessage.match(/from\s+([^\s]+@[^\s]+|[^@\s]+)/i);
           if (!senderMatch) {
             assistantMessage = {
@@ -258,7 +290,7 @@ const AssistantPage: React.FC = () => {
           }
 
           const sender = senderMatch[1];
-          response = await fetch(`http://localhost:8001/api/gmail/search-by-sender?userId=${user.id}&sender=${encodeURIComponent(sender)}&maxResults=50`, {
+          response = await fetch(`http://localhost:8001/api/gmail/search-by-sender?userId=${user.id}&sender=${encodeURIComponent(sender)}&maxResults=10`, {
             credentials: 'include'
           });
           
@@ -509,6 +541,8 @@ const AssistantPage: React.FC = () => {
                   ? `📧 Found ${updatedEmails.length} unread emails:`
                   : message.data.operation === 'search_sender'
                   ? `📧 Found ${updatedEmails.length} emails from "${message.data.sender}":`
+                  : message.data.operation === 'search_emails'
+                  ? `🔍 Found ${updatedEmails.length} emails matching "${message.data.searchQuery}":`
                   : message.content
               };
             }
@@ -529,6 +563,69 @@ const AssistantPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Error deleting emails:', error);
+    }
+  };
+
+  const handleToggleEmailExpansion = async (emailId: string) => {
+    if (expandedEmails.has(emailId)) {
+      // Collapse email
+      setExpandedEmails(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(emailId);
+        return newSet;
+      });
+    } else {
+      // Expand email - fetch full body if not already loaded
+      const emailInMessages = messages.find(msg => 
+        msg.type === 'gmail_operation' && 
+        msg.data?.emails?.some((email: GmailEmail) => email.id === emailId)
+      );
+      
+      const email = emailInMessages?.data?.emails?.find((e: GmailEmail) => e.id === emailId);
+      
+      if (email && !email.body) {
+        // Fetch full email body
+        setLoadingEmailBodies(prev => new Set(prev.add(emailId)));
+        
+        try {
+          const response = await fetch(`http://localhost:8001/api/gmail/email/${emailId}?userId=${user?.id}`, {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              // Update the email in messages with full body
+              setMessages(prev => prev.map(message => {
+                if (message.type === 'gmail_operation' && message.data?.emails) {
+                  const updatedEmails = message.data.emails.map((e: GmailEmail) => 
+                    e.id === emailId ? { ...e, body: data.email.body } : e
+                  );
+                  
+                  return {
+                    ...message,
+                    data: {
+                      ...message.data,
+                      emails: updatedEmails
+                    }
+                  };
+                }
+                return message;
+              }));
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching email body:', error);
+        } finally {
+          setLoadingEmailBodies(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(emailId);
+            return newSet;
+          });
+        }
+      }
+      
+      setExpandedEmails(prev => new Set(prev.add(emailId)));
     }
   };
 
@@ -575,6 +672,12 @@ const AssistantPage: React.FC = () => {
                 From: <span className="font-medium text-primary">{additionalData.sender}</span>
               </span>
             )}
+            
+            {operation === 'search_emails' && additionalData?.searchQuery && (
+              <span className="text-sm text-secondary">
+                Search: <span className="font-medium text-primary">"{additionalData.searchQuery}"</span>
+              </span>
+            )}
           </div>
 
           {showEmailActions && (
@@ -592,47 +695,103 @@ const AssistantPage: React.FC = () => {
 
         {/* Email List */}
         <div className="space-y-2 max-h-96 overflow-y-auto">
-          {emails.map((email) => (
-            <div
-              key={email.id}
-              className={`glass-panel p-4 rounded-lg border transition-all ${
-                selectedEmails.has(email.id) ? 'border-yellow-500 bg-yellow-500/10' : ''
-              }`}
-            >
-              <div className="flex items-start space-x-3">
-                <input
-                  type="checkbox"
-                  checked={selectedEmails.has(email.id)}
-                  onChange={(e) => handleEmailSelection(email.id, e.target.checked)}
-                  className="mt-1 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
-                />
-                
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center space-x-2 mb-1">
-                    {email.isUnread ? (
-                      <MailOpen className="w-4 h-4 text-blue-500" />
-                    ) : (
-                      <Mail className="w-4 h-4 text-gray-500" />
-                    )}
-                    <span className={`font-medium truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
-                      {email.from}
-                    </span>
-                    <span className="text-xs text-secondary">
-                      {new Date(email.date).toLocaleDateString()}
-                    </span>
+          {emails.map((email) => {
+            const isExpanded = expandedEmails.has(email.id);
+            const isLoadingBody = loadingEmailBodies.has(email.id);
+            
+            return (
+              <div
+                key={email.id}
+                className={`glass-panel rounded-lg border transition-all ${
+                  selectedEmails.has(email.id) ? 'border-yellow-500 bg-yellow-500/10' : ''
+                }`}
+              >
+                <div className="p-4">
+                  <div className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmails.has(email.id)}
+                      onChange={(e) => handleEmailSelection(email.id, e.target.checked)}
+                      className="mt-1 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
+                    />
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-1">
+                        {email.isUnread ? (
+                          <MailOpen className="w-4 h-4 text-blue-500" />
+                        ) : (
+                          <Mail className="w-4 h-4 text-gray-500" />
+                        )}
+                        <span className={`font-medium truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
+                          {email.from}
+                        </span>
+                        <span className="text-xs text-secondary">
+                          {new Date(email.date).toLocaleDateString()}
+                        </span>
+                      </div>
+                      
+                      <h4 className={`font-medium mb-1 truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
+                        {email.subject || '(No Subject)'}
+                      </h4>
+                      
+                      <p className="text-sm text-secondary line-clamp-2 mb-2">
+                        {email.snippet}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        onClick={() => handleToggleEmailExpansion(email.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="p-2"
+                        disabled={isLoadingBody}
+                      >
+                        {isLoadingBody ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : isExpanded ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  
-                  <h4 className={`font-medium mb-1 truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
-                    {email.subject || '(No Subject)'}
-                  </h4>
-                  
-                  <p className="text-sm text-secondary line-clamp-2">
-                    {email.snippet}
-                  </p>
+
+                  {/* Expanded Email Body */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700"
+                      >
+                        <div className="flex items-center space-x-2 mb-3">
+                          <Eye className="w-4 h-4 text-blue-500" />
+                          <span className="text-sm font-medium text-primary">Full Email</span>
+                        </div>
+                        
+                        {email.body ? (
+                          <div className="max-h-64 overflow-y-auto">
+                            <div 
+                              className="prose prose-sm max-w-none text-secondary"
+                              dangerouslySetInnerHTML={{ __html: email.body }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-center py-4">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-secondary" />
+                            <p className="text-sm text-secondary">Loading full email...</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -665,11 +824,8 @@ const AssistantPage: React.FC = () => {
           {/* Gmail operation results */}
           {message.type === 'gmail_operation' && message.data && (
             <div className="mt-4">
-              {message.data.operation === 'list_unread' && (
-                renderEmailList(message.data.emails, 'list_unread')
-              )}
-              {message.data.operation === 'search_sender' && (
-                renderEmailList(message.data.emails, 'search_sender', { sender: message.data.sender })
+              {(message.data.operation === 'list_unread' || message.data.operation === 'search_sender' || message.data.operation === 'search_emails') && (
+                renderEmailList(message.data.emails, message.data.operation, message.data)
               )}
               {message.data.operation === 'summarize' && message.data.groups && (
                 <div className="space-y-4">
@@ -759,7 +915,6 @@ const AssistantPage: React.FC = () => {
     );
   };
 
-  // Show loading state while authentication is being verified
   if (loading) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -851,9 +1006,9 @@ const AssistantPage: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
                 {[
                   { icon: Mail, text: 'Show unread emails', disabled: !gmailStatus.connected },
+                  { icon: Search, text: 'Search emails for "project"', disabled: !gmailStatus.connected },
                   { icon: FileText, text: 'Generate a document', disabled: false },
                   { icon: Zap, text: 'Summarize my emails', disabled: !gmailStatus.connected },
-                  { icon: CheckSquare, text: 'Extract tasks from emails', disabled: !gmailStatus.connected },
                 ].map((action, index) => (
                   <button
                     key={index}
@@ -911,7 +1066,7 @@ const AssistantPage: React.FC = () => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask me to manage your Gmail, generate documents, or help with productivity..."
+                placeholder="Ask me to search emails, manage your Gmail, generate documents, or help with productivity..."
                 className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                 rows={1}
               />
@@ -920,7 +1075,7 @@ const AssistantPage: React.FC = () => {
                   {gmailStatus.connected ? (
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
-                      <span>Gmail connected - Try "show unread emails"</span>
+                      <span>Gmail connected - Try "search emails for project" or "show unread emails"</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">

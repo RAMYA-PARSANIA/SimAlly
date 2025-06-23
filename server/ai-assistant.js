@@ -548,6 +548,68 @@ app.get('/api/gmail/email-content/:messageId', async (req, res) => {
   }
 });
 
+// Duplicate of /api/gmail/email-content/:messageId for compatibility
+app.get('/api/gmail/email/:messageId', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const { messageId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'User ID required' });
+    }
+
+    const gmail = await getGmailClient(userId);
+
+    const response = await gmail.users.messages.get({
+      userId: 'me',
+      id: messageId,
+      format: 'full'
+    });
+
+    const message = response.data;
+    const headers = message.payload.headers;
+    const getHeader = (name) => headers.find(h => h.name === name)?.value || '';
+
+    // Extract email body
+    let body = '';
+    const extractBody = (payload) => {
+      if (payload.body && payload.body.data) {
+        return Buffer.from(payload.body.data, 'base64').toString('utf-8');
+      }
+      if (payload.parts) {
+        for (const part of payload.parts) {
+          if (part.mimeType === 'text/plain' || part.mimeType === 'text/html') {
+            if (part.body && part.body.data) {
+              return Buffer.from(part.body.data, 'base64').toString('utf-8');
+            }
+          }
+          const nested = extractBody(part);
+          if (nested) return nested;
+        }
+      }
+      return '';
+    };
+
+    body = extractBody(message.payload) || message.snippet || '';
+
+    res.json({
+      success: true,
+      email: {
+        id: messageId,
+        from: getHeader('From'),
+        subject: getHeader('Subject'),
+        date: getHeader('Date'),
+        body: body.substring(0, 5000), // Limit body size
+        snippet: message.snippet
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching email content:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch email content' });
+  }
+});
+
 // Delete emails
 app.post('/api/gmail/delete-emails', async (req, res) => {
   try {
