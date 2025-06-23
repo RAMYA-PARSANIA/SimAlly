@@ -112,9 +112,21 @@ export class RealtimeManager {
           table: 'messages',
           filter: `channel_id=eq.${channelId}`,
         },
-        (payload) => {
+        async (payload) => {
           if (callbacks.onMessage) {
-            callbacks.onMessage(payload.new as Message);
+            // Fetch the complete message with sender info
+            const { data } = await supabase
+              .from('messages')
+              .select(`
+                *,
+                sender:profiles(*)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+            
+            if (data) {
+              callbacks.onMessage(data);
+            }
           }
         }
       )
@@ -166,9 +178,25 @@ export class RealtimeManager {
           schema: 'public',
           table: 'tasks',
         },
-        (payload) => {
+        async (payload) => {
           if (callbacks.onTaskCreate) {
-            callbacks.onTaskCreate(payload.new as Task);
+            // Fetch complete task with relations
+            const { data } = await supabase
+              .from('tasks')
+              .select(`
+                *,
+                assignments:task_assignments(
+                  user_id,
+                  user:profiles(*)
+                ),
+                creator:profiles!tasks_created_by_fkey(*)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+            
+            if (data) {
+              callbacks.onTaskCreate(data);
+            }
           }
         }
       )
@@ -179,9 +207,25 @@ export class RealtimeManager {
           schema: 'public',
           table: 'tasks',
         },
-        (payload) => {
+        async (payload) => {
           if (callbacks.onTaskUpdate) {
-            callbacks.onTaskUpdate(payload.new as Task);
+            // Fetch complete task with relations
+            const { data } = await supabase
+              .from('tasks')
+              .select(`
+                *,
+                assignments:task_assignments(
+                  user_id,
+                  user:profiles(*)
+                ),
+                creator:profiles!tasks_created_by_fkey(*)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+            
+            if (data) {
+              callbacks.onTaskUpdate(data);
+            }
           }
         }
       )
@@ -262,18 +306,56 @@ export class RealtimeManager {
 // Workspace API helpers
 export class WorkspaceAPI {
   static async getChannelsForUser(userId: string): Promise<Channel[]> {
-    const { data, error } = await supabase
-      .from('channels')
-      .select(`
-        *,
-        channel_members!inner(user_id, role),
-        member_count:channel_members(count)
-      `)
-      .eq('channel_members.user_id', userId)
-      .order('created_at', { ascending: true });
+    try {
+      // First, get all channels the user is a member of
+      const { data: memberChannels, error: memberError } = await supabase
+        .from('channel_members')
+        .select(`
+          channel_id,
+          channels!inner(*)
+        `)
+        .eq('user_id', userId);
 
-    if (error) throw error;
-    return data || [];
+      if (memberError) {
+        console.error('Error fetching member channels:', memberError);
+      }
+
+      // Also get all public channels
+      const { data: publicChannels, error: publicError } = await supabase
+        .from('channels')
+        .select('*')
+        .eq('type', 'public');
+
+      if (publicError) {
+        console.error('Error fetching public channels:', publicError);
+      }
+
+      // Combine and deduplicate
+      const allChannels = new Map();
+      
+      // Add member channels
+      if (memberChannels) {
+        memberChannels.forEach(mc => {
+          if (mc.channels) {
+            allChannels.set(mc.channels.id, mc.channels);
+          }
+        });
+      }
+
+      // Add public channels
+      if (publicChannels) {
+        publicChannels.forEach(pc => {
+          allChannels.set(pc.id, pc);
+        });
+      }
+
+      return Array.from(allChannels.values()).sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    } catch (error) {
+      console.error('Error in getChannelsForUser:', error);
+      return [];
+    }
   }
 
   static async getChannelMessages(channelId: string, limit = 50): Promise<Message[]> {
@@ -312,19 +394,25 @@ export class WorkspaceAPI {
   }
 
   static async createChannel(name: string, description: string, type: Channel['type'], createdBy: string): Promise<Channel> {
-    const { data, error } = await supabase
-      .from('channels')
-      .insert({
-        name,
-        description,
-        type,
-        created_by: createdBy
-      })
-      .select()
-      .single();
+    // Use the database function for proper channel creation
+    const { data, error } = await supabase.rpc('create_channel_with_membership', {
+      channel_name: name,
+      channel_description: description,
+      channel_type: type,
+      creator_id: createdBy
+    });
 
     if (error) throw error;
-    return data;
+
+    // Fetch the created channel
+    const { data: channel, error: fetchError } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('id', data)
+      .single();
+
+    if (fetchError) throw fetchError;
+    return channel;
   }
 
   static async joinChannel(channelId: string, userId: string, role: ChannelMember['role'] = 'member'): Promise<ChannelMember> {
@@ -357,7 +445,8 @@ export class WorkspaceAPI {
   }
 
   static async getUserTasks(userId: string): Promise<Task[]> {
-    const { data, error } = await supabase
+    // Get tasks created by user
+    const { data: createdTasks, error: createdError } = await supabase
       .from('tasks')
       .select(`
         *,
@@ -367,20 +456,46 @@ export class WorkspaceAPI {
         ),
         creator:profiles!tasks_created_by_fkey(*)
       `)
-      .or(`created_by.eq.${userId},id.in.(${await this.getUserAssignedTaskIds(userId)})`)
-      .order('created_at', { ascending: false });
+      .eq('created_by', userId);
 
-    if (error) throw error;
-    return data || [];
-  }
-
-  private static async getUserAssignedTaskIds(userId: string): Promise<string> {
-    const { data } = await supabase
+    // Get tasks assigned to user
+    const { data: assignedTaskIds, error: assignedError } = await supabase
       .from('task_assignments')
       .select('task_id')
       .eq('user_id', userId);
+
+    let assignedTasks = [];
+    if (assignedTaskIds && assignedTaskIds.length > 0) {
+      const taskIds = assignedTaskIds.map(a => a.task_id);
+      const { data: assigned, error: assignedTasksError } = await supabase
+        .from('tasks')
+        .select(`
+          *,
+          assignments:task_assignments(
+            user_id,
+            user:profiles(*)
+          ),
+          creator:profiles!tasks_created_by_fkey(*)
+        `)
+        .in('id', taskIds);
+
+      if (!assignedTasksError) {
+        assignedTasks = assigned || [];
+      }
+    }
+
+    // Combine and deduplicate
+    const allTasks = new Map();
     
-    return data?.map(t => t.task_id).join(',') || '';
+    if (createdTasks) {
+      createdTasks.forEach(task => allTasks.set(task.id, task));
+    }
+    
+    assignedTasks.forEach(task => allTasks.set(task.id, task));
+
+    return Array.from(allTasks.values()).sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
   }
 
   static async createTask(title: string, description: string, priority: Task['priority'], dueDate: string | null, createdBy: string, sourceMessageId?: string): Promise<Task> {
