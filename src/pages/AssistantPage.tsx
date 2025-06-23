@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -12,7 +12,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  type?: 'text' | 'gmail_operation' | 'document_generation';
+  type?: 'text' | 'endpoint_result' | 'document_generation';
   data?: any;
 }
 
@@ -151,7 +151,6 @@ const AssistantPage: React.FC = () => {
       timestamp: new Date()
     };
 
-    
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
@@ -177,13 +176,19 @@ const AssistantPage: React.FC = () => {
       if (agentData.success && agentData.agent) {
         const agent = agentData.agent;
         
-        if (agent.intent === 'gmail_management' && gmailStatus.connected) {
-          await handleGmailOperation(agent, userMessage.content);
-        }
-        else if (agent.intent === 'document_generation') {
-          await handleDocumentGeneration(agent, userMessage.content);
-        }
-        else {
+        if (agent.intent === 'endpoint_call') {
+          // Handle endpoint call results
+          const assistantMessage: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: agent.response,
+            timestamp: new Date(),
+            type: 'endpoint_result',
+            data: agent.result
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+        } else {
+          // Handle general chat
           const assistantMessage: ChatMessage = {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
@@ -206,282 +211,6 @@ const AssistantPage: React.FC = () => {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGmailOperation = async (agent: any, originalMessage: string) => {
-    if (!user) return;
-
-    try {
-      let response;
-      let assistantMessage: ChatMessage;
-
-      switch (agent.subIntent) {
-        case 'list_unread':
-          response = await fetch(`http://localhost:8001/api/gmail/unread?userId=${user.id}&maxResults=20`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              assistantMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `📧 Found ${data.emails.length} unread emails:`,
-                timestamp: new Date(),
-                type: 'gmail_operation',
-                data: { operation: 'list_unread', emails: data.emails, totalCount: data.totalCount }
-              };
-            } else {
-              throw new Error('Failed to fetch emails');
-            }
-          } else {
-            throw new Error('Gmail API request failed');
-          }
-          break;
-
-        case 'search_emails':
-          // Extract search query from message
-          const searchMatch = originalMessage.match(/search|find|show.*emails?.*(?:with|containing|about|for)\s+(.+)/i);
-          if (!searchMatch) {
-            assistantMessage = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: 'Please specify what you want to search for in your emails.',
-              timestamp: new Date()
-            };
-            break;
-          }
-
-          const searchQuery = searchMatch[1].trim();
-          response = await fetch(`http://localhost:8001/api/gmail/search?userId=${user.id}&query=${encodeURIComponent(searchQuery)}&maxResults=10`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              assistantMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `🔍 Found ${data.emails.length} emails matching "${searchQuery}":`,
-                timestamp: new Date(),
-                type: 'gmail_operation',
-                data: { operation: 'search_emails', emails: data.emails, searchQuery }
-              };
-            } else {
-              throw new Error('Failed to search emails');
-            }
-          } else {
-            throw new Error('Gmail API request failed');
-          }
-          break;
-
-        case 'search_sender':
-          const senderMatch = originalMessage.match(/from\s+([^\s]+@[^\s]+|[^@\s]+)/i);
-          if (!senderMatch) {
-            assistantMessage = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: 'Please specify the sender email address or name you want to search for.',
-              timestamp: new Date()
-            };
-            break;
-          }
-
-          const sender = senderMatch[1];
-          response = await fetch(`http://localhost:8001/api/gmail/search-by-sender?userId=${user.id}&sender=${encodeURIComponent(sender)}&maxResults=10`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              assistantMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: `📧 Found ${data.emails.length} emails from "${sender}":`,
-                timestamp: new Date(),
-                type: 'gmail_operation',
-                data: { operation: 'search_sender', emails: data.emails, sender }
-              };
-            } else {
-              throw new Error('Failed to search emails');
-            }
-          } else {
-            throw new Error('Gmail API request failed');
-          }
-          break;
-
-        case 'summarize_emails':
-          response = await fetch(`http://localhost:8001/api/gmail/unread?userId=${user.id}&maxResults=10`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const emailData = await response.json();
-            if (emailData.success && emailData.emails.length > 0) {
-              const messageIds = emailData.emails.map((email: GmailEmail) => email.id);
-              
-              const summaryResponse = await fetch('http://localhost:8001/api/gmail/summarize-emails', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ userId: user.id, messageIds })
-              });
-              
-              if (summaryResponse.ok) {
-                const summaryData = await summaryResponse.json();
-                if (summaryData.success) {
-                  assistantMessage = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content: `📊 Email Summary:\n\n${summaryData.summary}`,
-                    timestamp: new Date(),
-                    type: 'gmail_operation',
-                    data: { 
-                      operation: 'summarize', 
-                      summary: summaryData.summary,
-                      groups: summaryData.groups,
-                      tasks: summaryData.tasks,
-                      events: summaryData.events
-                    }
-                  };
-                } else {
-                  throw new Error('Failed to summarize emails');
-                }
-              } else {
-                throw new Error('Email summarization failed');
-              }
-            } else {
-              assistantMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: '📧 No unread emails found to summarize.',
-                timestamp: new Date()
-              };
-            }
-          } else {
-            throw new Error('Failed to fetch emails for summarization');
-          }
-          break;
-
-        case 'extract_tasks':
-          response = await fetch(`http://localhost:8001/api/gmail/unread?userId=${user.id}&maxResults=10`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const emailData = await response.json();
-            if (emailData.success && emailData.emails.length > 0) {
-              const messageIds = emailData.emails.map((email: GmailEmail) => email.id);
-              
-              const extractResponse = await fetch('http://localhost:8001/api/gmail/extract-tasks-events', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ userId: user.id, messageIds })
-              });
-              
-              if (extractResponse.ok) {
-                const extractData = await extractResponse.json();
-                if (extractData.success) {
-                  assistantMessage = {
-                    id: (Date.now() + 1).toString(),
-                    role: 'assistant',
-                    content: `✅ Extracted from your emails:\n• ${extractData.tasksCreated} tasks added to your task list\n• ${extractData.eventsCreated} events added to your calendar\n\n${extractData.summary}`,
-                    timestamp: new Date(),
-                    type: 'gmail_operation',
-                    data: { 
-                      operation: 'extract_tasks',
-                      tasksCreated: extractData.tasksCreated,
-                      eventsCreated: extractData.eventsCreated,
-                      tasks: extractData.tasks,
-                      events: extractData.events
-                    }
-                  };
-                } else {
-                  throw new Error('Failed to extract tasks and events');
-                }
-              } else {
-                throw new Error('Task extraction failed');
-              }
-            } else {
-              assistantMessage = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: '📧 No unread emails found to extract tasks from.',
-                timestamp: new Date()
-              };
-            }
-          } else {
-            throw new Error('Failed to fetch emails for task extraction');
-          }
-          break;
-
-        default:
-          assistantMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: agent.response,
-            timestamp: new Date()
-          };
-      }
-
-      setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Gmail operation error:', error);
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'I encountered an error accessing your Gmail. Please make sure Gmail is connected and try again.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    }
-  };
-
-  const handleDocumentGeneration = async (agent: any, originalMessage: string) => {
-    try {
-      const response = await fetch('http://localhost:8001/api/documents/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          prompt: originalMessage,
-          documentType: agent.actions.find((a: any) => a.type === 'document_generation')?.parameters?.type || 'general',
-          format: 'html'
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          const assistantMessage: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: '📄 Document generated successfully!',
-            timestamp: new Date(),
-            type: 'document_generation',
-            data: { document: data.document }
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-        } else {
-          throw new Error('Document generation failed');
-        }
-      } else {
-        throw new Error('Document generation request failed');
-      }
-    } catch (error) {
-      console.error('Document generation error:', error);
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'I encountered an error generating the document. Please try again with a more specific request.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -527,7 +256,7 @@ const AssistantPage: React.FC = () => {
         if (data.success) {
           // Update messages to remove deleted emails from email lists
           setMessages(prev => prev.map(message => {
-            if (message.type === 'gmail_operation' && message.data?.emails) {
+            if (message.type === 'endpoint_result' && message.data?.emails) {
               const updatedEmails = message.data.emails.filter((email: GmailEmail) => 
                 !selectedEmails.has(email.id)
               );
@@ -538,13 +267,7 @@ const AssistantPage: React.FC = () => {
                   ...message.data,
                   emails: updatedEmails
                 },
-                content: message.data.operation === 'list_unread' 
-                  ? `📧 Found ${updatedEmails.length} unread emails:`
-                  : message.data.operation === 'search_sender'
-                  ? `📧 Found ${updatedEmails.length} emails from "${message.data.sender}":`
-                  : message.data.operation === 'search_emails'
-                  ? `🔍 Found ${updatedEmails.length} emails matching "${message.data.searchQuery}":`
-                  : message.content
+                content: `📧 Found ${updatedEmails.length} emails (updated after deletion)`
               };
             }
             return message;
@@ -578,7 +301,7 @@ const AssistantPage: React.FC = () => {
     } else {
       // Expand email - fetch full body if not already loaded
       const emailInMessages = messages.find(msg => 
-        msg.type === 'gmail_operation' && 
+        msg.type === 'endpoint_result' && 
         msg.data?.emails?.some((email: GmailEmail) => email.id === emailId)
       );
       
@@ -598,7 +321,7 @@ const AssistantPage: React.FC = () => {
             if (data.success) {
               // Update the email in messages with full body
               setMessages(prev => prev.map(message => {
-                if (message.type === 'gmail_operation' && message.data?.emails) {
+                if (message.type === 'endpoint_result' && message.data?.emails) {
                   const updatedEmails = message.data.emails.map((e: GmailEmail) => 
                     e.id === emailId ? { ...e, body: data.email.body } : e
                   );
@@ -641,7 +364,7 @@ const AssistantPage: React.FC = () => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const renderEmailList = (emails: GmailEmail[], operation: string, additionalData?: any) => {
+  const renderEmailList = (emails: GmailEmail[]) => {
     if (!emails || emails.length === 0) {
       return (
         <div className="text-center py-8">
@@ -667,18 +390,6 @@ const AssistantPage: React.FC = () => {
                 {selectedEmails.size > 0 ? `${selectedEmails.size} selected` : 'Select all'}
               </span>
             </label>
-            
-            {operation === 'search_sender' && additionalData?.sender && (
-              <span className="text-sm text-secondary">
-                From: <span className="font-medium text-primary">{additionalData.sender}</span>
-              </span>
-            )}
-            
-            {operation === 'search_emails' && additionalData?.searchQuery && (
-              <span className="text-sm text-secondary">
-                Search: <span className="font-medium text-primary">"{additionalData.searchQuery}"</span>
-              </span>
-            )}
           </div>
 
           {showEmailActions && (
@@ -798,6 +509,148 @@ const AssistantPage: React.FC = () => {
     );
   };
 
+  const renderEndpointResult = (data: any) => {
+    if (!data) return null;
+
+    // Gmail results
+    if (data.emails) {
+      return renderEmailList(data.emails);
+    }
+
+    // Task results
+    if (data.tasks) {
+      return (
+        <div className="space-y-3">
+          <h4 className="font-medium text-primary mb-2 flex items-center">
+            <CheckSquare className="w-4 h-4 mr-2" />
+            Tasks ({data.tasks.length})
+          </h4>
+          {data.tasks.map((task: any, index: number) => (
+            <div key={index} className="glass-panel p-3 rounded-lg">
+              <h5 className="font-medium text-primary">{task.title}</h5>
+              {task.description && <p className="text-sm text-secondary mt-1">{task.description}</p>}
+              <div className="flex items-center space-x-4 mt-2 text-xs text-secondary">
+                <span className="capitalize">{task.priority} priority</span>
+                <span className="capitalize">{task.status}</span>
+                {task.due_date && <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Calendar events
+    if (data.events) {
+      return (
+        <div className="space-y-3">
+          <h4 className="font-medium text-primary mb-2 flex items-center">
+            <Calendar className="w-4 h-4 mr-2" />
+            Events ({data.events.length})
+          </h4>
+          {data.events.map((event: any, index: number) => (
+            <div key={index} className="glass-panel p-3 rounded-lg">
+              <h5 className="font-medium text-primary">{event.title}</h5>
+              {event.description && <p className="text-sm text-secondary mt-1">{event.description}</p>}
+              <div className="text-xs text-secondary mt-2">
+                {new Date(event.start_time).toLocaleString()} - {new Date(event.end_time).toLocaleString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // Document generation
+    if (data.document) {
+      return (
+        <div className="glass-panel p-4 rounded-lg bg-green-500/10 border-green-500/30">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-medium text-green-400 flex items-center">
+              <FileText className="w-4 h-4 mr-2" />
+              Generated Document
+            </h4>
+            <Button
+              onClick={() => {
+                const blob = new Blob([data.document.content], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'document.html';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              variant="ghost"
+              size="sm"
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+          </div>
+          <div 
+            className="prose prose-sm max-w-none text-secondary"
+            dangerouslySetInnerHTML={{ __html: data.document.content.substring(0, 500) + '...' }}
+          />
+        </div>
+      );
+    }
+
+    // Meeting room
+    if (data.room) {
+      return (
+        <div className="glass-panel p-4 rounded-lg bg-blue-500/10 border-blue-500/30">
+          <h4 className="font-medium text-blue-400 flex items-center mb-2">
+            <Video className="w-4 h-4 mr-2" />
+            Meeting Room Created
+          </h4>
+          <p className="text-sm text-secondary mb-3">Room: {data.room.name}</p>
+          <Button
+            onClick={() => window.open(data.room.url, '_blank')}
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Join Meeting</span>
+          </Button>
+        </div>
+      );
+    }
+
+    // Game conversation
+    if (data.conversation_url) {
+      return (
+        <div className="glass-panel p-4 rounded-lg bg-purple-500/10 border-purple-500/30">
+          <h4 className="font-medium text-purple-400 flex items-center mb-2">
+            <Gamepad2 className="w-4 h-4 mr-2" />
+            Game Started
+          </h4>
+          <p className="text-sm text-secondary mb-3">Your game session is ready!</p>
+          <Button
+            onClick={() => window.open(data.conversation_url, '_blank')}
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Start Playing</span>
+          </Button>
+        </div>
+      );
+    }
+
+    // Generic success message
+    if (data.success) {
+      return (
+        <div className="glass-panel p-3 rounded-lg bg-green-500/10 border-green-500/30">
+          <p className="text-green-400 text-sm">✅ Operation completed successfully</p>
+          {data.message && <p className="text-secondary text-sm mt-1">{data.message}</p>}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   const renderMessage = (message: ChatMessage) => {
     const isUser = message.role === 'user';
     
@@ -822,88 +675,10 @@ const AssistantPage: React.FC = () => {
           {/* Message content */}
           <p className="text-primary whitespace-pre-wrap mb-2">{message.content}</p>
 
-          {/* Gmail operation results */}
-          {message.type === 'gmail_operation' && message.data && (
+          {/* Endpoint results */}
+          {message.type === 'endpoint_result' && message.data && (
             <div className="mt-4">
-              {(message.data.operation === 'list_unread' || message.data.operation === 'search_sender' || message.data.operation === 'search_emails') && (
-                renderEmailList(message.data.emails, message.data.operation, message.data)
-              )}
-              {message.data.operation === 'summarize' && message.data.groups && (
-                <div className="space-y-4">
-                  {message.data.groups.map((group: any, index: number) => (
-                    <div key={index} className="glass-panel p-3 rounded-lg">
-                      <h4 className="font-medium text-primary mb-2">{group.category}</h4>
-                      <p className="text-sm text-secondary mb-2">{group.summary}</p>
-                      <div className="text-xs text-secondary">
-                        Emails: {group.emails.join(', ')}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {message.data.operation === 'extract_tasks' && (
-                <div className="space-y-3">
-                  {message.data.tasks && message.data.tasks.length > 0 && (
-                    <div className="glass-panel p-3 rounded-lg bg-green-500/10 border-green-500/30">
-                      <h4 className="font-medium text-green-400 mb-2 flex items-center">
-                        <CheckSquare className="w-4 h-4 mr-2" />
-                        Tasks Created ({message.data.tasks.length})
-                      </h4>
-                      {message.data.tasks.map((task: any, index: number) => (
-                        <div key={index} className="text-sm text-secondary mb-1">
-                          • {task.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {message.data.events && message.data.events.length > 0 && (
-                    <div className="glass-panel p-3 rounded-lg bg-blue-500/10 border-blue-500/30">
-                      <h4 className="font-medium text-blue-400 mb-2 flex items-center">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        Events Created ({message.data.events.length})
-                      </h4>
-                      {message.data.events.map((event: any, index: number) => (
-                        <div key={index} className="text-sm text-secondary mb-1">
-                          • {event.title}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Document generation results */}
-          {message.type === 'document_generation' && message.data?.document && (
-            <div className="mt-4">
-              <div className="glass-panel p-4 rounded-lg bg-green-500/10 border-green-500/30">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-green-400 flex items-center">
-                    <FileText className="w-4 h-4 mr-2" />
-                    Generated Document
-                  </h4>
-                  <Button
-                    onClick={() => {
-                      const blob = new Blob([message.data.document.content], { type: 'text/html' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'document.html';
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                    variant="ghost"
-                    size="sm"
-                  >
-                    <Download className="w-4 h-4" />
-                  </Button>
-                </div>
-                <div 
-                  className="prose prose-sm max-w-none text-secondary"
-                  dangerouslySetInnerHTML={{ __html: message.data.document.content.substring(0, 500) + '...' }}
-                />
-              </div>
+              {renderEndpointResult(message.data)}
             </div>
           )}
 
@@ -948,7 +723,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Professional productivity & Gmail management
+                  Complete workspace & productivity assistant
                 </p>
               </div>
             </div>
@@ -997,19 +772,23 @@ const AssistantPage: React.FC = () => {
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
-              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your AI Assistant</h3>
+              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your Powerful AI Assistant</h3>
               <p className="text-secondary mb-6 max-w-2xl mx-auto">
-                I can help you manage your Gmail, generate documents, and boost your productivity. 
-                {!gmailStatus.connected && ' Connect your Gmail to get started with email management.'}
+                I can help you with Gmail management, workspace tasks, calendar events, meetings, document generation, games, and general questions. 
+                {!gmailStatus.connected && ' Connect your Gmail to unlock email management features.'}
               </p>
               
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
                 {[
-                  { icon: Mail, text: 'Show unread emails', disabled: !gmailStatus.connected },
-                  { icon: Search, text: 'Search emails for "project"', disabled: !gmailStatus.connected },
-                  { icon: FileText, text: 'Generate a document', disabled: false },
-                  { icon: Zap, text: 'Summarize my emails', disabled: !gmailStatus.connected },
+                  { icon: Mail, text: 'Show my unread emails', disabled: !gmailStatus.connected },
+                  { icon: CheckSquare, text: 'Create a task for tomorrow', disabled: false },
+                  { icon: Calendar, text: 'Schedule a meeting for 2pm', disabled: false },
+                  { icon: Video, text: 'Create a meeting room', disabled: false },
+                  { icon: FileText, text: 'Generate a project proposal', disabled: false },
+                  { icon: Gamepad2, text: 'Start a riddle game', disabled: false },
+                  { icon: Search, text: 'Search emails about "project"', disabled: !gmailStatus.connected },
+                  { icon: MessageSquare, text: 'What is quantum computing?', disabled: false },
                 ].map((action, index) => (
                   <button
                     key={index}
@@ -1067,7 +846,7 @@ const AssistantPage: React.FC = () => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask me to search emails, manage your Gmail, generate documents, or help with productivity..."
+                placeholder="Ask me anything: manage emails, create tasks, schedule meetings, generate documents, play games, or general questions..."
                 className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                 rows={1}
               />
@@ -1076,7 +855,7 @@ const AssistantPage: React.FC = () => {
                   {gmailStatus.connected ? (
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
-                      <span>Gmail connected - Try "search emails for project" or "show unread emails"</span>
+                      <span>All features available - Gmail connected</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">
