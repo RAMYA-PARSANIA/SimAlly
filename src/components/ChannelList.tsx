@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { Hash, Lock, Plus, Users, Search } from 'lucide-react';
+import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
 interface ChannelListProps {
-  channels: Channel[];
+  channels: (Channel & { unread_count?: number })[];
   activeChannel: Channel | null;
   onChannelSelect: (channel: Channel) => void;
   onCreateChannel: (name: string, description: string, type: 'public' | 'private') => void;
@@ -47,10 +47,18 @@ const ChannelList: React.FC<ChannelListProps> = ({
       case 'private':
         return <Lock className="w-4 h-4" />;
       case 'dm':
-        return <Users className="w-4 h-4" />;
+        return <MessageCircle className="w-4 h-4" />;
       default:
         return <Hash className="w-4 h-4" />;
     }
+  };
+
+  const formatChannelName = (channel: Channel) => {
+    if (channel.type === 'dm') {
+      // For DM channels, show the other user's name
+      return channel.name.replace('DM: ', '');
+    }
+    return channel.name;
   };
 
   return (
@@ -85,15 +93,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
         {/* Public Channels */}
         {publicChannels.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2">
-              Public Channels
+            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2 flex items-center">
+              <Hash className="w-3 h-3 mr-1" />
+              Public Channels ({publicChannels.length})
             </h3>
             <div className="space-y-1">
               {publicChannels.map((channel) => (
                 <motion.button
                   key={channel.id}
                   onClick={() => onChannelSelect(channel)}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all ${
+                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
                     activeChannel?.id === channel.id
                       ? 'bg-gradient-gold-silver text-white'
                       : 'text-secondary hover:text-primary hover:bg-surface'
@@ -103,13 +112,27 @@ const ChannelList: React.FC<ChannelListProps> = ({
                 >
                   {getChannelIcon(channel)}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{channel.name}</div>
+                    <div className="font-medium truncate">{formatChannelName(channel)}</div>
                     {channel.description && (
                       <div className="text-xs opacity-75 truncate">
                         {channel.description}
                       </div>
                     )}
+                    {channel.member_count && (
+                      <div className="text-xs opacity-75">
+                        {channel.member_count} members
+                      </div>
+                    )}
                   </div>
+                  
+                  {/* Unread indicator */}
+                  {channel.unread_count && channel.unread_count > 0 && (
+                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">
+                        {channel.unread_count > 9 ? '9+' : channel.unread_count}
+                      </span>
+                    </div>
+                  )}
                 </motion.button>
               ))}
             </div>
@@ -119,15 +142,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
         {/* Private Channels */}
         {privateChannels.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2">
-              Private Channels
+            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2 flex items-center">
+              <Lock className="w-3 h-3 mr-1" />
+              Private Channels ({privateChannels.length})
             </h3>
             <div className="space-y-1">
               {privateChannels.map((channel) => (
                 <motion.button
                   key={channel.id}
                   onClick={() => onChannelSelect(channel)}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all ${
+                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
                     activeChannel?.id === channel.id
                       ? 'bg-gradient-gold-silver text-white'
                       : 'text-secondary hover:text-primary hover:bg-surface'
@@ -137,13 +161,27 @@ const ChannelList: React.FC<ChannelListProps> = ({
                 >
                   {getChannelIcon(channel)}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{channel.name}</div>
+                    <div className="font-medium truncate">{formatChannelName(channel)}</div>
                     {channel.description && (
                       <div className="text-xs opacity-75 truncate">
                         {channel.description}
                       </div>
                     )}
+                    {channel.member_count && (
+                      <div className="text-xs opacity-75">
+                        {channel.member_count} members
+                      </div>
+                    )}
                   </div>
+                  
+                  {/* Unread indicator */}
+                  {channel.unread_count && channel.unread_count > 0 && (
+                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">
+                        {channel.unread_count > 9 ? '9+' : channel.unread_count}
+                      </span>
+                    </div>
+                  )}
                 </motion.button>
               ))}
             </div>
@@ -153,15 +191,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
         {/* Direct Messages */}
         {dmChannels.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2">
-              Direct Messages
+            <h3 className="text-xs font-semibold text-secondary uppercase tracking-wider mb-2 flex items-center">
+              <MessageCircle className="w-3 h-3 mr-1" />
+              Direct Messages ({dmChannels.length})
             </h3>
             <div className="space-y-1">
               {dmChannels.map((channel) => (
                 <motion.button
                   key={channel.id}
                   onClick={() => onChannelSelect(channel)}
-                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all ${
+                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
                     activeChannel?.id === channel.id
                       ? 'bg-gradient-gold-silver text-white'
                       : 'text-secondary hover:text-primary hover:bg-surface'
@@ -169,10 +208,27 @@ const ChannelList: React.FC<ChannelListProps> = ({
                   whileHover={{ x: 4 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {getChannelIcon(channel)}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{channel.name}</div>
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">
+                      {formatChannelName(channel).charAt(0).toUpperCase()}
+                    </span>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{formatChannelName(channel)}</div>
+                    <div className="text-xs opacity-75">
+                      <span className="w-2 h-2 bg-green-500 rounded-full inline-block mr-1"></span>
+                      Online
+                    </div>
+                  </div>
+                  
+                  {/* Unread indicator */}
+                  {channel.unread_count && channel.unread_count > 0 && (
+                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-xs text-white font-bold">
+                        {channel.unread_count > 9 ? '9+' : channel.unread_count}
+                      </span>
+                    </div>
+                  )}
                 </motion.button>
               ))}
             </div>
@@ -185,6 +241,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
             <p className="text-secondary text-sm">
               {searchTerm ? 'No channels found' : 'No channels yet'}
             </p>
+            {!searchTerm && (
+              <Button
+                onClick={() => setShowCreateModal(true)}
+                variant="secondary"
+                size="sm"
+                className="mt-3"
+              >
+                Create your first channel
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -237,7 +303,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
                       Channel Type
                     </label>
                     <div className="space-y-2">
-                      <label className="flex items-center space-x-3 cursor-pointer">
+                      <label className="flex items-center space-x-3 cursor-pointer p-3 glass-panel rounded-lg hover:border-gold-border transition-all">
                         <input
                           type="radio"
                           name="channelType"
@@ -246,12 +312,13 @@ const ChannelList: React.FC<ChannelListProps> = ({
                           onChange={(e) => setNewChannel(prev => ({ ...prev, type: e.target.value as 'public' | 'private' }))}
                           className="text-yellow-500 focus:ring-yellow-500"
                         />
+                        <Hash className="w-4 h-4 text-secondary" />
                         <div>
                           <div className="font-medium text-primary">Public</div>
-                          <div className="text-xs text-secondary">Anyone can join</div>
+                          <div className="text-xs text-secondary">Anyone can join and see messages</div>
                         </div>
                       </label>
-                      <label className="flex items-center space-x-3 cursor-pointer">
+                      <label className="flex items-center space-x-3 cursor-pointer p-3 glass-panel rounded-lg hover:border-gold-border transition-all">
                         <input
                           type="radio"
                           name="channelType"
@@ -260,9 +327,10 @@ const ChannelList: React.FC<ChannelListProps> = ({
                           onChange={(e) => setNewChannel(prev => ({ ...prev, type: e.target.value as 'public' | 'private' }))}
                           className="text-yellow-500 focus:ring-yellow-500"
                         />
+                        <Lock className="w-4 h-4 text-secondary" />
                         <div>
                           <div className="font-medium text-primary">Private</div>
-                          <div className="text-xs text-secondary">Invite only</div>
+                          <div className="text-xs text-secondary">Invite only, hidden from others</div>
                         </div>
                       </label>
                     </div>
@@ -283,7 +351,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
                     className="flex-1"
                     disabled={!newChannel.name.trim()}
                   >
-                    Create
+                    Create Channel
                   </Button>
                 </div>
               </GlassCard>

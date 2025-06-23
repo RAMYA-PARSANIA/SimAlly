@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Hash, AtSign } from 'lucide-react';
+import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { type Channel, type Message } from '../lib/supabase';
@@ -15,6 +15,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
   const { user } = useAuth();
   const [messageInput, setMessageInput] = useState('');
   const [mentions, setMentions] = useState<string[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -22,12 +26,29 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    // Auto-resize textarea
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      inputRef.current.style.height = `${inputRef.current.scrollHeight}px`;
+    }
+  }, [messageInput]);
+
   const handleSendMessage = () => {
     if (!messageInput.trim() || !channel) return;
 
-    onSendMessage(messageInput.trim(), mentions);
+    let content = messageInput.trim();
+    
+    // Add reply reference if replying
+    if (replyingTo) {
+      content = `@${replyingTo.sender?.username || 'user'} ${content}`;
+    }
+
+    onSendMessage(content, mentions);
     setMessageInput('');
     setMentions([]);
+    setReplyingTo(null);
+    setEditingMessage(null);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -37,11 +58,34 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setMessageInput(value);
+    
+    // Extract mentions
+    const mentionMatches = value.match(/@(\w+)/g);
+    if (mentionMatches) {
+      const extractedMentions = mentionMatches.map(mention => mention.substring(1));
+      setMentions(extractedMentions);
+    } else {
+      setMentions([]);
+    }
+
+    // Show typing indicator
+    setIsTyping(true);
+    setTimeout(() => setIsTyping(false), 1000);
+  };
+
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
   };
 
   const getMessageIcon = (message: Message) => {
@@ -71,6 +115,40 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     }
   };
 
+  const renderMessageContent = (content: string) => {
+    // Render mentions with highlighting
+    const parts = content.split(/(@\w+)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('@')) {
+        return (
+          <span key={index} className="bg-yellow-500/20 text-yellow-600 px-1 rounded">
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  const handleReply = (message: Message) => {
+    setReplyingTo(message);
+    inputRef.current?.focus();
+  };
+
+  const handleEdit = (message: Message) => {
+    setEditingMessage(message);
+    setMessageInput(message.content);
+    inputRef.current?.focus();
+  };
+
+  const emojis = ['😀', '😂', '😍', '🤔', '👍', '👎', '❤️', '🎉', '🔥', '💯'];
+
+  const addEmoji = (emoji: string) => {
+    setMessageInput(prev => prev + emoji);
+    setShowEmojiPicker(false);
+    inputRef.current?.focus();
+  };
+
   if (!channel) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -87,15 +165,26 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
     <div className="flex-1 flex flex-col">
       {/* Channel Header */}
       <div className="glass-panel border-b silver-border p-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-gold-silver flex items-center justify-center">
-            <Hash className="w-4 h-4 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-gold-silver flex items-center justify-center">
+              <Hash className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h2 className="font-bold text-primary">{channel.name}</h2>
+              {channel.description && (
+                <p className="text-sm text-secondary">{channel.description}</p>
+              )}
+            </div>
           </div>
-          <div>
-            <h2 className="font-bold text-primary">{channel.name}</h2>
-            {channel.description && (
-              <p className="text-sm text-secondary">{channel.description}</p>
-            )}
+          
+          <div className="flex items-center space-x-2">
+            <Button variant="ghost" size="sm" className="p-2">
+              <Pin className="w-4 h-4" />
+            </Button>
+            <Button variant="ghost" size="sm" className="p-2">
+              <MoreVertical className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </div>
@@ -103,55 +192,109 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <AnimatePresence>
-          {messages.map((message) => (
-            <motion.div
-              key={message.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className={`flex items-start space-x-3 ${
-                message.sender_id === user?.id ? 'flex-row-reverse space-x-reverse' : ''
-              }`}
-            >
-              {/* Avatar */}
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                message.type === 'ai_task_creation' || message.type === 'ai_summary'
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500'
-                  : message.sender_id === user?.id
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500'
-                  : 'bg-gradient-gold-silver'
-              }`}>
-                {getMessageIcon(message)}
-              </div>
+          {messages.map((message, index) => {
+            const isConsecutive = index > 0 && 
+              messages[index - 1].sender_id === message.sender_id &&
+              new Date(message.created_at).getTime() - new Date(messages[index - 1].created_at).getTime() < 300000; // 5 minutes
 
-              {/* Message */}
-              <div className={`glass-panel rounded-2xl p-4 max-w-2xl ${getMessageStyle(message)}`}>
-                {/* Sender info */}
-                <div className="flex items-center space-x-2 mb-1">
-                  <span className="font-medium text-primary text-sm">
-                    {message.type === 'ai_task_creation' || message.type === 'ai_summary'
-                      ? 'AI Assistant'
-                      : message.sender?.full_name || 'Unknown User'}
-                  </span>
-                  <span className="text-xs text-secondary">
-                    {formatTime(message.created_at)}
-                  </span>
-                </div>
+            return (
+              <motion.div
+                key={message.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className={`group ${
+                  message.sender_id === user?.id ? 'flex flex-row-reverse' : 'flex'
+                }`}
+              >
+                <div className={`flex items-start space-x-3 max-w-4xl ${
+                  message.sender_id === user?.id ? 'flex-row-reverse space-x-reverse' : ''
+                }`}>
+                  {/* Avatar */}
+                  {!isConsecutive && (
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      message.type === 'ai_task_creation' || message.type === 'ai_summary'
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500'
+                        : message.sender_id === user?.id
+                        ? 'bg-gradient-to-r from-blue-500 to-purple-500'
+                        : 'bg-gradient-gold-silver'
+                    }`}>
+                      {getMessageIcon(message)}
+                    </div>
+                  )}
+                  
+                  {isConsecutive && (
+                    <div className="w-8 h-8 flex-shrink-0" />
+                  )}
 
-                {/* Message content */}
-                <p className="text-primary whitespace-pre-wrap">{message.content}</p>
+                  {/* Message */}
+                  <div className={`glass-panel rounded-2xl p-4 relative ${getMessageStyle(message)} ${
+                    isConsecutive ? 'mt-1' : ''
+                  }`}>
+                    {/* Sender info */}
+                    {!isConsecutive && (
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-medium text-primary text-sm">
+                          {message.type === 'ai_task_creation' || message.type === 'ai_summary'
+                            ? 'AI Assistant'
+                            : message.sender?.full_name || 'Unknown User'}
+                        </span>
+                        <span className="text-xs text-secondary">
+                          {formatTime(message.created_at)}
+                        </span>
+                      </div>
+                    )}
 
-                {/* Task metadata */}
-                {message.type === 'ai_task_creation' && message.metadata?.task_id && (
-                  <div className="mt-2 p-2 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
-                    <p className="text-green-400 text-xs font-medium">
-                      ✓ Task created successfully
-                    </p>
+                    {/* Message content */}
+                    <div className="text-primary whitespace-pre-wrap">
+                      {renderMessageContent(message.content)}
+                    </div>
+
+                    {/* Task metadata */}
+                    {message.type === 'ai_task_creation' && message.metadata?.task_id && (
+                      <div className="mt-2 p-2 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
+                        <p className="text-green-400 text-xs font-medium">
+                          ✓ Task created successfully
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Message actions */}
+                    <div className={`absolute top-2 ${
+                      message.sender_id === user?.id ? 'left-2' : 'right-2'
+                    } opacity-0 group-hover:opacity-100 transition-opacity`}>
+                      <div className="flex items-center space-x-1 glass-panel rounded-lg p-1">
+                        <button
+                          onClick={() => handleReply(message)}
+                          className="p-1 hover:bg-surface rounded"
+                          title="Reply"
+                        >
+                          <Reply className="w-3 h-3 text-secondary" />
+                        </button>
+                        {message.sender_id === user?.id && (
+                          <>
+                            <button
+                              onClick={() => handleEdit(message)}
+                              className="p-1 hover:bg-surface rounded"
+                              title="Edit"
+                            >
+                              <Edit className="w-3 h-3 text-secondary" />
+                            </button>
+                            <button
+                              className="p-1 hover:bg-surface rounded"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3 text-red-400" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
+                </div>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
 
         {messages.length === 0 && (
@@ -164,26 +307,102 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ channel, messages, onSendMessage 
           </div>
         )}
 
+        {/* Typing indicator */}
+        {isTyping && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center space-x-2 text-secondary text-sm"
+          >
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-secondary rounded-full animate-bounce"></div>
+              <div className="w-2 h-2 bg-secondary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+              <div className="w-2 h-2 bg-secondary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+            </div>
+            <span>Someone is typing...</span>
+          </motion.div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Reply indicator */}
+      {replyingTo && (
+        <div className="px-4 py-2 glass-panel border-t border-b silver-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-sm">
+              <Reply className="w-4 h-4 text-secondary" />
+              <span className="text-secondary">Replying to</span>
+              <span className="font-medium text-primary">
+                {replyingTo.sender?.full_name}
+              </span>
+              <span className="text-secondary truncate max-w-xs">
+                {replyingTo.content}
+              </span>
+            </div>
+            <button
+              onClick={() => setReplyingTo(null)}
+              className="text-secondary hover:text-primary"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Message Input */}
       <div className="glass-panel border-t silver-border p-4">
         <div className="flex items-end space-x-4">
           <div className="flex-1">
-            <textarea
-              ref={inputRef}
-              value={messageInput}
-              onChange={(e) => setMessageInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={`Message #${channel.name}... (mention @users for tasks)`}
-              className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
-              rows={1}
-            />
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={messageInput}
+                onChange={handleInputChange}
+                onKeyPress={handleKeyPress}
+                placeholder={`Message #${channel.name}... (use @username to mention)`}
+                className="w-full glass-panel rounded-xl px-4 py-3 pr-20 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
+                rows={1}
+              />
+              
+              {/* Input actions */}
+              <div className="absolute right-2 bottom-2 flex items-center space-x-1">
+                <button
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="p-1 hover:bg-surface rounded"
+                >
+                  <Smile className="w-4 h-4 text-secondary" />
+                </button>
+                <button className="p-1 hover:bg-surface rounded">
+                  <Paperclip className="w-4 h-4 text-secondary" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Emoji picker */}
+            {showEmojiPicker && (
+              <div className="absolute bottom-16 right-4 glass-panel rounded-lg p-3 grid grid-cols-5 gap-2 z-10">
+                {emojis.map((emoji, index) => (
+                  <button
+                    key={index}
+                    onClick={() => addEmoji(emoji)}
+                    className="p-2 hover:bg-surface rounded text-lg"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+            
             <div className="flex items-center justify-between mt-2">
               <div className="flex items-center space-x-2 text-xs text-secondary">
                 <AtSign className="w-3 h-3" />
-                <span>Use @username to assign tasks</span>
+                <span>Use @username to mention users</span>
+                {mentions.length > 0 && (
+                  <span className="text-yellow-500">
+                    • Mentioning: {mentions.join(', ')}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-secondary">
                 Enter to send • Shift+Enter for new line

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Bell, Search, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, type Channel, type Message, type Task } from '../lib/supabase';
+import { WorkspaceAPI, RealtimeManager, type Channel, type Message, type Task, type Profile } from '../lib/supabase';
 import ThemeToggle from '../components/ThemeToggle';
 import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
@@ -14,13 +14,19 @@ import Button from '../components/ui/Button';
 
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar'>('chat');
   const [loading, setLoading] = useState(true);
+  const [realtimeManager] = useState(new RealtimeManager());
+  const [unreadCounts, setUnreadCounts] = useState<Map<string, number>>(new Map());
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Profile[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -28,100 +34,135 @@ const WorkspacePage: React.FC = () => {
       return;
     }
     
-    loadChannels();
-    loadTasks();
+    initializeWorkspace();
+    
+    return () => {
+      realtimeManager.unsubscribeAll();
+    };
   }, [user, navigate]);
 
   useEffect(() => {
     if (activeChannel) {
       loadMessages(activeChannel.id);
+      setupChannelSubscription(activeChannel.id);
     }
   }, [activeChannel]);
 
-  const loadChannels = async () => {
+  const initializeWorkspace = async () => {
     try {
-      const { data, error } = await supabase
-        .from('channels')
-        .select(`
-          *,
-          channel_members!inner(user_id)
-        `)
-        .eq('channel_members.user_id', user?.id)
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Error loading channels:', error);
-        return;
-      }
-
-      setChannels(data || []);
-      
-      // Set first channel as active if none selected
-      if (data && data.length > 0 && !activeChannel) {
-        setActiveChannel(data[0]);
-      }
+      await Promise.all([
+        loadChannels(),
+        loadTasks(),
+        setupUserSubscriptions()
+      ]);
     } catch (error) {
-      console.error('Error loading channels:', error);
+      console.error('Error initializing workspace:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  const loadChannels = async () => {
+    if (!user) return;
+    
+    try {
+      const channelsData = await WorkspaceAPI.getChannelsForUser(user.id);
+      setChannels(channelsData);
+      
+      // Set first channel as active if none selected
+      if (channelsData.length > 0 && !activeChannel) {
+        setActiveChannel(channelsData[0]);
+      }
+    } catch (error) {
+      console.error('Error loading channels:', error);
+    }
+  };
+
   const loadMessages = async (channelId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('messages')
-        .select(`
-          *,
-          sender:profiles(*)
-        `)
-        .eq('channel_id', channelId)
-        .order('created_at', { ascending: true })
-        .limit(50);
-
-      if (error) {
-        console.error('Error loading messages:', error);
-        return;
-      }
-
-      setMessages(data || []);
+      const messagesData = await WorkspaceAPI.getChannelMessages(channelId);
+      setMessages(messagesData);
+      
+      // Mark channel as read
+      setUnreadCounts(prev => {
+        const newCounts = new Map(prev);
+        newCounts.set(channelId, 0);
+        return newCounts;
+      });
     } catch (error) {
       console.error('Error loading messages:', error);
     }
   };
 
   const loadTasks = async () => {
+    if (!user) return;
+    
     try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select(`
-          *,
-          assignments:task_assignments(
-            user_id,
-            user:profiles(*)
-          )
-        `)
-        .or(`created_by.eq.${user?.id},id.in.(${await getUserTaskIds()})`)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error loading tasks:', error);
-        return;
-      }
-
-      setTasks(data || []);
+      const tasksData = await WorkspaceAPI.getUserTasks(user.id);
+      setTasks(tasksData);
     } catch (error) {
       console.error('Error loading tasks:', error);
     }
   };
 
-  const getUserTaskIds = async () => {
-    const { data } = await supabase
-      .from('task_assignments')
-      .select('task_id')
-      .eq('user_id', user?.id);
+  const setupChannelSubscription = (channelId: string) => {
+    // Unsubscribe from previous channel
+    realtimeManager.unsubscribe(`channel:${channelId}`);
     
-    return data?.map(t => t.task_id).join(',') || '';
+    // Subscribe to new channel
+    realtimeManager.subscribeToChannel(channelId, {
+      onMessage: (message) => {
+        setMessages(prev => [...prev, message]);
+        
+        // Update unread count if not current channel
+        if (activeChannel?.id !== channelId) {
+          setUnreadCounts(prev => {
+            const newCounts = new Map(prev);
+            const current = newCounts.get(channelId) || 0;
+            newCounts.set(channelId, current + 1);
+            return newCounts;
+          });
+        }
+      },
+      onMemberJoin: (member) => {
+        console.log('Member joined:', member);
+        // Reload channels to update member count
+        loadChannels();
+      },
+      onMemberLeave: (member) => {
+        console.log('Member left:', member);
+        // Reload channels to update member count
+        loadChannels();
+      }
+    });
+  };
+
+  const setupUserSubscriptions = () => {
+    if (!user) return;
+    
+    // Subscribe to task updates
+    realtimeManager.subscribeToTasks(user.id, {
+      onTaskCreate: (task) => {
+        setTasks(prev => [task, ...prev]);
+      },
+      onTaskUpdate: (task) => {
+        setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+      },
+      onTaskAssign: (assignment) => {
+        console.log('Task assigned:', assignment);
+        loadTasks(); // Reload to get full task data
+      }
+    });
+
+    // Subscribe to channel updates
+    realtimeManager.subscribeToUserChannels(user.id, {
+      onChannelCreate: (channel) => {
+        setChannels(prev => [...prev, channel]);
+      },
+      onChannelUpdate: (channel) => {
+        setChannels(prev => prev.map(c => c.id === channel.id ? channel : c));
+      }
+    });
   };
 
   const handleBack = () => {
@@ -132,31 +173,19 @@ const WorkspacePage: React.FC = () => {
     if (!activeChannel || !user) return;
 
     try {
-      // Send message to database
-      const { data: messageData, error } = await supabase
-        .from('messages')
-        .insert({
-          channel_id: activeChannel.id,
-          sender_id: user.id,
-          content,
-          type: 'text'
-        })
-        .select(`
-          *,
-          sender:profiles(*)
-        `)
-        .single();
+      // Send message to database (will trigger real-time update)
+      const message = await WorkspaceAPI.sendMessage(
+        activeChannel.id,
+        user.id,
+        content,
+        'text',
+        { mentions }
+      );
 
-      if (error) {
-        console.error('Error sending message:', error);
-        return;
+      // Process with AI for task detection if mentions are present
+      if (mentions.length > 0 || content.toLowerCase().includes('task') || content.toLowerCase().includes('todo')) {
+        await processMessageForTasks(message, mentions);
       }
-
-      // Add to local messages
-      setMessages(prev => [...prev, messageData]);
-
-      // Process with AI for task detection
-      await processMessageForTasks(messageData, mentions);
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -184,28 +213,16 @@ const WorkspacePage: React.FC = () => {
       const data = await response.json();
       
       if (data.success && data.taskCreated) {
-        // Reload tasks to show the new one
-        loadTasks();
+        // Task will be added via real-time subscription
         
         // Add AI confirmation message
-        const { data: aiMessage } = await supabase
-          .from('messages')
-          .insert({
-            channel_id: activeChannel?.id,
-            sender_id: user?.id, // System message
-            content: `✅ Task created: "${data.task.title}"${data.task.assignee ? ` assigned to ${data.task.assignee}` : ''}`,
-            type: 'ai_task_creation',
-            metadata: { task_id: data.task.id }
-          })
-          .select(`
-            *,
-            sender:profiles(*)
-          `)
-          .single();
-
-        if (aiMessage) {
-          setMessages(prev => [...prev, aiMessage]);
-        }
+        await WorkspaceAPI.sendMessage(
+          activeChannel?.id || '',
+          user?.id || '',
+          `✅ Task created: "${data.task.title}"${data.task.assignee ? ` assigned to ${data.task.assignee}` : ''}`,
+          'ai_task_creation',
+          { task_id: data.task.id }
+        );
       }
     } catch (error) {
       console.error('Error processing message for tasks:', error);
@@ -216,35 +233,56 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('channels')
-        .insert({
-          name,
-          description,
-          type,
-          created_by: user.id
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error creating channel:', error);
-        return;
-      }
-
-      // Add creator as admin member
-      await supabase
-        .from('channel_members')
-        .insert({
-          channel_id: data.id,
-          user_id: user.id,
-          role: 'admin'
-        });
-
-      // Reload channels
-      loadChannels();
+      const channel = await WorkspaceAPI.createChannel(name, description, type, user.id);
+      // Channel will be added via real-time subscription
+      setActiveChannel(channel);
     } catch (error) {
       console.error('Error creating channel:', error);
+    }
+  };
+
+  const handleChannelSelect = (channel: Channel) => {
+    setActiveChannel(channel);
+    setActivePanel('chat'); // Switch to chat when selecting a channel
+  };
+
+  const handleTaskUpdate = () => {
+    loadTasks();
+  };
+
+  const handleSearchUsers = async (query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const results = await WorkspaceAPI.searchUsers(query);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching users:', error);
+    }
+  };
+
+  const handleInviteUser = async (userId: string) => {
+    if (!activeChannel) return;
+
+    try {
+      await WorkspaceAPI.joinChannel(activeChannel.id, userId);
+      setShowInviteModal(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      
+      // Send system message
+      await WorkspaceAPI.sendMessage(
+        activeChannel.id,
+        user?.id || '',
+        `User invited to the channel`,
+        'system'
+      );
+    } catch (error) {
+      console.error('Error inviting user:', error);
     }
   };
 
@@ -275,38 +313,79 @@ const WorkspacePage: React.FC = () => {
               >
                 <ArrowLeft className="w-5 h-5 text-secondary" />
               </motion.button>
-              <div>
-                <h1 className="text-lg font-bold gradient-gold-silver">
-                  Workspace
-                </h1>
-                <p className="text-xs text-secondary">
-                  {activeChannel?.name || 'Select a channel'}
-                </p>
+              <div className="flex items-center space-x-3">
+                <div>
+                  <h1 className="text-lg font-bold gradient-gold-silver">
+                    Workspace
+                  </h1>
+                  <p className="text-xs text-secondary">
+                    {activeChannel?.name || 'Select a channel'} • {channels.length} channels
+                  </p>
+                </div>
+                
+                {/* Online indicator */}
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-xs text-secondary">
+                    {onlineUsers.size} online
+                  </span>
+                </div>
               </div>
             </div>
             
             <div className="flex items-center space-x-3">
+              {/* Notifications */}
+              <button className="glass-panel p-2 rounded-lg glass-panel-hover relative">
+                <Bell className="w-4 h-4 text-secondary" />
+                {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-xs text-white font-bold">
+                      {Math.min(Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0), 9)}
+                    </span>
+                  </div>
+                )}
+              </button>
+
+              {/* Invite Users */}
+              {activeChannel && (
+                <Button
+                  onClick={() => setShowInviteModal(true)}
+                  variant="secondary"
+                  size="sm"
+                  className="flex items-center space-x-2"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Invite</span>
+                </Button>
+              )}
+
               {/* Panel Toggle Buttons */}
               <div className="flex items-center space-x-1 glass-panel rounded-lg p-1">
                 <button
                   onClick={() => setActivePanel('chat')}
-                  className={`p-2 rounded-md transition-all ${
+                  className={`p-2 rounded-md transition-all relative ${
                     activePanel === 'chat' 
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
                 >
                   <MessageSquare className="w-4 h-4" />
+                  {Array.from(unreadCounts.values()).reduce((a, b) => a + b, 0) > 0 && activePanel !== 'chat' && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></div>
+                  )}
                 </button>
                 <button
                   onClick={() => setActivePanel('tasks')}
-                  className={`p-2 rounded-md transition-all ${
+                  className={`p-2 rounded-md transition-all relative ${
                     activePanel === 'tasks' 
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
                 >
                   <CheckSquare className="w-4 h-4" />
+                  {tasks.filter(t => t.status === 'todo').length > 0 && activePanel !== 'tasks' && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full"></div>
+                  )}
                 </button>
                 <button
                   onClick={() => setActivePanel('calendar')}
@@ -331,9 +410,12 @@ const WorkspacePage: React.FC = () => {
         {/* Sidebar */}
         <div className="w-80 glass-panel border-r silver-border flex flex-col">
           <ChannelList
-            channels={channels}
+            channels={channels.map(channel => ({
+              ...channel,
+              unread_count: unreadCounts.get(channel.id) || 0
+            }))}
             activeChannel={activeChannel}
-            onChannelSelect={setActiveChannel}
+            onChannelSelect={handleChannelSelect}
             onCreateChannel={handleCreateChannel}
           />
         </div>
@@ -351,7 +433,7 @@ const WorkspacePage: React.FC = () => {
           {activePanel === 'tasks' && (
             <TaskPanel
               tasks={tasks}
-              onTaskUpdate={loadTasks}
+              onTaskUpdate={handleTaskUpdate}
             />
           )}
           
@@ -362,6 +444,92 @@ const WorkspacePage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Invite Users Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-full max-w-md"
+          >
+            <GlassCard className="p-6" goldBorder>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold gradient-gold-silver">
+                  Invite Users to #{activeChannel?.name}
+                </h3>
+                <button
+                  onClick={() => setShowInviteModal(false)}
+                  className="text-secondary hover:text-primary"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Search Users
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 w-4 h-4 text-secondary" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => handleSearchUsers(e.target.value)}
+                      placeholder="Search by username or name..."
+                      className="w-full pl-9 pr-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Search Results */}
+                {searchResults.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {searchResults.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between p-3 glass-panel rounded-lg"
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-gold-silver flex items-center justify-center">
+                            <span className="text-white text-sm font-bold">
+                              {user.full_name.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-primary">{user.full_name}</div>
+                            <div className="text-xs text-secondary">@{user.username}</div>
+                          </div>
+                        </div>
+                        <Button
+                          onClick={() => handleInviteUser(user.id)}
+                          variant="secondary"
+                          size="sm"
+                        >
+                          Invite
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {searchQuery.length >= 2 && searchResults.length === 0 && (
+                  <div className="text-center py-4 text-secondary">
+                    No users found matching "{searchQuery}"
+                  </div>
+                )}
+
+                {searchQuery.length < 2 && (
+                  <div className="text-center py-4 text-secondary text-sm">
+                    Type at least 2 characters to search for users
+                  </div>
+                )}
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
