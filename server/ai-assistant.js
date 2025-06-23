@@ -1802,6 +1802,272 @@ app.post('/api/meetings/extract-notes', async (req, res) => {
   }
 });
 
+// ===================== API ENDPOINTS METADATA FOR AI =========================
+const API_ENDPOINTS = [
+  {
+    path: "/api/gmail/auth-url",
+    method: "GET",
+    description: "Get Gmail OAuth2 authorization URL for a user. Args: userId"
+  },
+  {
+    path: "/auth/gmail/callback",
+    method: "GET",
+    description: "OAuth2 callback for Gmail. Args: code, state(userId)"
+  },
+  {
+    path: "/api/gmail/status",
+    method: "GET",
+    description: "Check if Gmail is connected for a user. Args: userId"
+  },
+  {
+    path: "/api/gmail/disconnect",
+    method: "POST",
+    description: "Disconnect Gmail for a user. Args: userId"
+  },
+  {
+    path: "/api/gmail/unread",
+    method: "GET",
+    description: "Get unread emails for a user. Args: userId, maxResults"
+  },
+  {
+    path: "/api/gmail/search-by-sender",
+    method: "GET",
+    description: "Search emails by sender. Args: userId, sender, maxResults"
+  },
+  {
+    path: "/api/gmail/email-content/:messageId",
+    method: "GET",
+    description: "Get email content for summarization. Args: userId, messageId"
+  },
+  {
+    path: "/api/gmail/email/:messageId",
+    method: "GET",
+    description: "Get email content (compat). Args: userId, messageId"
+  },
+  {
+    path: "/api/gmail/delete-emails",
+    method: "POST",
+    description: "Delete emails by messageIds. Args: userId, messageIds"
+  },
+  {
+    path: "/api/gmail/summarize-emails",
+    method: "POST",
+    description: "Summarize emails. Args: userId, messageIds"
+  },
+  {
+    path: "/api/gmail/extract-tasks-events",
+    method: "POST",
+    description: "Extract tasks/events from emails and add to workspace. Args: userId, messageIds"
+  },
+  {
+    path: "/api/chat/agent-process",
+    method: "POST",
+    description: "AI agent intent detection and action selection. Args: message, userId, context"
+  },
+  {
+    path: "/api/chat/process-message",
+    method: "POST",
+    description: "Detect and create tasks from chat message. Args: message, messageId, channelId, senderId, mentions, userId"
+  },
+  {
+    path: "/api/chat/detect-intent",
+    method: "POST",
+    description: "Legacy intent detection. Args: message, userId"
+  },
+  {
+    path: "/api/chat",
+    method: "POST",
+    description: "General chat with AI assistant. Args: message, userId, conversationHistory"
+  },
+  {
+    path: "/api/chat/history",
+    method: "GET",
+    description: "Get chat history for a user. Args: userId"
+  },
+  {
+    path: "/api/documents/generate",
+    method: "POST",
+    description: "Generate a document (HTML or PDFMake). Args: prompt, documentType, format"
+  },
+  {
+    path: "/api/meetings/auto-notes",
+    method: "POST",
+    description: "Extract notes from meeting transcript. Args: text, speaker, userId"
+  },
+  {
+    path: "/api/meetings/summary",
+    method: "POST",
+    description: "Generate meeting summary. Args: transcript, participants, duration"
+  },
+  {
+    path: "/api/workspace/channel-summary",
+    method: "POST",
+    description: "Generate channel summary. Args: channelId, timeframe"
+  },
+  {
+    path: "/api/meetings/extract-notes",
+    method: "POST",
+    description: "Extract meeting notes. Args: transcript, participants, duration"
+  },
+  {
+    path: "/api/ai/query",
+    method: "POST",
+    description: "General query to Gemini AI (not related to any endpoint). Args: query"
+  }
+];
+
+// ===================== AGENT SYSTEM WITH ENDPOINT SELECTION ==================
+app.post('/api/chat/agent-process', async (req, res) => {
+  try {
+    const { message, userId, context = {} } = req.body;
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+    // Pass endpoint list to Gemini and ask for endpoint selection and arguments
+    const intentPrompt = `
+      You are SimAlly, an advanced AI agent for a web app. Here is a list of all API endpoints you can use:
+
+      ${JSON.stringify(API_ENDPOINTS, null, 2)}
+
+      Analyze the user message and select the most appropriate endpoint to call, along with the correct arguments. 
+      If the message is a general chat or a general query (not related to any endpoint), select the "/api/ai/query" endpoint and provide the query as argument.
+      If the message is a general chat, you may also reply directly.
+
+      User message: "${message}"
+      User context: ${JSON.stringify(context)}
+
+      Respond in this JSON format:
+      {
+        "type": "endpoint_call" | "general_chat",
+        "endpoint": "endpoint path (if any)",
+        "method": "GET|POST",
+        "args": { ...arguments... },
+        "reply": "If general chat, reply here. If endpoint_call, you may add a short explanation."
+      }
+    `;
+
+    const result = await model.generateContent(intentPrompt);
+    let response = result.response.text();
+
+    // Remove markdown code block formatting if present
+    response = response.replace(/^```json\s*/i, '')
+      .replace(/^```\s*/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+
+    let agentResponse;
+    try {
+      agentResponse = JSON.parse(response);
+    } catch (parseError) {
+      console.error('Failed to parse agent response:', parseError, response);
+      // fallback to general chat
+      agentResponse = { type: "general_chat", reply: "Sorry, I couldn't process your request. Please try again." };
+    }
+
+    // If Gemini selected an endpoint, call it and return the result
+    if (agentResponse.type === "endpoint_call" && agentResponse.endpoint) {
+      const endpoint = agentResponse.endpoint;
+      const method = (agentResponse.method || "GET").toUpperCase();
+      const args = agentResponse.args || {};
+
+      // Helper: call local function or HTTP endpoint
+      const callApiEndpoint = async () => {
+        // Direct function calls for known endpoints
+        if (endpoint === "/api/gmail/unread" && method === "GET") {
+          return await (await fetch(`http://localhost:${PORT}/api/gmail/unread?userId=${args.userId}&maxResults=${args.maxResults || 20}`)).json();
+        }
+        if (endpoint === "/api/gmail/search-by-sender" && method === "GET") {
+          return await (await fetch(`http://localhost:${PORT}/api/gmail/search-by-sender?userId=${args.userId}&sender=${encodeURIComponent(args.sender)}&maxResults=${args.maxResults || 50}`)).json();
+        }
+        if (endpoint === "/api/gmail/summarize-emails" && method === "POST") {
+          return await (await fetch(`http://localhost:${PORT}/api/gmail/summarize-emails`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+        if (endpoint === "/api/gmail/delete-emails" && method === "POST") {
+          return await (await fetch(`http://localhost:${PORT}/api/gmail/delete-emails`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+        if (endpoint === "/api/gmail/extract-tasks-events" && method === "POST") {
+          return await (await fetch(`http://localhost:${PORT}/api/gmail/extract-tasks-events`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+        if (endpoint === "/api/documents/generate" && method === "POST") {
+          return await (await fetch(`http://localhost:${PORT}/api/documents/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+        if (endpoint === "/api/chat/process-message" && method === "POST") {
+          return await (await fetch(`http://localhost:${PORT}/api/chat/process-message`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+        if (endpoint === "/api/ai/query" && method === "POST") {
+          // General query to Gemini itself
+          const query = args.query || "";
+          if (!query.trim()) return { success: false, error: "No query provided." };
+          const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+          const result = await model.generateContent(query);
+          return { success: true, reply: result.response.text().trim() };
+        }
+        // Add more mappings as needed...
+
+        // Fallback: generic HTTP call
+        const url = endpoint.startsWith("/") ? `http://localhost:${PORT}${endpoint}` : endpoint;
+        if (method === "GET") {
+          const params = new URLSearchParams(args).toString();
+          return await (await fetch(`${url}?${params}`)).json();
+        } else {
+          return await (await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(args)
+          })).json();
+        }
+      };
+
+      try {
+        const apiResult = await callApiEndpoint();
+        res.json({
+          success: true,
+          agent: agentResponse,
+          apiResult
+        });
+      } catch (err) {
+        res.json({
+          success: false,
+          agent: agentResponse,
+          error: "Failed to call selected endpoint"
+        });
+      }
+      return;
+    }
+
+    // If general chat, just reply
+    res.json({
+      success: true,
+      agent: agentResponse
+    });
+  } catch (error) {
+    console.error('Agent processing error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // =============================================================================
 // HEALTH CHECK & SERVER
 // =============================================================================
