@@ -251,7 +251,7 @@ Only respond with valid JSON.`;
         success: true,
         agent: {
           intent: 'general_chat',
-          response: 'I understand you want help with something. Could you please be more specific about what you'd like me to do?',
+          response: 'I understand you want help with something. Could you please be more specific about what you\'d like me to do?',
           apiCalls: []
         }
       });
