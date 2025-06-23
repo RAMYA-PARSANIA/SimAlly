@@ -151,6 +151,7 @@ const AssistantPage: React.FC = () => {
       timestamp: new Date()
     };
 
+    
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsLoading(true);
