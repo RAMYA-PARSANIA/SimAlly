@@ -132,9 +132,9 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
-    <div className="flex-1 flex flex-col">
-      {/* Header */}
-      <div className="glass-panel border-b silver-border p-4">
+    <div className="flex-1 flex flex-col h-full">
+      {/* Header - Fixed */}
+      <div className="glass-panel border-b silver-border p-4 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold gradient-gold-silver">Calendar</h2>
           

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, Video, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -136,7 +136,18 @@ const WorkspacePage: React.FC = () => {
   };
 
   const handleChannelSelect = (channel: Channel) => {
-    setActiveChannel(channel);
+    // Add a smooth transition effect when changing channels
+    if (activeChannel?.id !== channel.id) {
+      // If it's a different channel, create a smooth transition
+      // Slight delay to allow transition to complete
+      setTimeout(() => {
+        loadMessages(channel.id);
+      }, 100);
+      setActiveChannel(channel);
+    } else {
+      // If it's the same channel, just reload messages
+      loadMessages(channel.id);
+    }
     setActivePanel('chat'); // Always switch to chat when selecting a channel
   };
 
@@ -526,9 +537,9 @@ const WorkspacePage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-primary flex flex-col">
-      {/* Header */}
-      <header className="glass-panel border-0 border-b silver-border">
+    <div className="h-screen bg-primary flex flex-col overflow-hidden">
+      {/* Header - Fixed */}
+      <header className="glass-panel border-0 border-b silver-border flex-shrink-0">
         <div className="max-w-full px-6">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-4">
@@ -601,10 +612,10 @@ const WorkspacePage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <div className="w-80 glass-panel border-r silver-border flex flex-col">
+      {/* Main Content - Fixed height with internal scrolling */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar - Fixed height with internal scrolling */}
+        <div className="w-80 glass-panel border-r silver-border flex flex-col h-full">
           <ChannelList
             channels={channels}
             activeChannel={activeChannel}
@@ -619,70 +630,106 @@ const WorkspacePage: React.FC = () => {
           />
         </div>
 
-        {/* Main Panel */}
-        <div className="flex-1 flex flex-col">
-          {activePanel === 'chat' && (
-            <ChatPanel
-              channel={activeChannel}
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              onEditMessage={handleEditMessage}
-              onDeleteMessage={handleDeleteMessage}
-            />
-          )}
-          
-          {activePanel === 'tasks' && (
-            <TaskPanel
-              tasks={tasks}
-              onTaskUpdate={loadTasks}
-            />
-          )}
-          
-          {activePanel === 'calendar' && (
-            <CalendarPanel
-              tasks={tasks}
-            />
-          )}
-
-          {activePanel === 'meeting' && (
-            <div className="flex-1 flex flex-col">
-              {currentMeeting ? (
-                <MediasoupMeeting
-                  roomName={currentMeeting.roomName}
-                  displayName={currentMeeting.displayName}
-                  onLeave={handleLeaveMeeting}
+        {/* Main Panel - Dynamic content with fixed positioning */}
+        <div className="flex-1 flex flex-col h-full">
+          <AnimatePresence mode="wait">
+            {activePanel === 'chat' && (
+              <motion.div 
+                key="chat-panel"
+                className="flex-1 flex flex-col h-full"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ChatPanel
+                  channel={activeChannel}
+                  messages={messages}
+                  onSendMessage={handleSendMessage}
+                  onEditMessage={handleEditMessage}
+                  onDeleteMessage={handleDeleteMessage}
                 />
-              ) : (
-                <div className="flex-1 flex items-center justify-center p-8">
-                  <div className="max-w-2xl mx-auto text-center">
-                    <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
-                    <h3 className="text-2xl font-bold text-primary mb-4">Video Meetings</h3>
-                    <p className="text-secondary mb-8">
-                      Start or join a video meeting with your team members
-                    </p>
-                    <div className="flex justify-center space-x-4">
-                      <Button
-                        onClick={() => handleStartMeeting('workspace')}
-                        variant="premium"
-                        className="flex items-center space-x-2"
-                      >
-                        <Video className="w-4 h-4" />
-                        <span>Start Meeting</span>
-                      </Button>
-                      <Button
-                        onClick={handleJoinMeeting}
-                        variant="secondary"
-                        className="flex items-center space-x-2"
-                      >
-                        <UserPlus className="w-4 h-4" />
-                        <span>Join Meeting</span>
-                      </Button>
+              </motion.div>
+            )}
+            
+            {activePanel === 'tasks' && (
+              <motion.div 
+                key="tasks-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <TaskPanel
+                  tasks={tasks}
+                  onTaskUpdate={loadTasks}
+                />
+              </motion.div>
+            )}
+            
+            {activePanel === 'calendar' && (
+              <motion.div 
+                key="calendar-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <CalendarPanel
+                  tasks={tasks}
+                />
+              </motion.div>
+            )}
+
+            {activePanel === 'meeting' && (
+              <motion.div 
+                key="meeting-panel"
+                className="flex-1 flex flex-col"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                {currentMeeting ? (
+                  <MediasoupMeeting
+                    roomName={currentMeeting.roomName}
+                    displayName={currentMeeting.displayName}
+                    onLeave={handleLeaveMeeting}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="max-w-2xl mx-auto text-center">
+                      <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
+                      <h3 className="text-2xl font-bold text-primary mb-4">Video Meetings</h3>
+                      <p className="text-secondary mb-8">
+                        Start or join a video meeting with your team members
+                      </p>
+                      <div className="flex justify-center space-x-4">
+                        <Button
+                          onClick={() => handleStartMeeting('workspace')}
+                          variant="premium"
+                          className="flex items-center space-x-2"
+                        >
+                          <Video className="w-4 h-4" />
+                          <span>Start Meeting</span>
+                        </Button>
+                        <Button
+                          onClick={handleJoinMeeting}
+                          variant="secondary"
+                          className="flex items-center space-x-2"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          <span>Join Meeting</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 

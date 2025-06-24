@@ -327,13 +327,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <div 
-      className={`flex-1 flex flex-col ${dragOver ? 'bg-blue-500/10' : ''}`}
+      className={`flex-1 flex flex-col h-full ${dragOver ? 'bg-blue-500/10' : ''}`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      {/* Channel Header */}
-      <div className="glass-panel border-b silver-border p-4">
+      {/* Channel Header - Fixed at the top */}
+      <div className="glass-panel border-b silver-border p-4 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-gold-silver flex items-center justify-center">
@@ -359,8 +359,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         </div>
       )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Messages - Scrollable */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ scrollbarWidth: 'thin' }}>
         <AnimatePresence>
           {messages.map((message, index) => {
             const isConsecutive = index > 0 && 
@@ -602,9 +602,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         </div>
       )}
 
-      {/* Message Input */}
+      {/* Message Input - Fixed at bottom */}
       {!editingMessage && (
-        <div className="glass-panel border-t silver-border p-4">
+        <div className="glass-panel border-t silver-border p-4 flex-shrink-0">
           <div className="flex items-end space-x-4">
             <div className="flex-1">
               <div className="relative">

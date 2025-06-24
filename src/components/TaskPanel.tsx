@@ -236,9 +236,9 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
   return (
     <>
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <div className="glass-panel border-b silver-border p-4">
+      <div className="flex-1 flex flex-col h-full">
+        {/* Header - Fixed */}
+        <div className="glass-panel border-b silver-border p-4 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold gradient-gold-silver">Tasks</h2>
             <Button
@@ -252,7 +252,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
             </Button>
           </div>
 
-          {/* Filters */}
+          {/* Filters - Part of fixed header */}
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <Filter className="w-4 h-4 text-secondary" />
