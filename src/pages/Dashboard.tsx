@@ -7,7 +7,7 @@ import GlassCard from '../components/ui/GlassCard';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, signOut, loading } = useAuth();
+  const { user, signOut, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -87,7 +87,7 @@ const Dashboard: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-lg font-bold gradient-gold-silver">
-                  Welcome, {profile?.full_name || user.email}
+                  Welcome, {user.full_name || user.username}
                 </h2>
                 <p className="text-sm text-secondary">
                   Select your preferred mode

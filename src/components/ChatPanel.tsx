@@ -346,15 +346,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               )}
             </div>
           </div>
-          
-          <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm" className="p-2">
-              <Pin className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="sm" className="p-2">
-              <MoreVertical className="w-4 h-4" />
-            </Button>
-          </div>
         </div>
       </div>
 
