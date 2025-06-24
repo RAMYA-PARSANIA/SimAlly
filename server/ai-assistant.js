@@ -106,6 +106,14 @@ const WEBAPP_ENDPOINTS = {
     example: 'Extract tasks from my emails',
     implementation: 'executeGmailExtractTasks'
   },
+  gmail_promotions: {
+    endpoint: '/api/gmail/promotions',
+    method: 'GET',
+    description: 'Get promotional and marketing emails with unsubscribe links',
+    parameters: ['userId', 'maxResults?'],
+    example: 'Show my promotional emails',
+    implementation: 'executeGmailPromotions'
+  },
 
   // Workspace Management
   workspace_channels: {
@@ -363,6 +371,7 @@ INSTRUCTIONS:
    - Use the provided userId: "${userId}" when needed
    - For optional parameters, only include if mentioned or relevant
    - Be smart about parameter extraction (e.g., extract email addresses, task titles, etc.)
+   - For promotional/marketing emails, use the gmail_promotions endpoint. If the user wants to unsubscribe, include the unsubscribeUrl in the response if available.
 
 4. For general chat:
    - Answer questions about any topic (weather, cooking, science, etc.)
@@ -371,7 +380,7 @@ INSTRUCTIONS:
    - Don't mention technical endpoints or implementation details
 
 5. You have access to ALL these functions:
-   - Gmail management (read, search, delete, summarize emails)
+   - Gmail management (read, search, delete, summarize emails, find promotional/marketing emails, unsubscribe)
    - Workspace features (channels, messages, tasks, assignments)
    - Calendar management (events, scheduling)
    - Meeting tools (create rooms, notes, summaries)
@@ -504,6 +513,8 @@ async function executeEndpointFunction(endpoint, parameters, userId) {
       return await executeGmailSummarize(parameters.userId, parameters.messageIds);
     case 'executeGmailExtractTasks':
       return await executeGmailExtractTasks(parameters.userId, parameters.messageIds);
+    case 'executeGmailPromotions':
+      return await executeGmailPromotions(parameters.userId, parameters.maxResults);
 
     // Workspace functions
     case 'executeWorkspaceChannels':
@@ -1818,6 +1829,16 @@ app.post('/api/meetings/summary', async (req, res) => {
   }
 });
 
+app.get('/api/gmail/promotions', async (req, res) => {
+  try {
+    const { userId, maxResults } = req.query;
+    const result = await executeGmailPromotions(userId, maxResults);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch promotional emails' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`AI Assistant server running on http://localhost:${PORT}`);
@@ -1825,3 +1846,65 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
+// Gmail Functions
+async function executeGmailPromotions(userId, maxResults = 20) {
+  try {
+    const tokens = await getGmailTokens(userId);
+    if (!tokens) {
+      return { success: false, error: 'Gmail not connected' };
+    }
+
+    const oauth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET
+    );
+    oauth2Client.setCredentials(tokens);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    // Use Gmail's category:promotions search
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'category:promotions',
+      maxResults: parseInt(maxResults)
+    });
+
+    const messages = response.data.messages || [];
+    const emails = [];
+
+    for (const message of messages.slice(0, maxResults)) {
+      const emailData = await gmail.users.messages.get({
+        userId: 'me',
+        id: message.id,
+        format: 'full'
+      });
+      const headers = emailData.data.payload.headers;
+      const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
+      const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+      const date = headers.find(h => h.name === 'Date')?.value || '';
+      const snippet = emailData.data.snippet || '';
+      // Extract unsubscribe URL from List-Unsubscribe header
+      let unsubscribeUrl = null;
+      const listUnsub = headers.find(h => h.name.toLowerCase() === 'list-unsubscribe');
+      if (listUnsub) {
+        // Try to extract a URL from the header value
+        const match = listUnsub.value.match(/<([^>]+)>/);
+        if (match) unsubscribeUrl = match[1];
+        else if (listUnsub.value.startsWith('http')) unsubscribeUrl = listUnsub.value;
+      }
+      emails.push({
+        id: message.id,
+        from,
+        subject,
+        date,
+        snippet,
+        isUnread: emailData.data.labelIds?.includes('UNREAD'),
+        unsubscribeUrl
+      });
+    }
+    return { success: true, emails, totalCount: emails.length };
+  } catch (error) {
+    console.error('Error fetching promotional emails:', error);
+    return { success: false, error: 'Failed to fetch promotional emails' };
+  }
+}

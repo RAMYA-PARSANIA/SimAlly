@@ -18,13 +18,14 @@ interface ChatMessage {
 
 interface GmailEmail {
   id: string;
-  threadId: string;
+  threadId?: string;
   from: string;
   subject: string;
   date: string;
   snippet: string;
   isUnread: boolean;
   body?: string; // Full email body
+  unsubscribeUrl?: string; // Unsubscribe link for promotional/marketing emails
 }
 
 interface GmailStatus {
@@ -364,7 +365,7 @@ const AssistantPage: React.FC = () => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const renderEmailList = (emails: GmailEmail[]) => {
+  const renderEmailList = (emails: GmailEmail[], hasPromotions?: boolean) => {
     if (!emails || emails.length === 0) {
       return (
         <div className="text-center py-8">
@@ -410,7 +411,6 @@ const AssistantPage: React.FC = () => {
           {emails.map((email) => {
             const isExpanded = expandedEmails.has(email.id);
             const isLoadingBody = loadingEmailBodies.has(email.id);
-            
             return (
               <div
                 key={email.id}
@@ -426,75 +426,56 @@ const AssistantPage: React.FC = () => {
                       onChange={(e) => handleEmailSelection(email.id, e.target.checked)}
                       className="mt-1 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
                     />
-                    
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        {email.isUnread ? (
-                          <MailOpen className="w-4 h-4 text-blue-500" />
-                        ) : (
-                          <Mail className="w-4 h-4 text-gray-500" />
-                        )}
-                        <span className={`font-medium truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
-                          {email.from}
-                        </span>
-                        <span className="text-xs text-secondary">
-                          {new Date(email.date).toLocaleDateString()}
-                        </span>
+                        <span className="text-xs text-secondary">{email.from}</span>
+                        {email.isUnread && <span className="ml-2 text-xs text-yellow-500 font-bold">Unread</span>}
                       </div>
-                      
                       <h4 className={`font-medium mb-1 truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
-                        {email.subject || '(No Subject)'}
+                        {email.subject}
                       </h4>
-                      
                       <p className="text-sm text-secondary line-clamp-2 mb-2">
                         {email.snippet}
                       </p>
                     </div>
-
                     <div className="flex items-center space-x-2">
                       <Button
                         onClick={() => handleToggleEmailExpansion(email.id)}
                         variant="ghost"
                         size="sm"
-                        className="p-2"
-                        disabled={isLoadingBody}
+                        className="text-xs"
                       >
-                        {isLoadingBody ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : isExpanded ? (
-                          <ChevronUp className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
+                        {isExpanded ? 'Hide' : 'View'}
                       </Button>
+                      {hasPromotions && email.unsubscribeUrl && (
+                        <Button
+                          onClick={() => window.open(email.unsubscribeUrl, '_blank')}
+                          variant="secondary"
+                          size="sm"
+                          className="text-xs text-red-500 border-red-400"
+                        >
+                          Unsubscribe
+                        </Button>
+                      )}
                     </div>
                   </div>
-
                   {/* Expanded Email Body */}
                   <AnimatePresence>
                     {isExpanded && (
                       <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mt-3"
                       >
-                        <div className="flex items-center space-x-2 mb-3">
-                          <Eye className="w-4 h-4 text-blue-500" />
-                          <span className="text-sm font-medium text-primary">Full Email</span>
-                        </div>
-                        
-                        {email.body ? (
-                          <div className="max-h-64 overflow-y-auto">
-                            <div 
-                              className="prose prose-sm max-w-none text-secondary"
-                              dangerouslySetInnerHTML={{ __html: email.body }}
-                            />
+                        {isLoadingBody ? (
+                          <div className="text-secondary text-xs flex items-center space-x-2">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Loading email body...</span>
                           </div>
                         ) : (
-                          <div className="text-center py-4">
-                            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-secondary" />
-                            <p className="text-sm text-secondary">Loading full email...</p>
+                          <div className="prose prose-sm max-w-none text-secondary whitespace-pre-wrap">
+                            {email.body || 'No content loaded.'}
                           </div>
                         )}
                       </motion.div>
@@ -514,7 +495,9 @@ const AssistantPage: React.FC = () => {
 
     // Gmail results
     if (data.emails) {
-      return renderEmailList(data.emails);
+      // Check if these are promotional/marketing emails (by presence of unsubscribeUrl)
+      const hasPromotions = data.emails.some((email: any) => email.unsubscribeUrl);
+      return renderEmailList(data.emails, hasPromotions);
     }
 
     // Task results
