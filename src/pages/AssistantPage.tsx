@@ -45,8 +45,9 @@ const AssistantPage: React.FC = () => {
   const [isCheckingGmail, setIsCheckingGmail] = useState(true);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [showEmailActions, setShowEmailActions] = useState(false);
-  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
-  const [loadingEmailBodies, setLoadingEmailBodies] = useState<Set<string>>(new Set());
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [selectedEmailForModal, setSelectedEmailForModal] = useState<GmailEmail | null>(null);
+  const [loadingEmailBody, setLoadingEmailBody] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -291,66 +292,49 @@ const AssistantPage: React.FC = () => {
     }
   };
 
-  const handleToggleEmailExpansion = async (emailId: string) => {
-    if (expandedEmails.has(emailId)) {
-      // Collapse email
-      setExpandedEmails(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(emailId);
-        return newSet;
-      });
-    } else {
-      // Expand email - fetch full body if not already loaded
-      const emailInMessages = messages.find(msg => 
-        msg.type === 'endpoint_result' && 
-        msg.data?.emails?.some((email: GmailEmail) => email.id === emailId)
-      );
+  const handleViewEmail = async (email: GmailEmail) => {
+    setSelectedEmailForModal(email);
+    setShowEmailModal(true);
+    
+    // If email body is not loaded, fetch it
+    if (!email.body) {
+      setLoadingEmailBody(true);
       
-      const email = emailInMessages?.data?.emails?.find((e: GmailEmail) => e.id === emailId);
-      
-      if (email && !email.body) {
-        // Fetch full email body
-        setLoadingEmailBodies(prev => new Set(prev.add(emailId)));
+      try {
+        const response = await fetch(`http://localhost:8001/api/gmail/email/${email.id}?userId=${user?.id}`, {
+          credentials: 'include'
+        });
         
-        try {
-          const response = await fetch(`http://localhost:8001/api/gmail/email/${emailId}?userId=${user?.id}`, {
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              // Update the email in messages with full body
-              setMessages(prev => prev.map(message => {
-                if (message.type === 'endpoint_result' && message.data?.emails) {
-                  const updatedEmails = message.data.emails.map((e: GmailEmail) => 
-                    e.id === emailId ? { ...e, body: data.email.body } : e
-                  );
-                  
-                  return {
-                    ...message,
-                    data: {
-                      ...message.data,
-                      emails: updatedEmails
-                    }
-                  };
-                }
-                return message;
-              }));
-            }
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            // Update the email in messages with full body
+            setMessages(prev => prev.map(message => {
+              if (message.type === 'endpoint_result' && message.data?.emails) {
+                const updatedEmails = message.data.emails.map((e: GmailEmail) => 
+                  e.id === email.id ? { ...e, body: data.email.body } : e
+                );
+                
+                return {
+                  ...message,
+                  data: {
+                    ...message.data,
+                    emails: updatedEmails
+                  }
+                };
+              }
+              return message;
+            }));
+            
+            // Update the modal email
+            setSelectedEmailForModal(prev => prev ? { ...prev, body: data.email.body } : null);
           }
-        } catch (error) {
-          console.error('Error fetching email body:', error);
-        } finally {
-          setLoadingEmailBodies(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(emailId);
-            return newSet;
-          });
         }
+      } catch (error) {
+        console.error('Error fetching email body:', error);
+      } finally {
+        setLoadingEmailBody(false);
       }
-      
-      setExpandedEmails(prev => new Set(prev.add(emailId)));
     }
   };
 
@@ -363,6 +347,17 @@ const AssistantPage: React.FC = () => {
 
   const formatTime = (timestamp: Date) => {
     return timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatEmailDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString([], { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const renderEmailList = (emails: GmailEmail[], hasPromotions?: boolean) => {
@@ -408,83 +403,59 @@ const AssistantPage: React.FC = () => {
 
         {/* Email List */}
         <div className="space-y-2 max-h-96 overflow-y-auto">
-          {emails.map((email) => {
-            const isExpanded = expandedEmails.has(email.id);
-            const isLoadingBody = loadingEmailBodies.has(email.id);
-            return (
-              <div
-                key={email.id}
-                className={`glass-panel rounded-lg border transition-all ${
-                  selectedEmails.has(email.id) ? 'border-yellow-500 bg-yellow-500/10' : ''
-                }`}
-              >
-                <div className="p-4">
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedEmails.has(email.id)}
-                      onChange={(e) => handleEmailSelection(email.id, e.target.checked)}
-                      className="mt-1 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-xs text-secondary">{email.from}</span>
-                        {email.isUnread && <span className="ml-2 text-xs text-yellow-500 font-bold">Unread</span>}
-                      </div>
-                      <h4 className={`font-medium mb-1 truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
-                        {email.subject}
-                      </h4>
-                      <p className="text-sm text-secondary line-clamp-2 mb-2">
-                        {email.snippet}
-                      </p>
+          {emails.map((email) => (
+            <div
+              key={email.id}
+              className={`glass-panel rounded-lg border transition-all ${
+                selectedEmails.has(email.id) ? 'border-yellow-500 bg-yellow-500/10' : ''
+              }`}
+            >
+              <div className="p-4">
+                <div className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedEmails.has(email.id)}
+                    onChange={(e) => handleEmailSelection(email.id, e.target.checked)}
+                    className="mt-1 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className="text-xs text-secondary">{email.from}</span>
+                      {email.isUnread && <span className="ml-2 text-xs text-yellow-500 font-bold">Unread</span>}
+                      <span className="text-xs text-secondary">{formatEmailDate(email.date)}</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        onClick={() => handleToggleEmailExpansion(email.id)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        {isExpanded ? 'Hide' : 'View'}
-                      </Button>
-                      {hasPromotions && email.unsubscribeUrl && (
-                        <Button
-                          onClick={() => window.open(email.unsubscribeUrl, '_blank')}
-                          variant="secondary"
-                          size="sm"
-                          className="text-xs text-red-500 border-red-400"
-                        >
-                          Unsubscribe
-                        </Button>
-                      )}
-                    </div>
+                    <h4 className={`font-medium mb-1 truncate ${email.isUnread ? 'text-primary' : 'text-secondary'}`}>
+                      {email.subject}
+                    </h4>
+                    <p className="text-sm text-secondary line-clamp-2 mb-2">
+                      {email.snippet}
+                    </p>
                   </div>
-                  {/* Expanded Email Body */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mt-3"
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      onClick={() => handleViewEmail(email)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs flex items-center space-x-1"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>View</span>
+                    </Button>
+                    {hasPromotions && email.unsubscribeUrl && (
+                      <Button
+                        onClick={() => window.open(email.unsubscribeUrl, '_blank')}
+                        variant="secondary"
+                        size="sm"
+                        className="text-xs text-red-500 border-red-400"
                       >
-                        {isLoadingBody ? (
-                          <div className="text-secondary text-xs flex items-center space-x-2">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Loading email body...</span>
-                          </div>
-                        ) : (
-                          <div className="prose prose-sm max-w-none text-secondary whitespace-pre-wrap">
-                            {email.body || 'No content loaded.'}
-                          </div>
-                        )}
-                      </motion.div>
+                        Unsubscribe
+                      </Button>
                     )}
-                  </AnimatePresence>
+                  </div>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -865,6 +836,126 @@ const AssistantPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Email Modal */}
+      <AnimatePresence>
+        {showEmailModal && selectedEmailForModal && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-4xl max-h-[100vh] flex overflow-hidden"
+            >
+              <GlassCard className="flex flex-col h-full w-full max-h-[100vh] overflow-y-auto" goldBorder>
+                {/* Modal Header */}
+                <div className="flex items-center justify-between p-6 border-b silver-border">
+                  <div className="flex items-center space-x-3">
+                    <Mail className="w-6 h-6 gold-text" />
+                    <div>
+                      <h2 className="text-lg font-bold text-primary">Email Details</h2>
+                      <p className="text-sm text-secondary">
+                        From: {selectedEmailForModal.from} • {formatEmailDate(selectedEmailForModal.date)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowEmailModal(false)}
+                    className="text-secondary hover:text-primary p-2 rounded-lg glass-panel glass-panel-hover"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Modal Content */}
+                <div className="flex-1 overflow-y-auto p-6 bg-transparent dark:bg-[#18181b]">
+                  {/* Subject */}
+                  <div className="mb-6">
+                    <h3 className="text-xl font-bold text-primary mb-2">
+                      {selectedEmailForModal.subject}
+                    </h3>
+                    <div className="flex items-center space-x-4 text-sm text-secondary">
+                      <span>From: {selectedEmailForModal.from}</span>
+                      <span>Date: {formatEmailDate(selectedEmailForModal.date)}</span>
+                      {selectedEmailForModal.isUnread && (
+                        <span className="px-2 py-1 bg-yellow-500/20 text-yellow-500 rounded-full text-xs font-medium">
+                          Unread
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Email Body */}
+                  <div className="glass-panel p-4 rounded-lg max-h-[50vh] overflow-y-auto bg-white dark:bg-[#23232a]">
+                    {loadingEmailBody ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin text-secondary mr-3" />
+                        <span className="text-secondary">Loading email content...</span>
+                      </div>
+                    ) : selectedEmailForModal.body ? (
+                      <div 
+                        className="prose prose-sm max-w-none text-primary dark:text-gray-100 dark:prose-invert"
+                        dangerouslySetInnerHTML={{ __html: selectedEmailForModal.body }}
+                      />
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-secondary mb-4">Email content preview:</p>
+                        <p className="text-primary whitespace-pre-wrap">
+                          {selectedEmailForModal.snippet}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  {selectedEmailForModal.unsubscribeUrl && (
+                    <div className="mt-6 p-4 glass-panel rounded-lg bg-orange-500/10 border-orange-500/30 dark:bg-orange-900/20">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium text-orange-400 mb-1">Promotional Email</h4>
+                          <p className="text-sm text-secondary">This appears to be a promotional email with an unsubscribe option.</p>
+                        </div>
+                        <Button
+                          onClick={() => window.open(selectedEmailForModal.unsubscribeUrl, '_blank')}
+                          variant="secondary"
+                          size="sm"
+                          className="text-orange-500 border-orange-400"
+                        >
+                          Unsubscribe
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex items-center justify-end space-x-3 p-6 border-t silver-border">
+                  <Button
+                    onClick={() => setShowEmailModal(false)}
+                    variant="secondary"
+                  >
+                    Close
+                  </Button>
+                  {/* <Button
+                    onClick={async () => {
+                      if (selectedEmailForModal) {
+                        setSelectedEmails(new Set([selectedEmailForModal.id]));
+                        await handleDeleteSelectedEmails();
+                        setShowEmailModal(false);
+                      }
+                    }}
+                    variant="secondary"
+                    className="bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2 text-red-400" />
+                    <span className="text-red-400">Delete Email</span>
+                  </Button> */}
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
