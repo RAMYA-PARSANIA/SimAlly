@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus, Link, Copy, Check } from 'lucide-react';
+import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus, Link, Copy, Check, Trash2, Video, Calendar, MoreVertical, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -10,19 +11,32 @@ interface ChannelListProps {
   activeChannel: Channel | null;
   onChannelSelect: (channel: Channel) => void;
   onCreateChannel: (name: string, description: string, type: 'public' | 'private') => void;
+  onDeleteChannel: (channelId: string) => void;
+  onGenerateInvite: (channelId: string) => void;
+  onSummarizeChannel: (channelId: string) => void;
+  onStartMeeting: (channelName: string) => void;
+  onJoinMeeting: () => void;
 }
 
 const ChannelList: React.FC<ChannelListProps> = ({
   channels,
   activeChannel,
   onChannelSelect,
-  onCreateChannel
+  onCreateChannel,
+  onDeleteChannel,
+  onGenerateInvite,
+  onSummarizeChannel,
+  onStartMeeting,
+  onJoinMeeting
 }) => {
+  const { user } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedChannelForInvite, setSelectedChannelForInvite] = useState<Channel | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
+  const [inviteLink, setInviteLink] = useState('');
+  const [showChannelMenu, setShowChannelMenu] = useState<string | null>(null);
   const [newChannel, setNewChannel] = useState({
     name: '',
     description: '',
@@ -45,20 +59,19 @@ const ChannelList: React.FC<ChannelListProps> = ({
     setShowCreateModal(false);
   };
 
-  const handleInviteToChannel = (channel: Channel) => {
+  const handleGenerateInvite = async (channel: Channel) => {
     setSelectedChannelForInvite(channel);
+    onGenerateInvite(channel.id);
+    
+    // Generate invite link
+    const baseUrl = window.location.origin;
+    const inviteCode = Math.random().toString(36).substring(2, 15);
+    const link = `${baseUrl}/workspace/invite/${inviteCode}`;
+    setInviteLink(link);
     setShowInviteModal(true);
   };
 
-  const generateInviteLink = (channel: Channel) => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/workspace/invite/${channel.id}`;
-  };
-
   const copyInviteLink = async () => {
-    if (!selectedChannelForInvite) return;
-    
-    const inviteLink = generateInviteLink(selectedChannelForInvite);
     try {
       await navigator.clipboard.writeText(inviteLink);
       setCopied(true);
@@ -71,7 +84,6 @@ const ChannelList: React.FC<ChannelListProps> = ({
   const shareViaEmail = () => {
     if (!selectedChannelForInvite) return;
     
-    const inviteLink = generateInviteLink(selectedChannelForInvite);
     const subject = encodeURIComponent(`Join ${selectedChannelForInvite.name} channel`);
     const body = encodeURIComponent(`Hi!
 
@@ -100,10 +112,34 @@ See you there!`);
 
   const formatChannelName = (channel: Channel) => {
     if (channel.type === 'dm') {
-      // For DM channels, show the other user's name
       return channel.name.replace('DM: ', '');
     }
     return channel.name;
+  };
+
+  const canDeleteChannel = (channel: Channel) => {
+    return channel.created_by === user?.id && channel.name !== 'general';
+  };
+
+  const handleChannelAction = (action: string, channel: Channel) => {
+    setShowChannelMenu(null);
+    
+    switch (action) {
+      case 'invite':
+        handleGenerateInvite(channel);
+        break;
+      case 'summarize':
+        onSummarizeChannel(channel.id);
+        break;
+      case 'meeting':
+        onStartMeeting(channel.name);
+        break;
+      case 'delete':
+        if (canDeleteChannel(channel) && confirm(`Are you sure you want to delete #${channel.name}?`)) {
+          onDeleteChannel(channel.id);
+        }
+        break;
+    }
   };
 
   return (
@@ -111,14 +147,25 @@ See you there!`);
       <div className="p-4 border-b silver-border">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-primary">Channels</h2>
-          <Button
-            onClick={() => setShowCreateModal(true)}
-            variant="ghost"
-            size="sm"
-            className="p-2"
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button
+              onClick={onJoinMeeting}
+              variant="ghost"
+              size="sm"
+              className="p-2"
+              title="Join Meeting"
+            >
+              <Video className="w-4 h-4" />
+            </Button>
+            <Button
+              onClick={() => setShowCreateModal(true)}
+              variant="ghost"
+              size="sm"
+              className="p-2"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
         
         {/* Search */}
@@ -166,11 +213,6 @@ See you there!`);
                           {channel.description}
                         </div>
                       )}
-                      {channel.member_count && (
-                        <div className="text-xs opacity-75">
-                          {channel.member_count} members
-                        </div>
-                      )}
                     </div>
                     
                     {/* Unread indicator */}
@@ -182,6 +224,54 @@ See you there!`);
                       </div>
                     )}
                   </button>
+                  
+                  {/* Channel menu */}
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowChannelMenu(showChannelMenu === channel.id ? null : channel.id);
+                      }}
+                      className="p-1 hover:bg-surface rounded"
+                    >
+                      <MoreVertical className="w-3 h-3 text-secondary" />
+                    </button>
+                    
+                    {showChannelMenu === channel.id && (
+                      <div className="absolute right-0 top-6 z-10 glass-panel rounded-lg shadow-lg border silver-border min-w-[160px]">
+                        <button
+                          onClick={() => handleChannelAction('invite', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>Invite</span>
+                        </button>
+                        <button
+                          onClick={() => handleChannelAction('summarize', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Summarize</span>
+                        </button>
+                        <button
+                          onClick={() => handleChannelAction('meeting', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <Video className="w-3 h-3" />
+                          <span>Start Meeting</span>
+                        </button>
+                        {canDeleteChannel(channel) && (
+                          <button
+                            onClick={() => handleChannelAction('delete', channel)}
+                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center space-x-2"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               ))}
             </div>
@@ -219,11 +309,6 @@ See you there!`);
                           {channel.description}
                         </div>
                       )}
-                      {channel.member_count && (
-                        <div className="text-xs opacity-75">
-                          {channel.member_count} members
-                        </div>
-                      )}
                     </div>
                     
                     {/* Unread indicator */}
@@ -236,17 +321,53 @@ See you there!`);
                     )}
                   </button>
                   
-                  {/* Invite button for private channels */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleInviteToChannel(channel);
-                    }}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface rounded"
-                    title="Invite to channel"
-                  >
-                    <UserPlus className="w-3 h-3 text-secondary" />
-                  </button>
+                  {/* Channel menu */}
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowChannelMenu(showChannelMenu === channel.id ? null : channel.id);
+                      }}
+                      className="p-1 hover:bg-surface rounded"
+                    >
+                      <MoreVertical className="w-3 h-3 text-secondary" />
+                    </button>
+                    
+                    {showChannelMenu === channel.id && (
+                      <div className="absolute right-0 top-6 z-10 glass-panel rounded-lg shadow-lg border silver-border min-w-[160px]">
+                        <button
+                          onClick={() => handleChannelAction('invite', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <UserPlus className="w-3 h-3" />
+                          <span>Invite</span>
+                        </button>
+                        <button
+                          onClick={() => handleChannelAction('summarize', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Summarize</span>
+                        </button>
+                        <button
+                          onClick={() => handleChannelAction('meeting', channel)}
+                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+                        >
+                          <Video className="w-3 h-3" />
+                          <span>Start Meeting</span>
+                        </button>
+                        {canDeleteChannel(channel) && (
+                          <button
+                            onClick={() => handleChannelAction('delete', channel)}
+                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center space-x-2"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               ))}
             </div>
@@ -456,7 +577,7 @@ See you there!`);
                     <div className="flex space-x-2">
                       <input
                         type="text"
-                        value={generateInviteLink(selectedChannelForInvite)}
+                        value={inviteLink}
                         readOnly
                         className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10 text-sm"
                       />
@@ -507,6 +628,14 @@ See you there!`);
           </div>
         )}
       </AnimatePresence>
+
+      {/* Click outside to close menu */}
+      {showChannelMenu && (
+        <div 
+          className="fixed inset-0 z-5" 
+          onClick={() => setShowChannelMenu(null)}
+        />
+      )}
     </>
   );
 };

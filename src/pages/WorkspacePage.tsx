@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, Video, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -9,6 +9,8 @@ import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
 import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
+import MeetingControls from '../components/MeetingControls';
+import MediasoupMeeting from '../components/MediasoupMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 
@@ -19,8 +21,17 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'meeting'>('chat');
   const [loading, setLoading] = useState(true);
+  const [currentMeeting, setCurrentMeeting] = useState<{
+    roomName: string;
+    displayName: string;
+  } | null>(null);
+  const [showJoinMeetingModal, setShowJoinMeetingModal] = useState(false);
+  const [joinMeetingData, setJoinMeetingData] = useState({
+    roomName: '',
+    displayName: user?.full_name || ''
+  });
 
   useEffect(() => {
     if (!user) {
@@ -114,6 +125,11 @@ const WorkspacePage: React.FC = () => {
     navigate('/dashboard');
   };
 
+  const handleChannelSelect = (channel: Channel) => {
+    setActiveChannel(channel);
+    setActivePanel('chat'); // Always switch to chat when selecting a channel
+  };
+
   const uploadFile = async (file: File): Promise<string> => {
     // In a real implementation, you would upload to a cloud storage service
     // For now, we'll create a mock URL
@@ -170,6 +186,51 @@ const WorkspacePage: React.FC = () => {
 
     } catch (error) {
       console.error('Error sending message:', error);
+    }
+  };
+
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ 
+          content: newContent,
+          edited_at: new Date().toISOString()
+        })
+        .eq('id', messageId);
+
+      if (error) {
+        console.error('Error editing message:', error);
+        return;
+      }
+
+      // Reload messages to show the edit
+      if (activeChannel) {
+        loadMessages(activeChannel.id);
+      }
+    } catch (error) {
+      console.error('Error editing message:', error);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) {
+        console.error('Error deleting message:', error);
+        return;
+      }
+
+      // Reload messages to reflect the deletion
+      if (activeChannel) {
+        loadMessages(activeChannel.id);
+      }
+    } catch (error) {
+      console.error('Error deleting message:', error);
     }
   };
 
@@ -258,6 +319,127 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
+  const handleDeleteChannel = async (channelId: string) => {
+    try {
+      const { error } = await supabase
+        .from('channels')
+        .delete()
+        .eq('id', channelId);
+
+      if (error) {
+        console.error('Error deleting channel:', error);
+        return;
+      }
+
+      // If the deleted channel was active, switch to another channel
+      if (activeChannel?.id === channelId) {
+        const remainingChannels = channels.filter(c => c.id !== channelId);
+        setActiveChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
+      }
+
+      // Reload channels
+      loadChannels();
+    } catch (error) {
+      console.error('Error deleting channel:', error);
+    }
+  };
+
+  const handleGenerateInvite = async (channelId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('channel_invites')
+        .insert({
+          channel_id: channelId,
+          created_by: user?.id
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error generating invite:', error);
+        return;
+      }
+
+      console.log('Invite generated:', data);
+    } catch (error) {
+      console.error('Error generating invite:', error);
+    }
+  };
+
+  const handleSummarizeChannel = async (channelId: string) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch('http://localhost:8001/api/workspace/summarize-channel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          channelId,
+          userId: user.id,
+          timeframe: '24h'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Add summary message to the channel
+        await supabase
+          .from('messages')
+          .insert({
+            channel_id: channelId,
+            sender_id: user.id,
+            content: `📊 **Channel Summary (Last 24h)**\n\n${data.summary}`,
+            type: 'ai_summary',
+            metadata: { 
+              summary: true,
+              messageCount: data.messageCount,
+              timeframe: data.timeframe
+            }
+          });
+
+        // Reload messages if this is the active channel
+        if (activeChannel?.id === channelId) {
+          loadMessages(channelId);
+        }
+      }
+    } catch (error) {
+      console.error('Error summarizing channel:', error);
+    }
+  };
+
+  const handleStartMeeting = (channelName: string) => {
+    const roomName = `${channelName}-${Date.now()}`;
+    setCurrentMeeting({
+      roomName,
+      displayName: user?.full_name || 'User'
+    });
+    setActivePanel('meeting');
+  };
+
+  const handleJoinMeeting = () => {
+    setShowJoinMeetingModal(true);
+  };
+
+  const handleJoinMeetingSubmit = () => {
+    if (!joinMeetingData.roomName.trim() || !joinMeetingData.displayName.trim()) return;
+    
+    setCurrentMeeting({
+      roomName: joinMeetingData.roomName.trim(),
+      displayName: joinMeetingData.displayName.trim()
+    });
+    setActivePanel('meeting');
+    setShowJoinMeetingModal(false);
+  };
+
+  const handleLeaveMeeting = () => {
+    setCurrentMeeting(null);
+    setActivePanel('chat');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -328,6 +510,16 @@ const WorkspacePage: React.FC = () => {
                 >
                   <Calendar className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={() => setActivePanel('meeting')}
+                  className={`p-2 rounded-md transition-all ${
+                    activePanel === 'meeting' 
+                      ? 'bg-gradient-gold-silver text-white' 
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                >
+                  <Video className="w-4 h-4" />
+                </button>
               </div>
               
               <ThemeToggle />
@@ -343,8 +535,13 @@ const WorkspacePage: React.FC = () => {
           <ChannelList
             channels={channels}
             activeChannel={activeChannel}
-            onChannelSelect={setActiveChannel}
+            onChannelSelect={handleChannelSelect}
             onCreateChannel={handleCreateChannel}
+            onDeleteChannel={handleDeleteChannel}
+            onGenerateInvite={handleGenerateInvite}
+            onSummarizeChannel={handleSummarizeChannel}
+            onStartMeeting={handleStartMeeting}
+            onJoinMeeting={handleJoinMeeting}
           />
         </div>
 
@@ -355,6 +552,8 @@ const WorkspacePage: React.FC = () => {
               channel={activeChannel}
               messages={messages}
               onSendMessage={handleSendMessage}
+              onEditMessage={handleEditMessage}
+              onDeleteMessage={handleDeleteMessage}
             />
           )}
           
@@ -370,8 +569,113 @@ const WorkspacePage: React.FC = () => {
               tasks={tasks}
             />
           )}
+
+          {activePanel === 'meeting' && (
+            <div className="flex-1 flex flex-col">
+              {currentMeeting ? (
+                <MediasoupMeeting
+                  roomName={currentMeeting.roomName}
+                  displayName={currentMeeting.displayName}
+                  onLeave={handleLeaveMeeting}
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="max-w-2xl mx-auto text-center">
+                    <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
+                    <h3 className="text-2xl font-bold text-primary mb-4">Video Meetings</h3>
+                    <p className="text-secondary mb-8">
+                      Start or join a video meeting with your team members
+                    </p>
+                    <div className="flex justify-center space-x-4">
+                      <Button
+                        onClick={() => handleStartMeeting('workspace')}
+                        variant="premium"
+                        className="flex items-center space-x-2"
+                      >
+                        <Video className="w-4 h-4" />
+                        <span>Start Meeting</span>
+                      </Button>
+                      <Button
+                        onClick={handleJoinMeeting}
+                        variant="secondary"
+                        className="flex items-center space-x-2"
+                      >
+                        <UserPlus className="w-4 h-4" />
+                        <span>Join Meeting</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Join Meeting Modal */}
+      {showJoinMeetingModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="w-full max-w-md"
+          >
+            <GlassCard className="p-8" goldBorder>
+              <h2 className="text-2xl font-bold gradient-gold-silver mb-6">Join Meeting</h2>
+              
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Your Display Name
+                  </label>
+                  <input
+                    type="text"
+                    value={joinMeetingData.displayName}
+                    onChange={(e) => setJoinMeetingData(prev => ({ ...prev, displayName: e.target.value }))}
+                    placeholder="Enter your name"
+                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Meeting Room Name
+                  </label>
+                  <input
+                    type="text"
+                    value={joinMeetingData.roomName}
+                    onChange={(e) => setJoinMeetingData(prev => ({ ...prev, roomName: e.target.value }))}
+                    placeholder="Enter room name to join"
+                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  />
+                  <p className="text-xs text-secondary mt-1">
+                    Ask the meeting host for the room name
+                  </p>
+                </div>
+
+                <div className="flex space-x-4">
+                  <Button
+                    onClick={() => setShowJoinMeetingModal(false)}
+                    variant="secondary"
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleJoinMeetingSubmit}
+                    variant="premium"
+                    className="flex-1"
+                    disabled={!joinMeetingData.displayName.trim() || !joinMeetingData.roomName.trim()}
+                  >
+                    Join Meeting
+                  </Button>
+                </div>
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

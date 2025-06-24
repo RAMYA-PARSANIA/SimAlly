@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckSquare, Clock, User, Plus, Filter, Calendar } from 'lucide-react';
+import { CheckSquare, Clock, User, Plus, Filter, Calendar, Trash2, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, type Task } from '../lib/supabase';
@@ -16,6 +16,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
   const [filter, setFilter] = useState<'all' | 'assigned' | 'created'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'in_progress' | 'completed'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -67,6 +68,65 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     }
   };
 
+  const handleUpdateTask = async () => {
+    if (!editingTask || !newTask.title.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({
+          title: newTask.title,
+          description: newTask.description || null,
+          priority: newTask.priority,
+          due_date: newTask.due_date || null
+        })
+        .eq('id', editingTask.id);
+
+      if (error) {
+        console.error('Error updating task:', error);
+        return;
+      }
+
+      setEditingTask(null);
+      setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
+      setShowCreateModal(false);
+      onTaskUpdate();
+    } catch (error) {
+      console.error('Error updating task:', error);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('Error deleting task:', error);
+        return;
+      }
+
+      onTaskUpdate();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
+  };
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+    setNewTask({
+      title: task.title,
+      description: task.description || '',
+      priority: task.priority,
+      due_date: task.due_date ? task.due_date.split('T')[0] : ''
+    });
+    setShowCreateModal(true);
+  };
+
   const handleUpdateTaskStatus = async (taskId: string, status: Task['status']) => {
     try {
       const { error } = await supabase
@@ -110,6 +170,16 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const canEditTask = (task: Task) => {
+    return task.created_by === user?.id;
+  };
+
+  const handleModalClose = () => {
+    setShowCreateModal(false);
+    setEditingTask(null);
+    setNewTask({ title: '', description: '', priority: 'medium', due_date: '' });
   };
 
   return (
@@ -168,7 +238,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                <GlassCard className="p-4" hover>
+                <GlassCard className="p-4 group" hover>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
@@ -243,6 +313,30 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
                         <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
+
+                      {/* Task Actions */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+                        {canEditTask(task) && (
+                          <>
+                            <Button
+                              onClick={() => handleEditTask(task)}
+                              variant="ghost"
+                              size="sm"
+                              className="p-1"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              onClick={() => handleDeleteTask(task.id)}
+                              variant="ghost"
+                              size="sm"
+                              className="p-1 text-red-400 hover:text-red-300"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </GlassCard>
@@ -272,7 +366,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
         </div>
       </div>
 
-      {/* Create Task Modal */}
+      {/* Create/Edit Task Modal */}
       <AnimatePresence>
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -284,7 +378,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
             >
               <GlassCard className="p-6" goldBorder>
                 <h3 className="text-xl font-bold gradient-gold-silver mb-6">
-                  Create New Task
+                  {editingTask ? 'Edit Task' : 'Create New Task'}
                 </h3>
                 
                 <div className="space-y-4">
@@ -348,19 +442,19 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
                 <div className="flex space-x-4 mt-6">
                   <Button
-                    onClick={() => setShowCreateModal(false)}
+                    onClick={handleModalClose}
                     variant="secondary"
                     className="flex-1"
                   >
                     Cancel
                   </Button>
                   <Button
-                    onClick={handleCreateTask}
+                    onClick={editingTask ? handleUpdateTask : handleCreateTask}
                     variant="premium"
                     className="flex-1"
                     disabled={!newTask.title.trim()}
                   >
-                    Create Task
+                    {editingTask ? 'Update Task' : 'Create Task'}
                   </Button>
                 </div>
               </GlassCard>
