@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckSquare, Clock, User, Plus, Filter, Calendar, Trash2, Edit } from 'lucide-react';
+import { CheckSquare, Clock, User, Plus, Filter, Calendar, Trash2, Edit, Bot, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, type Task } from '../lib/supabase';
@@ -17,6 +17,11 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'in_progress' | 'completed'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [showAIHelpModal, setShowAIHelpModal] = useState(false);
+  const [selectedTaskForAI, setSelectedTaskForAI] = useState<Task | null>(null);
+  const [aiHelpQuery, setAiHelpQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
@@ -100,17 +105,25 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
 
     try {
-      const { error } = await supabase
-        .from('tasks')
-        .delete()
-        .eq('id', taskId);
+      const response = await fetch(`http://localhost:8002/api/workspace/tasks/${taskId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user?.id
+        })
+      });
 
-      if (error) {
-        console.error('Error deleting task:', error);
-        return;
+      const data = await response.json();
+      
+      if (data.success) {
+        onTaskUpdate();
+      } else {
+        console.error('Error deleting task:', data.error);
+        alert(data.error);
       }
-
-      onTaskUpdate();
     } catch (error) {
       console.error('Error deleting task:', error);
     }
@@ -125,6 +138,45 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
       due_date: task.due_date ? task.due_date.split('T')[0] : ''
     });
     setShowCreateModal(true);
+  };
+
+  const handleAIHelp = (task: Task) => {
+    setSelectedTaskForAI(task);
+    setAiHelpQuery(`Help me with this task: ${task.title}${task.description ? ` - ${task.description}` : ''}`);
+    setAiResponse('');
+    setShowAIHelpModal(true);
+  };
+
+  const handleAIHelpSubmit = async () => {
+    if (!aiHelpQuery.trim()) return;
+
+    setIsLoadingAI(true);
+    try {
+      const response = await fetch('http://localhost:8001/api/chat/general', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          message: aiHelpQuery,
+          userId: user?.id
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        setAiResponse(data.response);
+      } else {
+        setAiResponse('Sorry, I encountered an error while processing your request.');
+      }
+    } catch (error) {
+      console.error('Error getting AI help:', error);
+      setAiResponse('Sorry, I encountered an error while processing your request.');
+    } finally {
+      setIsLoadingAI(false);
+    }
   };
 
   const handleUpdateTaskStatus = async (taskId: string, status: Task['status']) => {
@@ -316,6 +368,15 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
                       {/* Task Actions */}
                       <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+                        <Button
+                          onClick={() => handleAIHelp(task)}
+                          variant="ghost"
+                          size="sm"
+                          className="p-1"
+                          title="AI Help"
+                        >
+                          <Bot className="w-3 h-3 text-blue-500" />
+                        </Button>
                         {canEditTask(task) && (
                           <>
                             <Button
@@ -455,6 +516,92 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
                     disabled={!newTask.title.trim()}
                   >
                     {editingTask ? 'Update Task' : 'Create Task'}
+                  </Button>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* AI Help Modal */}
+      <AnimatePresence>
+        {showAIHelpModal && selectedTaskForAI && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-2xl"
+            >
+              <GlassCard className="p-6" goldBorder>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold gradient-gold-silver flex items-center">
+                    <Bot className="w-5 h-5 mr-2" />
+                    AI Task Assistant
+                  </h3>
+                  <button
+                    onClick={() => setShowAIHelpModal(false)}
+                    className="text-secondary hover:text-primary"
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div className="p-3 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30">
+                    <h4 className="font-medium text-blue-400 mb-1">Task: {selectedTaskForAI.title}</h4>
+                    {selectedTaskForAI.description && (
+                      <p className="text-sm text-secondary">{selectedTaskForAI.description}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Ask AI for help with this task
+                    </label>
+                    <textarea
+                      value={aiHelpQuery}
+                      onChange={(e) => setAiHelpQuery(e.target.value)}
+                      placeholder="How can I help you with this task? Ask for suggestions, steps, resources, etc."
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  {aiResponse && (
+                    <div className="p-4 glass-panel rounded-lg bg-green-500/10 border-green-500/30">
+                      <h4 className="font-medium text-green-400 mb-2 flex items-center">
+                        <Bot className="w-4 h-4 mr-2" />
+                        AI Response
+                      </h4>
+                      <div className="text-sm text-secondary whitespace-pre-wrap">
+                        {aiResponse}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex space-x-4 mt-6">
+                  <Button
+                    onClick={() => setShowAIHelpModal(false)}
+                    variant="secondary"
+                    className="flex-1"
+                  >
+                    Close
+                  </Button>
+                  <Button
+                    onClick={handleAIHelpSubmit}
+                    variant="premium"
+                    className="flex-1"
+                    disabled={!aiHelpQuery.trim() || isLoadingAI}
+                  >
+                    {isLoadingAI ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <Bot className="w-4 h-4 mr-2" />
+                    )}
+                    {isLoadingAI ? 'Getting Help...' : 'Get AI Help'}
                   </Button>
                 </div>
               </GlassCard>

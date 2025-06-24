@@ -17,7 +17,7 @@ import Button from '../components/ui/Button';
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<(Channel & { is_member?: boolean })[]>([]);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -87,12 +87,22 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
     
     try {
-      const channelData = await workspaceAPI.getChannelsForUser(user.id);
-      setChannels(channelData);
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${user.id}`, {
+        credentials: 'include'
+      });
       
-      // Set first channel as active if none selected
-      if (channelData.length > 0 && !activeChannel) {
-        setActiveChannel(channelData[0]);
+      const data = await response.json();
+      
+      if (data.success) {
+        setChannels(data.channels);
+        
+        // Set first channel as active if none selected
+        if (data.channels.length > 0 && !activeChannel) {
+          const memberChannels = data.channels.filter((c: any) => c.is_member);
+          if (memberChannels.length > 0) {
+            setActiveChannel(memberChannels[0]);
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading channels:', error);
@@ -295,39 +305,101 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
-  const handleCreateChannel = async (name: string, description: string, type: 'public' | 'private') => {
+  const handleCreateChannel = async (name: string, description: string, type: 'public' | 'private', password?: string) => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('channels')
-        .insert({
+      const response = await fetch('http://localhost:8002/api/workspace/channels', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
           name,
           description,
           type,
-          created_by: user.id
+          password,
+          userId: user.id
         })
-        .select()
-        .single();
+      });
 
-      if (error) {
-        console.error('Error creating channel:', error);
-        return;
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload channels
+        loadChannels();
+      } else {
+        console.error('Error creating channel:', data.error);
+        alert(data.error);
       }
-
-      // Add creator as admin member
-      await supabase
-        .from('channel_members')
-        .insert({
-          channel_id: data.id,
-          user_id: user.id,
-          role: 'admin'
-        });
-
-      // Reload channels
-      loadChannels();
     } catch (error) {
       console.error('Error creating channel:', error);
+    }
+  };
+
+  const handleJoinChannel = async (channelId: string, password?: string) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/join`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user.id,
+          password
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload channels to update membership
+        loadChannels();
+      } else {
+        console.error('Error joining channel:', data.error);
+        alert(data.error);
+      }
+    } catch (error) {
+      console.error('Error joining channel:', error);
+    }
+  };
+
+  const handleLeaveChannel = async (channelId: string) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/leave`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user.id
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // If the left channel was active, switch to another channel
+        if (activeChannel?.id === channelId) {
+          const remainingChannels = channels.filter(c => c.id !== channelId && c.is_member);
+          setActiveChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
+        }
+
+        // Reload channels
+        loadChannels();
+      } else {
+        console.error('Error leaving channel:', data.error);
+        alert(data.error);
+      }
+    } catch (error) {
+      console.error('Error leaving channel:', error);
     }
   };
 
@@ -361,41 +433,6 @@ const WorkspacePage: React.FC = () => {
       }
     } catch (error) {
       console.error('Error deleting channel:', error);
-    }
-  };
-
-  const handleGenerateInvite = async (channelId: string) => {
-    try {
-      const response = await fetch('http://localhost:8002/api/workspace/generate-invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          channelId,
-          userId: user?.id,
-          expiresIn: '7d'
-        })
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('Invite generated:', data.invite);
-        // Copy invite URL to clipboard
-        try {
-          await navigator.clipboard.writeText(data.invite.url);
-          alert('Invite link copied to clipboard!');
-        } catch (clipboardError) {
-          alert(`Invite link: ${data.invite.url}`);
-        }
-      } else {
-        console.error('Error generating invite:', data.error);
-        alert(data.error);
-      }
-    } catch (error) {
-      console.error('Error generating invite:', error);
     }
   };
 
@@ -573,8 +610,9 @@ const WorkspacePage: React.FC = () => {
             activeChannel={activeChannel}
             onChannelSelect={handleChannelSelect}
             onCreateChannel={handleCreateChannel}
+            onJoinChannel={handleJoinChannel}
+            onLeaveChannel={handleLeaveChannel}
             onDeleteChannel={handleDeleteChannel}
-            onGenerateInvite={handleGenerateInvite}
             onSummarizeChannel={handleSummarizeChannel}
             onStartMeeting={handleStartMeeting}
             onJoinMeeting={handleJoinMeeting}

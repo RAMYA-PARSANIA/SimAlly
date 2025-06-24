@@ -70,82 +70,58 @@ app.post('/api/workspace/summarize-channel', async (req, res) => {
   }
 });
 
-// Generate invite link for channel
-app.post('/api/workspace/generate-invite', async (req, res) => {
+// Create channel with password support
+app.post('/api/workspace/channels', async (req, res) => {
   try {
-    const { channelId, userId, expiresIn = '7d', maxUses = null } = req.body;
+    const { name, description, type, password, userId } = req.body;
     
-    if (!channelId || !userId) {
+    if (!name || !userId) {
       return res.status(400).json({
         success: false,
-        error: 'Channel ID and User ID are required'
+        error: 'Channel name and User ID are required'
       });
     }
     
-    // Check if user is a member of the channel
-    const { data: membership, error: memberError } = await supabase
-      .from('channel_members')
-      .select('role')
-      .eq('channel_id', channelId)
-      .eq('user_id', userId)
-      .single();
-    
-    if (memberError || !membership) {
-      return res.status(403).json({
-        success: false,
-        error: 'You are not a member of this channel'
-      });
-    }
-    
-    // Calculate expiration date
-    const expiresAt = new Date();
-    if (expiresIn === '1d') {
-      expiresAt.setDate(expiresAt.getDate() + 1);
-    } else if (expiresIn === '7d') {
-      expiresAt.setDate(expiresAt.getDate() + 7);
-    } else if (expiresIn === '30d') {
-      expiresAt.setDate(expiresAt.getDate() + 30);
-    } else {
-      expiresAt.setDate(expiresAt.getDate() + 7); // Default to 7 days
-    }
-    
-    // Create invite
-    const { data: invite, error: inviteError } = await supabase
-      .from('channel_invites')
+    // Create channel
+    const { data: channel, error: channelError } = await supabase
+      .from('channels')
       .insert({
-        channel_id: channelId,
+        name: name.trim(),
+        description: description?.trim() || null,
+        type: type || 'public',
         created_by: userId,
-        expires_at: expiresAt.toISOString(),
-        max_uses: maxUses
+        metadata: type === 'private' && password ? { password } : {}
       })
       .select()
       .single();
     
-    if (inviteError) {
-      console.error('Error creating invite:', inviteError);
+    if (channelError) {
+      console.error('Error creating channel:', channelError);
       return res.status(500).json({
         success: false,
-        error: 'Failed to create invite'
+        error: 'Failed to create channel'
       });
     }
     
-    // Generate invite URL
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const inviteUrl = `${baseUrl}/workspace/invite/${invite.invite_code}`;
+    // Add creator as admin member
+    const { error: memberError } = await supabase
+      .from('channel_members')
+      .insert({
+        channel_id: channel.id,
+        user_id: userId,
+        role: 'admin'
+      });
+    
+    if (memberError) {
+      console.error('Error adding creator as member:', memberError);
+    }
     
     res.json({
       success: true,
-      invite: {
-        id: invite.id,
-        code: invite.invite_code,
-        url: inviteUrl,
-        expires_at: invite.expires_at,
-        max_uses: invite.max_uses,
-        current_uses: invite.current_uses
-      }
+      channel
     });
   } catch (error) {
-    console.error('Error generating invite:', error);
+    console.error('Error creating channel:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -153,11 +129,11 @@ app.post('/api/workspace/generate-invite', async (req, res) => {
   }
 });
 
-// Join channel via invite code
-app.post('/api/workspace/join-invite/:inviteCode', async (req, res) => {
+// Join channel with password support
+app.post('/api/workspace/channels/:channelId/join', async (req, res) => {
   try {
-    const { inviteCode } = req.params;
-    const { userId } = req.body;
+    const { channelId } = req.params;
+    const { userId, password } = req.body;
     
     if (!userId) {
       return res.status(400).json({
@@ -166,54 +142,43 @@ app.post('/api/workspace/join-invite/:inviteCode', async (req, res) => {
       });
     }
     
-    // Get invite details
-    const { data: invite, error: inviteError } = await supabase
-      .from('channel_invites')
-      .select(`
-        *,
-        channel:channels(*)
-      `)
-      .eq('invite_code', inviteCode)
+    // Get channel details
+    const { data: channel, error: channelError } = await supabase
+      .from('channels')
+      .select('*')
+      .eq('id', channelId)
       .single();
     
-    if (inviteError || !invite) {
+    if (channelError || !channel) {
       return res.status(404).json({
         success: false,
-        error: 'Invalid or expired invite'
+        error: 'Channel not found'
       });
     }
     
-    // Check if invite is still valid
-    const now = new Date();
-    const expiresAt = new Date(invite.expires_at);
-    
-    if (expiresAt < now) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invite has expired'
-      });
-    }
-    
-    if (invite.max_uses && invite.current_uses >= invite.max_uses) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invite has reached maximum uses'
-      });
+    // Check password for private channels
+    if (channel.type === 'private') {
+      const channelPassword = channel.metadata?.password;
+      if (!channelPassword || channelPassword !== password) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid password'
+        });
+      }
     }
     
     // Check if user is already a member
     const { data: existingMember } = await supabase
       .from('channel_members')
       .select('id')
-      .eq('channel_id', invite.channel_id)
+      .eq('channel_id', channelId)
       .eq('user_id', userId)
       .single();
     
     if (existingMember) {
       return res.json({
         success: true,
-        message: 'You are already a member of this channel',
-        channel: invite.channel
+        message: 'You are already a member of this channel'
       });
     }
     
@@ -221,7 +186,7 @@ app.post('/api/workspace/join-invite/:inviteCode', async (req, res) => {
     const { error: memberError } = await supabase
       .from('channel_members')
       .insert({
-        channel_id: invite.channel_id,
+        channel_id: channelId,
         user_id: userId,
         role: 'member'
       });
@@ -234,21 +199,67 @@ app.post('/api/workspace/join-invite/:inviteCode', async (req, res) => {
       });
     }
     
-    // Update invite usage count
-    await supabase
-      .from('channel_invites')
-      .update({
-        current_uses: invite.current_uses + 1
-      })
-      .eq('id', invite.id);
+    res.json({
+      success: true,
+      message: 'Successfully joined channel'
+    });
+  } catch (error) {
+    console.error('Error joining channel:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Leave channel
+app.post('/api/workspace/channels/:channelId/leave', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    // Check if it's the general channel
+    const { data: channel } = await supabase
+      .from('channels')
+      .select('name')
+      .eq('id', channelId)
+      .single();
+    
+    if (channel?.name === 'general') {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot leave the general channel'
+      });
+    }
+    
+    // Remove user from channel
+    const { error } = await supabase
+      .from('channel_members')
+      .delete()
+      .eq('channel_id', channelId)
+      .eq('user_id', userId);
+    
+    if (error) {
+      console.error('Error leaving channel:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to leave channel'
+      });
+    }
     
     res.json({
       success: true,
-      message: 'Successfully joined channel',
-      channel: invite.channel
+      message: 'Successfully left channel'
     });
   } catch (error) {
-    console.error('Error joining via invite:', error);
+    console.error('Error leaving channel:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -504,6 +515,47 @@ app.delete('/api/workspace/tasks/:taskId', async (req, res) => {
     });
   } catch (error) {
     console.error('Error deleting task:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get channels with membership info
+app.get('/api/workspace/channels/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Get all channels with membership information
+    const { data: channels, error } = await supabase
+      .from('channels')
+      .select(`
+        *,
+        channel_members!left(user_id, role)
+      `)
+      .order('created_at', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching channels:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch channels'
+      });
+    }
+    
+    // Add membership info to each channel
+    const channelsWithMembership = channels.map(channel => ({
+      ...channel,
+      is_member: channel.channel_members.some(member => member.user_id === userId)
+    }));
+    
+    res.json({
+      success: true,
+      channels: channelsWithMembership
+    });
+  } catch (error) {
+    console.error('Error getting channels:', error);
     res.status(500).json({
       success: false,
       error: error.message
