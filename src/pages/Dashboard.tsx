@@ -154,24 +154,6 @@ const Dashboard: React.FC = () => {
               </GlassCard>
             ))}
           </div>
-
-          {/* Usage Statistics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            {[
-              { label: 'Sessions Today', value: '0', color: 'gold-text' },
-              { label: 'Total Interactions', value: '0', color: 'silver-text' },
-              { label: 'Preferred Mode', value: 'Workspace', color: 'gold-text' },
-            ].map((stat, index) => (
-              <GlassCard key={index} className="p-6 text-center" hover>
-                <div className={`text-2xl font-bold ${stat.color} mb-2`}>
-                  {stat.value}
-                </div>
-                <div className="text-secondary font-medium text-sm">
-                  {stat.label}
-                </div>
-              </GlassCard>
-            ))}
-          </div>
         </div>
       </main>
     </div>
