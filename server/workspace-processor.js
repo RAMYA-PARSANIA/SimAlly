@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
+
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,

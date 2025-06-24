@@ -191,22 +191,27 @@ const WorkspacePage: React.FC = () => {
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
     try {
-      const { error } = await supabase
-        .from('messages')
-        .update({ 
-          content: newContent,
-          edited_at: new Date().toISOString()
+      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user?.id,
+          content: newContent
         })
-        .eq('id', messageId);
+      });
 
-      if (error) {
-        console.error('Error editing message:', error);
-        return;
-      }
-
-      // Reload messages to show the edit
-      if (activeChannel) {
-        loadMessages(activeChannel.id);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload messages to show the edit
+        if (activeChannel) {
+          loadMessages(activeChannel.id);
+        }
+      } else {
+        console.error('Error editing message:', data.error);
       }
     } catch (error) {
       console.error('Error editing message:', error);
@@ -215,19 +220,26 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', messageId);
+      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user?.id
+        })
+      });
 
-      if (error) {
-        console.error('Error deleting message:', error);
-        return;
-      }
-
-      // Reload messages to reflect the deletion
-      if (activeChannel) {
-        loadMessages(activeChannel.id);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload messages to reflect the deletion
+        if (activeChannel) {
+          loadMessages(activeChannel.id);
+        }
+      } else {
+        console.error('Error deleting message:', data.error);
       }
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -236,7 +248,7 @@ const WorkspacePage: React.FC = () => {
 
   const processMessageForTasks = async (message: Message, mentions: string[]) => {
     try {
-      const response = await fetch('http://localhost:8001/api/chat/process-message', {
+      const response = await fetch('http://localhost:8002/api/workspace/process-message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -321,24 +333,32 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
-      const { error } = await supabase
-        .from('channels')
-        .delete()
-        .eq('id', channelId);
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user?.id
+        })
+      });
 
-      if (error) {
-        console.error('Error deleting channel:', error);
-        return;
+      const data = await response.json();
+      
+      if (data.success) {
+        // If the deleted channel was active, switch to another channel
+        if (activeChannel?.id === channelId) {
+          const remainingChannels = channels.filter(c => c.id !== channelId);
+          setActiveChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
+        }
+
+        // Reload channels
+        loadChannels();
+      } else {
+        console.error('Error deleting channel:', data.error);
+        alert(data.error);
       }
-
-      // If the deleted channel was active, switch to another channel
-      if (activeChannel?.id === channelId) {
-        const remainingChannels = channels.filter(c => c.id !== channelId);
-        setActiveChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
-      }
-
-      // Reload channels
-      loadChannels();
     } catch (error) {
       console.error('Error deleting channel:', error);
     }
@@ -346,21 +366,34 @@ const WorkspacePage: React.FC = () => {
 
   const handleGenerateInvite = async (channelId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('channel_invites')
-        .insert({
-          channel_id: channelId,
-          created_by: user?.id
+      const response = await fetch('http://localhost:8002/api/workspace/generate-invite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          channelId,
+          userId: user?.id,
+          expiresIn: '7d'
         })
-        .select()
-        .single();
+      });
 
-      if (error) {
-        console.error('Error generating invite:', error);
-        return;
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('Invite generated:', data.invite);
+        // Copy invite URL to clipboard
+        try {
+          await navigator.clipboard.writeText(data.invite.url);
+          alert('Invite link copied to clipboard!');
+        } catch (clipboardError) {
+          alert(`Invite link: ${data.invite.url}`);
+        }
+      } else {
+        console.error('Error generating invite:', data.error);
+        alert(data.error);
       }
-
-      console.log('Invite generated:', data);
     } catch (error) {
       console.error('Error generating invite:', error);
     }
@@ -370,7 +403,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch('http://localhost:8001/api/workspace/summarize-channel', {
+      const response = await fetch('http://localhost:8002/api/workspace/summarize-channel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -405,6 +438,9 @@ const WorkspacePage: React.FC = () => {
         if (activeChannel?.id === channelId) {
           loadMessages(channelId);
         }
+      } else {
+        console.error('Error summarizing channel:', data.error);
+        alert(data.error);
       }
     } catch (error) {
       console.error('Error summarizing channel:', error);

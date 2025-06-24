@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Hash, Lock, Plus, Users, Search, MessageCircle, UserPlus, Link, Copy, Check, Trash2, Video, Calendar, MoreVertical, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
@@ -42,6 +42,23 @@ const ChannelList: React.FC<ChannelListProps> = ({
     description: '',
     type: 'public' as 'public' | 'private'
   });
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowChannelMenu(null);
+      }
+    };
+
+    if (showChannelMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showChannelMenu]);
 
   const filteredChannels = channels.filter(channel =>
     channel.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -142,6 +159,94 @@ See you there!`);
     }
   };
 
+  const renderChannelItem = (channel: Channel) => (
+    <motion.div
+      key={channel.id}
+      className="group relative"
+      whileHover={{ x: 4 }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <button
+        onClick={() => onChannelSelect(channel)}
+        className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
+          activeChannel?.id === channel.id
+            ? 'bg-gradient-gold-silver text-white'
+            : 'text-secondary hover:text-primary hover:bg-surface'
+        }`}
+      >
+        {getChannelIcon(channel)}
+        <div className="flex-1 min-w-0">
+          <div className="font-medium truncate">{formatChannelName(channel)}</div>
+          {channel.description && (
+            <div className="text-xs opacity-75 truncate">
+              {channel.description}
+            </div>
+          )}
+        </div>
+        
+        {/* Unread indicator */}
+        {channel.unread_count && channel.unread_count > 0 && (
+          <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+            <span className="text-xs text-white font-bold">
+              {channel.unread_count > 9 ? '9+' : channel.unread_count}
+            </span>
+          </div>
+        )}
+      </button>
+      
+      {/* Channel menu */}
+      <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowChannelMenu(showChannelMenu === channel.id ? null : channel.id);
+          }}
+          className="p-1 hover:bg-surface rounded"
+        >
+          <MoreVertical className="w-3 h-3 text-secondary" />
+        </button>
+        
+        {showChannelMenu === channel.id && (
+          <div 
+            ref={menuRef}
+            className="absolute right-0 top-6 z-50 glass-panel rounded-lg shadow-lg border silver-border min-w-[160px] bg-primary"
+          >
+            <button
+              onClick={() => handleChannelAction('invite', channel)}
+              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2 rounded-t-lg"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>Invite</span>
+            </button>
+            <button
+              onClick={() => handleChannelAction('summarize', channel)}
+              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+            >
+              <FileText className="w-3 h-3" />
+              <span>Summarize</span>
+            </button>
+            <button
+              onClick={() => handleChannelAction('meeting', channel)}
+              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
+            >
+              <Video className="w-3 h-3" />
+              <span>Start Meeting</span>
+            </button>
+            {canDeleteChannel(channel) && (
+              <button
+                onClick={() => handleChannelAction('delete', channel)}
+                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center space-x-2 rounded-b-lg"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+
   return (
     <>
       <div className="p-4 border-b silver-border">
@@ -190,90 +295,7 @@ See you there!`);
               Public Channels ({publicChannels.length})
             </h3>
             <div className="space-y-1">
-              {publicChannels.map((channel) => (
-                <motion.div
-                  key={channel.id}
-                  className="group relative"
-                  whileHover={{ x: 4 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <button
-                    onClick={() => onChannelSelect(channel)}
-                    className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
-                      activeChannel?.id === channel.id
-                        ? 'bg-gradient-gold-silver text-white'
-                        : 'text-secondary hover:text-primary hover:bg-surface'
-                    }`}
-                  >
-                    {getChannelIcon(channel)}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{formatChannelName(channel)}</div>
-                      {channel.description && (
-                        <div className="text-xs opacity-75 truncate">
-                          {channel.description}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Unread indicator */}
-                    {channel.unread_count && channel.unread_count > 0 && (
-                      <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">
-                          {channel.unread_count > 9 ? '9+' : channel.unread_count}
-                        </span>
-                      </div>
-                    )}
-                  </button>
-                  
-                  {/* Channel menu */}
-                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowChannelMenu(showChannelMenu === channel.id ? null : channel.id);
-                      }}
-                      className="p-1 hover:bg-surface rounded"
-                    >
-                      <MoreVertical className="w-3 h-3 text-secondary" />
-                    </button>
-                    
-                    {showChannelMenu === channel.id && (
-                      <div className="absolute right-0 top-6 z-10 glass-panel rounded-lg shadow-lg border silver-border min-w-[160px]">
-                        <button
-                          onClick={() => handleChannelAction('invite', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <UserPlus className="w-3 h-3" />
-                          <span>Invite</span>
-                        </button>
-                        <button
-                          onClick={() => handleChannelAction('summarize', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>Summarize</span>
-                        </button>
-                        <button
-                          onClick={() => handleChannelAction('meeting', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <Video className="w-3 h-3" />
-                          <span>Start Meeting</span>
-                        </button>
-                        {canDeleteChannel(channel) && (
-                          <button
-                            onClick={() => handleChannelAction('delete', channel)}
-                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center space-x-2"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Delete</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+              {publicChannels.map(renderChannelItem)}
             </div>
           </div>
         )}
@@ -286,90 +308,7 @@ See you there!`);
               Private Channels ({privateChannels.length})
             </h3>
             <div className="space-y-1">
-              {privateChannels.map((channel) => (
-                <motion.div
-                  key={channel.id}
-                  className="group relative"
-                  whileHover={{ x: 4 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <button
-                    onClick={() => onChannelSelect(channel)}
-                    className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all relative ${
-                      activeChannel?.id === channel.id
-                        ? 'bg-gradient-gold-silver text-white'
-                        : 'text-secondary hover:text-primary hover:bg-surface'
-                    }`}
-                  >
-                    {getChannelIcon(channel)}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{formatChannelName(channel)}</div>
-                      {channel.description && (
-                        <div className="text-xs opacity-75 truncate">
-                          {channel.description}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Unread indicator */}
-                    {channel.unread_count && channel.unread_count > 0 && (
-                      <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">
-                          {channel.unread_count > 9 ? '9+' : channel.unread_count}
-                        </span>
-                      </div>
-                    )}
-                  </button>
-                  
-                  {/* Channel menu */}
-                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowChannelMenu(showChannelMenu === channel.id ? null : channel.id);
-                      }}
-                      className="p-1 hover:bg-surface rounded"
-                    >
-                      <MoreVertical className="w-3 h-3 text-secondary" />
-                    </button>
-                    
-                    {showChannelMenu === channel.id && (
-                      <div className="absolute right-0 top-6 z-10 glass-panel rounded-lg shadow-lg border silver-border min-w-[160px]">
-                        <button
-                          onClick={() => handleChannelAction('invite', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <UserPlus className="w-3 h-3" />
-                          <span>Invite</span>
-                        </button>
-                        <button
-                          onClick={() => handleChannelAction('summarize', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <FileText className="w-3 h-3" />
-                          <span>Summarize</span>
-                        </button>
-                        <button
-                          onClick={() => handleChannelAction('meeting', channel)}
-                          className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-                        >
-                          <Video className="w-3 h-3" />
-                          <span>Start Meeting</span>
-                        </button>
-                        {canDeleteChannel(channel) && (
-                          <button
-                            onClick={() => handleChannelAction('delete', channel)}
-                            className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center space-x-2"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            <span>Delete</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+              {privateChannels.map(renderChannelItem)}
             </div>
           </div>
         )}
@@ -628,14 +567,6 @@ See you there!`);
           </div>
         )}
       </AnimatePresence>
-
-      {/* Click outside to close menu */}
-      {showChannelMenu && (
-        <div 
-          className="fixed inset-0 z-5" 
-          onClick={() => setShowChannelMenu(null)}
-        />
-      )}
     </>
   );
 };
