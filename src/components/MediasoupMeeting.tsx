@@ -834,6 +834,14 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     };
   }, [socketRef.current]);
 
+  // Add handleLeave function
+  const handleLeave = () => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+    }
+    onLeave();
+  };
+
   if (!isConnected) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -904,7 +912,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
           {/* Leave Meeting */}
           <Button
-            onClick={onLeave}
+            onClick={handleLeave}
             variant="secondary"
             size="sm"
             className="flex items-center space-x-2 bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
@@ -1171,7 +1179,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
           </button>
 
           <button
-            onClick={onLeave}
+            onClick={handleLeave}
             className="glass-panel p-4 rounded-full glass-panel-hover bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
           >
             <PhoneOff className="w-6 h-6 text-red-400" />
