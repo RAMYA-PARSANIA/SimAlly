@@ -8,7 +8,7 @@ const ThemeToggle: React.FC = () => {
   return (
     <button
       onClick={toggleTheme}
-      className="glass-panel rounded-lg p-2 glass-panel-hover transition-all duration-200"
+      className="glass-panel border-white rounded-lg p-2 glass-panel-hover transition-all duration-200 "
     >
       {isDark ? (
         <Moon className="w-5 h-5 silver-text" />

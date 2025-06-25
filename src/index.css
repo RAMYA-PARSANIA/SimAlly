@@ -330,3 +330,73 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   opacity: 0.8;
 }
+
+/* Custom Markdown Summary Styling */
+.markdown-summary {
+  line-height: 1.5;
+  max-width: 100%;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+}
+
+.markdown-summary ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.markdown-summary ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.markdown-summary li {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-summary h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: theme('colors.purple.400');
+}
+
+.markdown-summary h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: theme('colors.purple.300');
+}
+
+.markdown-summary h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: theme('colors.purple.200');
+}
+
+.markdown-summary p {
+  margin-bottom: 0.75rem;
+}
+
+.markdown-summary code {
+  background-color: rgba(139, 92, 246, 0.1);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  word-break: break-all;
+  max-width: 100%;
+}
+
+.markdown-summary pre {
+  background-color: rgba(139, 92, 246, 0.1);
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+}

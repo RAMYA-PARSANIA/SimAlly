@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin, Image, FileText, Download, Play, Pause, Volume2, VolumeX, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
 import { type Channel, type Message } from '../lib/supabase';
 import Button from './ui/Button';
@@ -169,7 +170,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       case 'ai_task_creation':
         return 'bg-blue-500/10 border-blue-500/30';
       case 'ai_summary':
-        return 'bg-purple-500/10 border-purple-500/30';
+        return 'bg-purple-500/10 border-purple-500/30 pb-3';
       case 'system':
         return 'bg-gray-500/10 border-gray-500/30';
       default:
@@ -179,8 +180,32 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
-  const renderMessageContent = (content: string) => {
-    // Render mentions with highlighting
+  const renderMessageContent = (content: string, messageType?: string) => {
+    // For AI summary messages, use ReactMarkdown
+    if (messageType === 'ai_summary') {
+      return (
+        <div className="markdown-summary w-full overflow-hidden break-words">
+          <ReactMarkdown
+            components={{
+              h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-2 text-purple-400 break-words" {...props} />,
+              h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-purple-300 break-words" {...props} />,
+              h3: ({node, ...props}) => <h3 className="text-md font-bold mb-1 text-purple-200 break-words" {...props} />,
+              ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
+              ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
+              li: ({node, ...props}) => <li className="mb-1" {...props} />,
+              p: ({node, ...props}) => <p className="mb-2 break-words" {...props} />,
+              strong: ({node, ...props}) => <strong className="font-bold text-purple-300" {...props} />,
+              code: ({node, ...props}) => <code className="bg-purple-500/10 px-1 rounded text-sm font-mono break-words" {...props} />,
+              pre: ({node, ...props}) => <pre className="bg-purple-500/10 p-2 rounded my-2 overflow-x-auto max-w-full" {...props} />,
+            }}
+          >
+            {content}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+    
+    // For regular messages, render mentions with highlighting
     const parts = content.split(/(@\w+)/g);
     return parts.map((part, index) => {
       if (part.startsWith('@')) {
@@ -377,7 +402,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   message.sender_id === user?.id ? 'flex flex-row-reverse' : 'flex'
                 }`}
               >
-                <div className={`flex items-start space-x-3 max-w-4xl ${
+                <div className={`flex items-start space-x-3 max-w-4xl w-full ${
                   message.sender_id === user?.id ? 'flex-row-reverse space-x-reverse' : ''
                 }`}>
                   {/* Avatar */}
@@ -459,8 +484,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     ) : (
                       <>
                         {message.content && message.content !== '[Media]' && (
-                          <div className="text-primary whitespace-pre-wrap">
-                            {renderMessageContent(message.content)}
+                          <div className={`text-primary max-w-full ${message.type !== 'ai_summary' ? 'whitespace-pre-wrap' : 'overflow-hidden'}`}>
+                            {renderMessageContent(message.content, message.type)}
                           </div>
                         )}
 
