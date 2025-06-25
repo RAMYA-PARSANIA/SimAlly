@@ -7,6 +7,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.WORKSPACE_PORT || 8002;
 
+// Get frontend URL from environment
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -18,7 +21,7 @@ const workspaceProcessor = new WorkspaceProcessor();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: FRONTEND_URL,
   credentials: true
 }));
 app.use(express.json());

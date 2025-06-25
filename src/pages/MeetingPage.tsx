@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { config } from '../lib/config';
 import ThemeToggle from '../components/ThemeToggle';
 import MeetingControls from '../components/MeetingControls';
 import MediasoupMeeting from '../components/MediasoupMeeting';
@@ -56,7 +57,7 @@ const MeetingPage: React.FC = () => {
 
   const copyMeetingLink = async () => {
     if (currentMeeting) {
-      const meetingLink = `${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`;
+      const meetingLink = `${config.APP_URL}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`;
       try {
         await navigator.clipboard.writeText(meetingLink);
         setCopied(true);
@@ -76,10 +77,10 @@ const MeetingPage: React.FC = () => {
 I'd like to invite you to join my video meeting.
 
 Meeting Room: ${currentMeeting.roomName}
-Meeting Link: ${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}
+Meeting Link: ${config.APP_URL}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}
 
 To join:
-1. Click the link above or go to ${window.location.origin}/meetings
+1. Click the link above or go to ${config.APP_URL}/meetings
 2. Click "Join Meeting"
 3. Enter the room name: ${currentMeeting.roomName}
 4. Enter your name and join!
@@ -161,7 +162,7 @@ See you there!`);
                     <div className="flex space-x-2">
                       <input
                         type="text"
-                        value={`${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`}
+                        value={`${config.APP_URL}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`}
                         readOnly
                         className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10 text-sm"
                       />

@@ -2,12 +2,17 @@ const http = require('http');
 const { Server } = require('socket.io');
 const express = require('express');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-app.use(cors({ origin: '*', credentials: true }));
+
+// Get frontend URL from environment
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, { cors: { origin: FRONTEND_URL } });
 
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId, userId) => {

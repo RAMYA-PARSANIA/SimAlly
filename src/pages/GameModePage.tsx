@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, HelpCircle, MessageSquare, User, Bot, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { apiEndpoints } from '../lib/config';
 import ThemeToggle from '../components/ThemeToggle';
 import TavusVideoCall from '../components/TavusVideoCall';
 
@@ -41,7 +42,7 @@ const GameModePage: React.FC = () => {
       title: 'I Ask Questions',
       description: 'You think of something, I\'ll try to guess it with 20 questions',
       color: 'from-green-500 via-emerald-500 to-teal-500',
-      endpoint: '/api/create-twenty-questions-user-asks'
+      endpoint: apiEndpoints.createTwentyQuestionsUserAsks()
     },
     {
       id: 'ai-asks',
@@ -49,7 +50,7 @@ const GameModePage: React.FC = () => {
       title: 'AI Asks Questions',
       description: 'Think of something, I\'ll ask you questions to guess it',
       color: 'from-orange-500 via-red-500 to-pink-500',
-      endpoint: '/api/create-twenty-questions-ai-asks'
+      endpoint: apiEndpoints.createTwentyQuestionsAiAsks()
     },
   ];
 
@@ -70,7 +71,7 @@ const GameModePage: React.FC = () => {
     setCurrentGame(gameType);
 
     try {
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,7 +103,7 @@ const GameModePage: React.FC = () => {
     if (!conversationId || !userId) return;
 
     try {
-      await fetch('http://localhost:8000/api/end-conversation', {
+      await fetch(apiEndpoints.endConversation(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,7 +130,7 @@ const GameModePage: React.FC = () => {
     }
 
     if (gameId === 'riddle') {
-      createGameConversation('/api/create-riddle-conversation', 'riddle');
+      createGameConversation(apiEndpoints.createRiddleConversation(), 'riddle');
     } else if (gameId === 'twenty-questions') {
       setShowTwentyQuestionsOptions(true);
     }

@@ -3,6 +3,7 @@ import { CheckSquare, Clock, User, Plus, Filter, Calendar, Trash2, Edit, Bot, Lo
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, type Task } from '../lib/supabase';
+import { apiEndpoints } from '../lib/config';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -105,7 +106,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/tasks/${taskId}`, {
+      const response = await fetch(apiEndpoints.workspaceTaskDelete(taskId), {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -152,7 +153,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
     setIsLoadingAI(true);
     try {
-      const response = await fetch('http://localhost:8001/api/chat/general', {
+      const response = await fetch(apiEndpoints.aiChatGeneral(), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
