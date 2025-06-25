@@ -7,6 +7,13 @@ import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -75,7 +82,7 @@ const AssistantPage: React.FC = () => {
     
     setIsCheckingGmail(true);
     try {
-      const response = await fetch(`http://localhost:8001/api/gmail/status?userId=${user.id}`, {
+      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/status?userId=${user.id}`, {
         credentials: 'include'
       });
       
@@ -94,7 +101,7 @@ const AssistantPage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`http://localhost:8001/api/gmail/auth-url?userId=${user.id}`, {
+      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/auth-url?userId=${user.id}`, {
         credentials: 'include'
       });
       
@@ -113,7 +120,7 @@ const AssistantPage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch('http://localhost:8001/api/gmail/disconnect', {
+      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/disconnect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -149,7 +156,7 @@ const AssistantPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const agentResponse = await fetch('http://localhost:8001/api/chat/agent-process', {
+      const agentResponse = await fetch(`${VITE_AI_API_URL}/api/chat/agent-process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -234,7 +241,7 @@ const AssistantPage: React.FC = () => {
     if (!user || selectedEmails.size === 0) return;
 
     try {
-      const response = await fetch('http://localhost:8001/api/gmail/delete-emails', {
+      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/delete-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -292,7 +299,7 @@ const AssistantPage: React.FC = () => {
       setLoadingEmailBody(true);
       
       try {
-        const response = await fetch(`http://localhost:8001/api/gmail/email/${email.id}?userId=${user?.id}`, {
+        const response = await fetch(`${VITE_AI_API_URL}/api/gmail/email/${email.id}?userId=${user?.id}`, {
           credentials: 'include'
         });
         

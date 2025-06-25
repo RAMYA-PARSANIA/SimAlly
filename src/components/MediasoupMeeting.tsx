@@ -5,6 +5,12 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, Bot, NutOff as BotOff, FileText
 import { motion, AnimatePresence } from 'framer-motion';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface MediasoupMeetingProps {
   roomName: string;
@@ -65,7 +71,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     console.log('Initializing Mediasoup meeting...');
     setConnectionStatus('Connecting to server...');
     
-    socketRef.current = io('http://localhost:3001', {
+    socketRef.current = io(`${VITE_MEDIA_API_URL}`, {
       transports: ['websocket', 'polling']
     });
     
@@ -662,7 +668,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   const generateAutoNotes = async (text: string, speaker: string) => {
     try {
       setIsProcessing(true);
-      const response = await fetch('http://localhost:8001/api/meetings/auto-notes', {
+      const response = await fetch(`${VITE_AI_API_URL}/api/meetings/auto-notes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -701,7 +707,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
     try {
       setIsProcessing(true);
-      const response = await fetch('http://localhost:8001/api/meetings/summary', {
+      const response = await fetch(`${VITE_AI_API_URL}/api/meetings/summary`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

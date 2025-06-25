@@ -8,7 +8,12 @@ app.use(cors({ origin: '*', credentials: true }));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
-
+VITE_APP_URL=process.env.VITE_APP_URL
+VITE_API_URL=process.env.VITE_API_URL
+VITE_AI_API_URL=process.env.VITE_AI_API_URL
+VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
+VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
+FRONTEND_URL=process.env.FRONTEND_URL
 io.on('connection', (socket) => {
   socket.on('join-room', (roomId, userId) => {
     socket.join(roomId);

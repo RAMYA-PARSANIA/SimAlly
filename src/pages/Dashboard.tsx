@@ -5,6 +5,13 @@ import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
+
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, signOut, loading } = useAuth();

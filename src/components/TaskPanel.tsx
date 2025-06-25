@@ -5,6 +5,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase, type Task } from '../lib/supabase';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface TaskPanelProps {
   tasks: Task[];
@@ -105,7 +111,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/tasks/${taskId}`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/tasks/${taskId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -152,7 +158,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
     setIsLoadingAI(true);
     try {
-      const response = await fetch('http://localhost:8001/api/chat/general', {
+      const response = await fetch(`${VITE_AI_API_URL}/api/chat/general`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

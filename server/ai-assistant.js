@@ -8,6 +8,12 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.AI_ASSISTANT_PORT || 8001;
+VITE_APP_URL=process.env.VITE_APP_URL
+VITE_API_URL=process.env.VITE_API_URL
+VITE_AI_API_URL=process.env.VITE_AI_API_URL
+VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
+VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
+FRONTEND_URL=process.env.FRONTEND_URL
 
 // Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -18,7 +24,7 @@ const supabase = createClient(
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: `${FRONTEND_URL}`,
   credentials: true
 }));
 app.use(express.json());
@@ -622,6 +628,7 @@ async function executeGmailConnect(userId) {
     );
 
     const scopes = [
+      'https://mail.google.com',
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify'
     ];
@@ -1349,7 +1356,7 @@ async function executeMeetingCreateRoom(parameters) {
       success: true,
       room: {
         name: roomName,
-        url: `http://localhost:5173/meetings?room=${encodeURIComponent(roomName)}`,
+        url: `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`,
         creator: displayName
       }
     };
@@ -1366,7 +1373,7 @@ async function executeMeetingJoinRoom(parameters) {
       success: true,
       room: {
         name: roomName,
-        url: `http://localhost:5173/meetings?room=${encodeURIComponent(roomName)}`,
+        url: `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`,
         participant: displayName
       }
     };
@@ -1410,7 +1417,7 @@ async function executeMeetingSummary(parameters) {
 // Game Functions
 async function executeGameRiddle(user_id) {
   try {
-    const response = await fetch('http://localhost:8000/api/create-riddle-conversation', {
+    const response = await fetch(`${VITE_API_URL}/api/create-riddle-conversation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id })
@@ -1425,7 +1432,7 @@ async function executeGameRiddle(user_id) {
 
 async function executeGameTwentyQuestionsUser(user_id) {
   try {
-    const response = await fetch('http://localhost:8000/api/create-twenty-questions-user-asks', {
+    const response = await fetch(`${VITE_API_URL}/api/create-twenty-questions-user-asks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id })
@@ -1440,7 +1447,7 @@ async function executeGameTwentyQuestionsUser(user_id) {
 
 async function executeGameTwentyQuestionsAI(user_id) {
   try {
-    const response = await fetch('http://localhost:8000/api/create-twenty-questions-ai-asks', {
+    const response = await fetch(`${VITE_API_URL}/api/create-twenty-questions-ai-asks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id })
@@ -1455,7 +1462,7 @@ async function executeGameTwentyQuestionsAI(user_id) {
 
 async function executeGameEndConversation(user_id) {
   try {
-    const response = await fetch('http://localhost:8000/api/end-conversation', {
+    const response = await fetch(`${VITE_API_URL}/api/end-conversation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ user_id })
@@ -1836,6 +1843,41 @@ app.get('/api/gmail/promotions', async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to fetch promotional emails' });
+  }
+});
+// Restore the Gmail OAuth2 callback endpoint for Gmail connection
+app.get('/auth/gmail/callback', async (req, res) => {
+  try {
+    const { code, state: userId } = req.query;
+
+    if (!code || !userId) {
+      return res.status(400).send('Missing authorization code or user ID');
+    }
+
+    console.log('Gmail OAuth callback for user:', userId);
+
+    // Exchange code for tokens
+    const oauth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
+    const { tokens } = await oauth2Client.getToken(code);
+    console.log('Received tokens from Google:', {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      expiryDate: tokens.expiry_date
+    });
+
+    // Store tokens in database
+    await storeGmailTokens(userId, tokens);
+
+    // Redirect back to frontend with success or error
+    res.redirect(`${FRONTEND_URL}/assistant?gmail_connected=true`);
+  } catch (error) {
+    console.error('Gmail OAuth callback error:', error);
+    res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
   }
 });
 

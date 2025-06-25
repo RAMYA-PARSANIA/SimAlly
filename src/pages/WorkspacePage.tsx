@@ -13,6 +13,12 @@ import MeetingControls from '../components/MeetingControls';
 import MediasoupMeeting from '../components/MediasoupMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
@@ -84,7 +90,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/channels/${user.id}`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${user.id}`, {
         credentials: 'include'
       });
       
@@ -209,7 +215,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -238,7 +244,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -266,7 +272,7 @@ const WorkspacePage: React.FC = () => {
 
   const processMessageForTasks = async (message: Message, mentions: string[]) => {
     try {
-      const response = await fetch('http://localhost:8002/api/workspace/process-message', {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/process-message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -317,7 +323,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch('http://localhost:8002/api/workspace/channels', {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,7 +356,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/join`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/join`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -380,7 +386,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/leave`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/leave`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -413,7 +419,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
-      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}`, {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -448,7 +454,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch('http://localhost:8002/api/workspace/summarize-channel', {
+      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/summarize-channel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

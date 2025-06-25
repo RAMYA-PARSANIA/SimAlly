@@ -3,18 +3,23 @@ const http = require('http');
 const socketIo = require('socket.io');
 const mediasoup = require('mediasoup');
 const cors = require('cors');
-
+VITE_APP_URL=process.env.VITE_APP_URL
+VITE_API_URL=process.env.VITE_API_URL
+VITE_AI_API_URL=process.env.VITE_AI_API_URL
+VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
+VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
+FRONTEND_URL=process.env.FRONTEND_URL
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: `${FRONTEND_URL}`,
     methods: ["GET", "POST"]
   }
 });
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: `${FRONTEND_URL}`,
   credentials: true
 }));
 app.use(express.json());

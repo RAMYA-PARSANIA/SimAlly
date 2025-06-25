@@ -5,6 +5,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import TavusVideoCall from '../components/TavusVideoCall';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const GameModePage: React.FC = () => {
   const navigate = useNavigate();
@@ -70,7 +76,7 @@ const GameModePage: React.FC = () => {
     setCurrentGame(gameType);
 
     try {
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${VITE_API_URL}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,7 +108,7 @@ const GameModePage: React.FC = () => {
     if (!conversationId || !userId) return;
 
     try {
-      await fetch('http://localhost:8000/api/end-conversation', {
+      await fetch(`${VITE_API_URL}/api/end-conversation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

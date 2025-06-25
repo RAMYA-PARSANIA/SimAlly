@@ -6,7 +6,12 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.WORKSPACE_PORT || 8002;
-
+VITE_APP_URL=process.env.VITE_APP_URL
+VITE_API_URL=process.env.VITE_API_URL
+VITE_AI_API_URL=process.env.VITE_AI_API_URL
+VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
+VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
+FRONTEND_URL=process.env.FRONTEND_URL
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -18,7 +23,7 @@ const workspaceProcessor = new WorkspaceProcessor();
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: `${FRONTEND_URL}`,
   credentials: true
 }));
 app.use(express.json());

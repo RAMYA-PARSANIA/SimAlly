@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import DailyIframe from '@daily-co/daily-js';
 import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
-
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 interface TavusVideoCallProps {
   meetingUrl: string;
   onLeave: () => void;

@@ -5,6 +5,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase, type Task, type CalendarEvent } from '../lib/supabase';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface CalendarPanelProps {
   tasks: Task[];

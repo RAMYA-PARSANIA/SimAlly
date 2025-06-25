@@ -9,6 +9,12 @@ import GameModePage from './pages/GameModePage';
 import MeetingPage from './pages/MeetingPage';
 import WorkspacePage from './pages/WorkspacePage';
 import ProtectedRoute from './components/ProtectedRoute';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 function App() {
   return (

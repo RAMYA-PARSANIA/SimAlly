@@ -5,6 +5,12 @@ import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
 import { type Channel, type Message } from '../lib/supabase';
 import Button from './ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface ChatPanelProps {
   channel: Channel | null;
