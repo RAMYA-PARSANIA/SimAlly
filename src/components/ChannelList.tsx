@@ -206,9 +206,9 @@ const ChannelList: React.FC<ChannelListProps> = ({
           )}
         </button>
         
-        {/* Channel menu - Fixed positioning */}
+        {/* Channel menu button - Permanently visible */}
         {isChannelMember && (
-          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
             <button
               data-channel-menu={channel.id}
               onClick={(e) => {
@@ -222,15 +222,16 @@ const ChannelList: React.FC<ChannelListProps> = ({
           </div>
         )}
         
-        {/* Dropdown menu with portal-like positioning */}
+        {/* Dropdown menu - Positioned for proper stacking */}
         {showChannelMenu === channel.id && (
           <div 
             ref={(el) => { menuRefs.current[channel.id] = el; }}
-            className="fixed z-[9999] glass-panel rounded-lg shadow-lg border silver-border min-w-[160px] bg-primary"
+            className="absolute z-[9999] glass-panel rounded-lg shadow-lg border silver-border min-w-[160px] bg-primary"
             style={{
               top: '50%',
-              right: '20px',
+              right: '2rem',
               transform: 'translateY(-50%)',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
             }}
           >
             <button
@@ -310,7 +311,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 relative">
         {/* Public Channels */}
         {publicChannels.length > 0 && (
           <div>
