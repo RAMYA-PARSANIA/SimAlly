@@ -215,6 +215,7 @@ class WorkspaceProcessor {
         - Overall sentiment and activity level
         
         Keep it under 200 words.
+        Respond only in markdown format.
       `;
 
       const result = await this.model.generateContent(prompt);

@@ -311,3 +311,22 @@
 ::-webkit-scrollbar-thumb:hover {
   opacity: 1;
 }
+
+/* Custom smaller scrollbar for content panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--accent-gold);
+  opacity: 0.5;
+  border-radius: 2px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  opacity: 0.8;
+}
