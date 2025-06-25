@@ -3,7 +3,6 @@ import { Device } from 'mediasoup-client';
 import io from 'socket.io-client';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Bot, NutOff as BotOff, FileText, Download, Users, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { config, apiEndpoints } from '../lib/config';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -66,7 +65,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     console.log('Initializing Mediasoup meeting...');
     setConnectionStatus('Connecting to server...');
     
-    socketRef.current = io(config.MEDIA_API_URL, {
+    socketRef.current = io('http://localhost:3001', {
       transports: ['websocket', 'polling']
     });
     
@@ -663,7 +662,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   const generateAutoNotes = async (text: string, speaker: string) => {
     try {
       setIsProcessing(true);
-      const response = await fetch(apiEndpoints.meetingAutoNotes(), {
+      const response = await fetch('http://localhost:8001/api/meetings/auto-notes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -702,7 +701,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
     try {
       setIsProcessing(true);
-      const response = await fetch(apiEndpoints.meetingSummary(), {
+      const response = await fetch('http://localhost:8001/api/meetings/summary', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

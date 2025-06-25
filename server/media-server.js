@@ -6,19 +6,15 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-
-// Get frontend URL from environment
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
 const io = socketIo(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: "http://localhost:5173",
     methods: ["GET", "POST"]
   }
 });
 
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: 'http://localhost:5173',
   credentials: true
 }));
 app.use(express.json());

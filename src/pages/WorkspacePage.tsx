@@ -4,7 +4,6 @@ import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageS
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
-import { apiEndpoints } from '../lib/config';
 import ThemeToggle from '../components/ThemeToggle';
 import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
@@ -85,7 +84,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(apiEndpoints.workspaceChannelsList(user.id), {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${user.id}`, {
         credentials: 'include'
       });
       
@@ -210,7 +209,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
     try {
-      const response = await fetch(apiEndpoints.workspaceMessageEdit(messageId), {
+      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -239,7 +238,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      const response = await fetch(apiEndpoints.workspaceMessageDelete(messageId), {
+      const response = await fetch(`http://localhost:8002/api/workspace/messages/${messageId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -267,7 +266,7 @@ const WorkspacePage: React.FC = () => {
 
   const processMessageForTasks = async (message: Message, mentions: string[]) => {
     try {
-      const response = await fetch(apiEndpoints.workspaceProcessMessage(), {
+      const response = await fetch('http://localhost:8002/api/workspace/process-message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -318,7 +317,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(apiEndpoints.workspaceChannels(), {
+      const response = await fetch('http://localhost:8002/api/workspace/channels', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -351,7 +350,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(apiEndpoints.workspaceChannelJoin(channelId), {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/join`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -381,7 +380,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(apiEndpoints.workspaceChannelLeave(channelId), {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}/leave`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -414,7 +413,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
-      const response = await fetch(apiEndpoints.workspaceChannelDelete(channelId), {
+      const response = await fetch(`http://localhost:8002/api/workspace/channels/${channelId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -449,7 +448,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(apiEndpoints.workspaceSummarizeChannel(), {
+      const response = await fetch('http://localhost:8002/api/workspace/summarize-channel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

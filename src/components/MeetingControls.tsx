@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Video, Users, Plus, LogIn, ArrowRight, Copy, Check, Share2, QrCode, Link } from 'lucide-react';
-import { config } from '../lib/config';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -66,7 +65,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
 
   const copyMeetingLink = async () => {
     if (generatedRoom) {
-      const meetingLink = `${config.APP_URL}/meetings?room=${encodeURIComponent(generatedRoom)}`;
+      const meetingLink = `${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}`;
       try {
         await navigator.clipboard.writeText(meetingLink);
         setCopied(true);
@@ -84,10 +83,10 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
 I'd like to invite you to join my video meeting.
 
 Meeting Room: ${generatedRoom}
-Meeting Link: ${config.APP_URL}/meetings?room=${encodeURIComponent(generatedRoom)}
+Meeting Link: ${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}
 
 To join:
-1. Click the link above or go to ${config.APP_URL}/meetings
+1. Click the link above or go to ${window.location.origin}/meetings
 2. Click "Join Meeting"
 3. Enter the room name: ${generatedRoom}
 4. Enter your name and join!
@@ -98,7 +97,7 @@ See you there!`);
   };
 
   const shareViaSMS = () => {
-    const message = encodeURIComponent(`Join my video meeting! Room: ${generatedRoom} Link: ${config.APP_URL}/meetings?room=${encodeURIComponent(generatedRoom)}`);
+    const message = encodeURIComponent(`Join my video meeting! Room: ${generatedRoom} Link: ${window.location.origin}/meetings?room=${encodeURIComponent(generatedRoom)}`);
     window.open(`sms:?body=${message}`);
   };
 

@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiEndpoints } from '../lib/config';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
@@ -76,7 +75,7 @@ const AssistantPage: React.FC = () => {
     
     setIsCheckingGmail(true);
     try {
-      const response = await fetch(apiEndpoints.gmailStatus(user.id), {
+      const response = await fetch(`http://localhost:8001/api/gmail/status?userId=${user.id}`, {
         credentials: 'include'
       });
       
@@ -95,7 +94,7 @@ const AssistantPage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(apiEndpoints.gmailAuthUrl(user.id), {
+      const response = await fetch(`http://localhost:8001/api/gmail/auth-url?userId=${user.id}`, {
         credentials: 'include'
       });
       
@@ -114,7 +113,7 @@ const AssistantPage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(apiEndpoints.gmailDisconnect(), {
+      const response = await fetch('http://localhost:8001/api/gmail/disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -150,7 +149,7 @@ const AssistantPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const agentResponse = await fetch(apiEndpoints.aiChatAgent(), {
+      const agentResponse = await fetch('http://localhost:8001/api/chat/agent-process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -235,7 +234,7 @@ const AssistantPage: React.FC = () => {
     if (!user || selectedEmails.size === 0) return;
 
     try {
-      const response = await fetch(apiEndpoints.gmailDeleteEmails(), {
+      const response = await fetch('http://localhost:8001/api/gmail/delete-emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -293,7 +292,7 @@ const AssistantPage: React.FC = () => {
       setLoadingEmailBody(true);
       
       try {
-        const response = await fetch(apiEndpoints.gmailEmail(email.id, user?.id || ''), {
+        const response = await fetch(`http://localhost:8001/api/gmail/email/${email.id}?userId=${user?.id}`, {
           credentials: 'include'
         });
         
@@ -928,6 +927,20 @@ const AssistantPage: React.FC = () => {
                   >
                     Close
                   </Button>
+                  {/* <Button
+                    onClick={async () => {
+                      if (selectedEmailForModal) {
+                        setSelectedEmails(new Set([selectedEmailForModal.id]));
+                        await handleDeleteSelectedEmails();
+                        setShowEmailModal(false);
+                      }
+                    }}
+                    variant="secondary"
+                    className="bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2 text-red-400" />
+                    <span className="text-red-400">Delete Email</span>
+                  </Button> */}
                 </div>
               </GlassCard>
             </motion.div>
