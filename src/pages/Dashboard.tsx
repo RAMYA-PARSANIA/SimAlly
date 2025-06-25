@@ -97,14 +97,13 @@ const Dashboard: React.FC = () => {
             
             <div className="flex items-center space-x-4">
               <ThemeToggle />
-              <button className="glass-panel p-3 rounded-lg glass-panel-hover">
-                <Settings className="w-5 h-5 text-secondary" />
-              </button>
+              
               <button
                 onClick={handleLogout}
-                className="glass-panel p-3 rounded-lg glass-panel-hover"
+                className="flex glass-panel border-white p-2 rounded-lg glass-panel-hover space-x-2"
               >
-                <LogOut className="w-5 h-5 text-secondary" />
+                <LogOut className="w-5 h-6 text-primary" />
+                <span>Logout</span>
               </button>
             </div>
           </div>
