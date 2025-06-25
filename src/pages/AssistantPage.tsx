@@ -52,15 +52,6 @@ const AssistantPage: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (loading) {
-      return;
-    }
-
-    if (!user) {
-      navigate('/');
-      return;
-    }
-
     const urlParams = new URLSearchParams(location.search);
     if (urlParams.get('gmail_connected') === 'true') {
       setMessages(prev => [...prev, {
@@ -73,7 +64,7 @@ const AssistantPage: React.FC = () => {
     }
 
     checkGmailStatus();
-  }, [user, loading, navigate, location]);
+  }, [user, location]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

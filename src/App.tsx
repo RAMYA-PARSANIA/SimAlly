@@ -8,6 +8,7 @@ import AssistantPage from './pages/AssistantPage';
 import GameModePage from './pages/GameModePage';
 import MeetingPage from './pages/MeetingPage';
 import WorkspacePage from './pages/WorkspacePage';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
@@ -17,11 +18,31 @@ function App() {
           <div className="min-h-screen transition-colors duration-500 bg-primary">
             <Routes>
               <Route path="/" element={<LandingPage />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/assistant" element={<AssistantPage />} />
-              <Route path="/game-mode" element={<GameModePage />} />
-              <Route path="/meetings" element={<MeetingPage />} />
-              <Route path="/workspace" element={<WorkspacePage />} />
+              <Route path="/dashboard" element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/assistant" element={
+                <ProtectedRoute>
+                  <AssistantPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/game-mode" element={
+                <ProtectedRoute>
+                  <GameModePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/meetings" element={
+                <ProtectedRoute>
+                  <MeetingPage />
+                </ProtectedRoute>
+              } />
+              <Route path="/workspace" element={
+                <ProtectedRoute>
+                  <WorkspacePage />
+                </ProtectedRoute>
+              } />
             </Routes>
           </div>
         </Router>

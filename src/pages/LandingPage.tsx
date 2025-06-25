@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap } from 'lucide-react';
+import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthModal from '../components/AuthModal';
@@ -9,7 +9,7 @@ import Button from '../components/ui/Button';
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, signOut } = useAuth();
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'signin' | 'signup' }>({
     isOpen: false,
     mode: 'signin'
@@ -45,6 +45,11 @@ const LandingPage: React.FC = () => {
       setAuthModal({ isOpen: true, mode: 'signin' });
     }
   };
+  
+  const handleLogout = async () => {
+    await signOut();
+    // After logout, stay on the landing page
+  };
 
   return (
     <div className="min-h-screen bg-primary">
@@ -59,21 +64,42 @@ const LandingPage: React.FC = () => {
             
             <div className="flex items-center space-x-4">
               <ThemeToggle />
-              <Button
-                onClick={handleSignIn}
-                variant="secondary"
-                size="sm"
-              >
-                {isAuthenticated ? 'Dashboard' : 'Sign In'}
-              </Button>
-              {!isAuthenticated && (
-                <Button
-                  onClick={handleGetStarted}
-                  variant="premium"
-                  size="sm"
-                >
-                  Get Started
-                </Button>
+              {isAuthenticated ? (
+                <>
+                  <Button
+                    onClick={() => navigate('/dashboard')}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Dashboard
+                  </Button>
+                  <Button
+                    onClick={handleLogout}
+                    variant="secondary"
+                    size="sm"
+                    className="flex items-center space-x-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Logout</span>
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleSignIn}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Sign In
+                  </Button>
+                  <Button
+                    onClick={handleGetStarted}
+                    variant="premium"
+                    size="sm"
+                  >
+                    Get Started
+                  </Button>
+                </>
               )}
             </div>
           </div>

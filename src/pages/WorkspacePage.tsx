@@ -34,14 +34,11 @@ const WorkspacePage: React.FC = () => {
   });
 
   useEffect(() => {
-    if (!user) {
-      navigate('/');
-      return;
+    if (user) {
+      loadChannels();
+      loadTasks();
     }
-    
-    loadChannels();
-    loadTasks();
-  }, [user, navigate]);
+  }, [user]);
 
   useEffect(() => {
     if (activeChannel) {

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,13 +7,7 @@ import GlassCard from '../components/ui/GlassCard';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signOut, loading } = useAuth();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      navigate('/');
-    }
-  }, [user, loading, navigate]);
+  const { user, signOut } = useAuth();
 
   const features = [
     {
@@ -59,7 +53,7 @@ const Dashboard: React.FC = () => {
     navigate('/');
   };
 
-  if (loading) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
         <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
@@ -69,10 +63,6 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
     );
-  }
-
-  if (!user) {
-    return null;
   }
 
   return (
@@ -97,14 +87,14 @@ const Dashboard: React.FC = () => {
             
             <div className="flex items-center space-x-4">
               <ThemeToggle />
-              <button className="glass-panel p-3 rounded-lg glass-panel-hover">
+              {/* <button className="glass-panel p-3 rounded-lg glass-panel-hover">
                 <Settings className="w-5 h-5 text-secondary" />
-              </button>
+              </button> */}
               <button
                 onClick={handleLogout}
                 className="glass-panel p-3 rounded-lg glass-panel-hover"
               >
-                <LogOut className="w-5 h-5 text-secondary" />
+                <LogOut className="w-4 h-4 text-primary" />
               </button>
             </div>
           </div>
