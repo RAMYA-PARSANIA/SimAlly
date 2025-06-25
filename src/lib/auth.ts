@@ -59,6 +59,8 @@ class AuthService {
       setting_name: 'app.current_user_token',
       setting_value: token,
       is_local: true
+    }).catch(() => {
+      // Ignore errors for this context setting
     });
   }
 
@@ -67,6 +69,8 @@ class AuthService {
       setting_name: 'app.current_user_token',
       setting_value: '',
       is_local: true
+    }).catch(() => {
+      // Ignore errors for this context setting
     });
   }
 
@@ -87,18 +91,24 @@ class AuthService {
 
   async signUp(username: string, password: string, fullName: string): Promise<{ error?: string }> {
     try {
+      console.log('Attempting to register user:', username);
+      
       const { data, error } = await supabase.rpc('register_user', {
         p_username: username,
         p_password: password,
         p_full_name: fullName
       });
 
+      console.log('Registration response:', { data, error });
+
       if (error) {
+        console.error('Registration error:', error);
         return { error: error.message };
       }
 
-      if (!data.success) {
-        return { error: data.error };
+      if (!data || !data.success) {
+        console.error('Registration failed:', data);
+        return { error: data?.error || 'Registration failed' };
       }
 
       // Save session
@@ -108,9 +118,11 @@ class AuthService {
         user: data.user
       };
 
+      console.log('Registration successful, saving session:', session);
       this.saveSession(session);
       return {};
     } catch (error) {
+      console.error('Registration exception:', error);
       return { error: 'Registration failed. Please try again.' };
     }
   }
