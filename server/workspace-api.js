@@ -5,7 +5,7 @@ const WorkspaceProcessor = require('./workspace-processor');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.WORKSPACE_PORT || 8002;
+const PORT = process.env.WORKSPACE_PORT || 8000;
 VITE_APP_URL=process.env.VITE_APP_URL
 VITE_API_URL=process.env.VITE_API_URL
 VITE_AI_API_URL=process.env.VITE_AI_API_URL
