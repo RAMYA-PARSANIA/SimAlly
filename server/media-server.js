@@ -24,7 +24,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const PORT = process.env.MEDIA_PORT || 3001;
+const PORT = process.env.MEDIA_PORT || 8000;
 
 // Mediasoup configuration
 const mediaCodecs = [
