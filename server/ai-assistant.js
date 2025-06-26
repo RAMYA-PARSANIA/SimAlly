@@ -7,7 +7,7 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.AI_ASSISTANT_PORT || 8001;
+const PORT = process.env.AI_ASSISTANT_PORT || 8000;
 
 // Environment variables
 const VITE_APP_URL = process.env.VITE_APP_URL;
@@ -31,11 +31,11 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:4173',
+      VITE_API_URL,
+      VITE_AI_API_URL,
+      VITE_MEDIA_API_URL,
       'https://simally.vercel.app',
-      'https://simally-webapp.vercel.app',
+      VITE_WORKSPACE_API_URL,
       FRONTEND_URL,
       VITE_APP_URL
     ].filter(Boolean); // Remove any undefined values
