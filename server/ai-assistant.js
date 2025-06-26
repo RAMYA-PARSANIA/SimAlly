@@ -8,7 +8,7 @@ const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.AI_ASSISTANT_PORT || 8001;
+const PORT = process.env.AI_ASSISTANT_PORT || 8000;
 
 // Environment variables
 const VITE_APP_URL = process.env.VITE_APP_URL;
