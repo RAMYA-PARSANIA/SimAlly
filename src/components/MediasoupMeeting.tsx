@@ -791,7 +791,9 @@ See you there!`);
       el.srcObject = peer.videoStream;
       el.autoplay = true;
       el.playsInline = true;
-      el.play().catch(console.error);
+      el.onloadedmetadata = () => {
+        el.play().catch(console.error);
+      };
     }
   }, []);
 
@@ -802,7 +804,9 @@ See you there!`);
       el.srcObject = peer.audioStream;
       el.autoplay = true;
       el.playsInline = true;
-      el.play().catch(console.error);
+      el.onloadedmetadata = () => {
+        el.play().catch(console.error);
+      };
     }
   }, []);
 
@@ -815,7 +819,9 @@ See you there!`);
       el.muted = true;
       el.autoplay = true;
       el.playsInline = true;
-      el.play().catch(console.error);
+      el.onloadedmetadata = () => {
+        el.play().catch(console.error);
+      };
     }
   }, [localStream]);
 
