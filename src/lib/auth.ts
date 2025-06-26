@@ -18,6 +18,9 @@ class AuthService {
   private listeners: ((session: Session | null) => void)[] = [];
   private sessionKey: string | null = null;
   private sessionCheckInterval: number | null = null;
+  private activityTimeout: number | null = null;
+  private lastActivity: number = Date.now();
+  private inactivityThreshold: number = 30 * 60 * 1000; // 30 minutes in milliseconds
 
   constructor() {
     // Load session from localStorage on init
@@ -28,6 +31,8 @@ class AuthService {
     this.setupTabCloseDetection();
     // Set up session expiry check
     this.startSessionExpiryCheck();
+    // Set up activity tracking
+    this.setupActivityTracking();
   }
 
   private async initializeAISession() {
@@ -112,6 +117,8 @@ class AuthService {
           this.updateUserStatus('offline');
         } else {
           this.updateUserStatus('online');
+          // Reset inactivity timer when page becomes visible
+          this.resetInactivityTimer();
         }
       }
     });
@@ -131,6 +138,62 @@ class AuthService {
         }
       }
     }, 60000) as unknown as number;
+  }
+
+  private setupActivityTracking() {
+    // Track user activity
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    
+    activityEvents.forEach(event => {
+      document.addEventListener(event, () => this.resetInactivityTimer());
+    });
+    
+    // Initial setup of inactivity timer
+    this.resetInactivityTimer();
+  }
+
+  private resetInactivityTimer() {
+    // Update last activity time
+    this.lastActivity = Date.now();
+    
+    // Clear existing timeout
+    if (this.activityTimeout !== null) {
+      window.clearTimeout(this.activityTimeout);
+    }
+    
+    // Set new timeout
+    this.activityTimeout = window.setTimeout(() => {
+      this.handleInactivity();
+    }, this.inactivityThreshold) as unknown as number;
+    
+    // Update session activity in the database if we have a session
+    if (this.currentSession) {
+      this.updateSessionActivity();
+    }
+  }
+
+  private async updateSessionActivity() {
+    if (!this.currentSession) return;
+    
+    try {
+      await supabase.rpc('update_session_activity', {
+        p_token: this.currentSession.token
+      });
+    } catch (error) {
+      console.warn('Failed to update session activity:', error);
+    }
+  }
+
+  private handleInactivity() {
+    if (!this.currentSession) return;
+    
+    const inactiveTime = Date.now() - this.lastActivity;
+    
+    if (inactiveTime >= this.inactivityThreshold) {
+      console.log('User inactive for too long, logging out');
+      this.updateUserStatus('offline');
+      this.signOut();
+    }
   }
 
   private async updateUserStatus(status: 'online' | 'offline' | 'away' | 'busy') {
@@ -192,6 +255,9 @@ class AuthService {
       // Update user status to online
       this.updateUserStatus('online');
       
+      // Reset inactivity timer
+      this.resetInactivityTimer();
+      
       return {};
     } catch (error) {
       console.error('Registration exception:', error);
@@ -225,6 +291,9 @@ class AuthService {
       
       // Update user status to online
       this.updateUserStatus('online');
+      
+      // Reset inactivity timer
+      this.resetInactivityTimer();
       
       return {};
     } catch (error) {
@@ -282,6 +351,12 @@ class AuthService {
       this.sessionCheckInterval = null;
     }
     
+    // Clear activity timeout
+    if (this.activityTimeout) {
+      window.clearTimeout(this.activityTimeout);
+      this.activityTimeout = null;
+    }
+    
     this.clearSession();
   }
 
@@ -300,6 +375,9 @@ class AuthService {
 
       // Update user status to online
       this.updateUserStatus('online');
+      
+      // Reset inactivity timer
+      this.resetInactivityTimer();
       
       return true;
     } catch (error) {
@@ -322,6 +400,12 @@ class AuthService {
 
   isAuthenticated(): boolean {
     return !!this.currentSession;
+  }
+
+  // Set the inactivity threshold (in minutes)
+  setInactivityThreshold(minutes: number): void {
+    this.inactivityThreshold = minutes * 60 * 1000;
+    this.resetInactivityTimer();
   }
 }
 
