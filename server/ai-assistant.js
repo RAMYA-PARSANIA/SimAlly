@@ -11,12 +11,12 @@ const app = express();
 const PORT = process.env.AI_ASSISTANT_PORT || 8000;
 
 // Environment variables
-const VITE_APP_URL = process.env.VITE_APP_URL;
-const VITE_API_URL = process.env.VITE_API_URL;
-const VITE_AI_API_URL = process.env.VITE_AI_API_URL;
-const VITE_MEDIA_API_URL = process.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = process.env.VITE_WORKSPACE_API_URL;
-const FRONTEND_URL = process.env.FRONTEND_URL;
+VITE_APP_URL = process.env.VITE_APP_URL;
+VITE_API_URL = process.env.VITE_API_URL;
+VITE_AI_API_URL = process.env.VITE_AI_API_URL;
+VITE_MEDIA_API_URL = process.env.VITE_MEDIA_API_URL;
+VITE_WORKSPACE_API_URL = process.env.VITE_WORKSPACE_API_URL;
+FRONTEND_URL = process.env.FRONTEND_URL;
 
 // Initialize services
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -27,7 +27,7 @@ const supabase = createClient(
 
 // Middleware
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: `${FRONTEND_URL}`,
   credentials: true
 }));
 app.use(express.json());
