@@ -3,68 +3,26 @@ const http = require('http');
 const socketIo = require('socket.io');
 const mediasoup = require('mediasoup');
 const cors = require('cors');
-
-// Environment variables
-const VITE_APP_URL = process.env.VITE_APP_URL;
-const VITE_API_URL = process.env.VITE_API_URL;
-const VITE_AI_API_URL = process.env.VITE_AI_API_URL;
-const VITE_MEDIA_API_URL = process.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = process.env.VITE_WORKSPACE_API_URL;
-const FRONTEND_URL = process.env.FRONTEND_URL;
-
+VITE_APP_URL=process.env.VITE_APP_URL
+VITE_API_URL=process.env.VITE_API_URL
+VITE_AI_API_URL=process.env.VITE_AI_API_URL
+VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
+VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
+FRONTEND_URL=process.env.FRONTEND_URL
 const app = express();
 const server = http.createServer(app);
-
-// Enhanced CORS configuration for production
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      VITE_API_URL,
-      VITE_AI_API_URL,
-      VITE_MEDIA_API_URL,
-      'https://simally.vercel.app',
-      VITE_WORKSPACE_API_URL,
-      FRONTEND_URL,
-      VITE_APP_URL
-    ].filter(Boolean); // Remove any undefined values
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400 // 24 hours
-};
-
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Socket.io with CORS
 const io = socketIo(server, {
-  cors: corsOptions
+  cors: {
+    origin: `${FRONTEND_URL}`,
+    methods: ["GET", "POST"]
+  }
 });
 
-// Additional middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Add security headers
-app.use((req, res, next) => {
-  res.header('X-Content-Type-Options', 'nosniff');
-  res.header('X-Frame-Options', 'DENY');
-  res.header('X-XSS-Protection', '1; mode=block');
-  res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
-  next();
-});
+app.use(cors({
+  origin: `${FRONTEND_URL}`,
+  credentials: true
+}));
+app.use(express.json());
 
 const PORT = process.env.MEDIA_PORT || 8000;
 
@@ -215,7 +173,7 @@ class Room {
     return peersInfo;
   }
 
-  // NEW: Get all producers in the room
+  // Get all producers in the room
   getAllProducers() {
     const producers = [];
     this.peers.forEach((peer, peerId) => {
@@ -230,7 +188,7 @@ class Room {
     return producers;
   }
 
-  // NEW: Notify all peers about a new producer
+  // Notify all peers about a new producer
   notifyNewProducer(producerPeerId, producerId, kind) {
     this.peers.forEach((peer, peerId) => {
       if (peerId !== producerPeerId && peer.joined) {
@@ -391,7 +349,6 @@ io.on('connection', (socket) => {
 
         // Send existing producers to new peer
         const existingProducers = room.getAllProducers().filter(p => p.peerId !== socket.id);
-        // --- ADD DEBUG LOG ---
         console.log(`[SERVER] existingProducers for ${socket.id}:`, existingProducers);
         if (existingProducers.length > 0) {
           socket.emit('existingProducers', existingProducers);
@@ -431,7 +388,6 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // --- ADD DEBUG LOG ---
       console.log(`[SERVER] consume request: peer=${socket.id} producerId=${producerId}`);
 
       const consumer = await transport.consume({
@@ -453,18 +409,22 @@ io.on('connection', (socket) => {
         socket.emit('consumerClosed', { consumerId: consumer.id });
       });
 
-      // --- ADD DEBUG LOG ---
-      console.log(`[SERVER] sending consumed: consumerId=${consumer.id} producerId=${producerId} kind=${consumer.kind} to peer=${socket.id}`);
+      // Find the peer who owns this producer
+      let producerPeerId = null;
+      room.peers.forEach((p, pid) => {
+        if (p.producers.has(producerId)) {
+          producerPeerId = pid;
+        }
+      });
+
+      console.log(`[SERVER] sending consumed: consumerId=${consumer.id} producerId=${producerId} kind=${consumer.kind} to peer=${socket.id} from producer peer=${producerPeerId}`);
 
       socket.emit('consumed', {
         id: consumer.id,
         producerId: producerId,
         kind: consumer.kind,
         rtpParameters: consumer.rtpParameters,
-        // ADD peerId for mapping on client
-        peerId: Array.from(room.peers.entries()).find(([pid, p]) =>
-          p.producers.has(producerId)
-        )?.[0] || null
+        peerId: producerPeerId
       });
 
       console.log(`Consumer ${consumer.id} created for peer ${socket.id}`);
@@ -556,7 +516,6 @@ async function startServer() {
     server.listen(PORT, () => {
       console.log(`Mediasoup server running on http://localhost:${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/media/health`);
-      console.log(`CORS configured for: ${FRONTEND_URL}`);
     });
   } catch (error) {
     console.error('Failed to start mediasoup server:', error);
