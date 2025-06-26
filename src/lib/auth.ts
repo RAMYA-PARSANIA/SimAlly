@@ -17,12 +17,17 @@ class AuthService {
   private currentSession: Session | null = null;
   private listeners: ((session: Session | null) => void)[] = [];
   private sessionKey: string | null = null;
+  private sessionCheckInterval: number | null = null;
 
   constructor() {
     // Load session from localStorage on init
     this.loadSession();
     // Initialize AI session when auth service starts
     this.initializeAISession();
+    // Set up tab/window close detection
+    this.setupTabCloseDetection();
+    // Set up session expiry check
+    this.startSessionExpiryCheck();
   }
 
   private async initializeAISession() {
@@ -40,7 +45,8 @@ class AuthService {
         });
         
         if (!response.ok) {
-          throw new Error(`Failed to initialize AI session: ${response.status} ${response.statusText}`);
+          console.warn(`Failed to initialize AI session: ${response.status} ${response.statusText}`);
+          return;
         }
         
         const data = await response.json();
@@ -89,6 +95,57 @@ class AuthService {
     this.listeners.forEach(listener => listener(this.currentSession));
   }
 
+  private setupTabCloseDetection() {
+    // Listen for page unload events (tab close, refresh, etc.)
+    window.addEventListener('beforeunload', () => {
+      // We don't actually log out on tab close, just mark the user as offline
+      // This is because we want to keep the session active for when they return
+      if (this.currentSession) {
+        this.updateUserStatus('offline');
+      }
+    });
+
+    // Listen for page visibility changes
+    document.addEventListener('visibilitychange', () => {
+      if (this.currentSession) {
+        if (document.visibilityState === 'hidden') {
+          this.updateUserStatus('offline');
+        } else {
+          this.updateUserStatus('online');
+        }
+      }
+    });
+  }
+
+  private startSessionExpiryCheck() {
+    // Check session expiry every minute
+    this.sessionCheckInterval = window.setInterval(() => {
+      if (this.currentSession) {
+        const expiryTime = new Date(this.currentSession.expires_at).getTime();
+        const now = new Date().getTime();
+        
+        // If session is expired, clear it
+        if (now > expiryTime) {
+          console.log('Session expired, logging out');
+          this.signOut();
+        }
+      }
+    }, 60000) as unknown as number;
+  }
+
+  private async updateUserStatus(status: 'online' | 'offline' | 'away' | 'busy') {
+    if (!this.currentSession) return;
+    
+    try {
+      await supabase
+        .from('profiles')
+        .update({ status })
+        .eq('id', this.currentSession.user.id);
+    } catch (error) {
+      console.warn('Failed to update user status:', error);
+    }
+  }
+
   onAuthStateChange(callback: (session: Session | null) => void) {
     this.listeners.push(callback);
     // Immediately call with current session
@@ -131,6 +188,10 @@ class AuthService {
 
       console.log('Registration successful, saving session:', session);
       this.saveSession(session);
+      
+      // Update user status to online
+      this.updateUserStatus('online');
+      
       return {};
     } catch (error) {
       console.error('Registration exception:', error);
@@ -161,6 +222,10 @@ class AuthService {
       };
 
       this.saveSession(session);
+      
+      // Update user status to online
+      this.updateUserStatus('online');
+      
       return {};
     } catch (error) {
       return { error: 'Login failed. Please try again.' };
@@ -173,7 +238,7 @@ class AuthService {
         // Disconnect Gmail if connected
         if (this.currentSession.user?.id) {
           try {
-            await fetch(`${import.meta.env.VITE_AI_API_URL}/api/gmail/disconnect`, {
+            const response = await fetch(`${import.meta.env.VITE_AI_API_URL}/api/gmail/disconnect`, {
               method: 'POST',
               headers: { 
                 'Content-Type': 'application/json',
@@ -182,6 +247,21 @@ class AuthService {
               credentials: 'include',
               body: JSON.stringify({ userId: this.currentSession.user.id })
             });
+            
+            // Check if the response is ok
+            if (!response.ok) {
+              console.warn(`Failed to disconnect Gmail: ${response.status} ${response.statusText}`);
+              
+              // Try to parse the error message
+              try {
+                const errorData = await response.json();
+                console.warn('Disconnect Gmail error:', errorData);
+              } catch (e) {
+                // Ignore JSON parsing errors
+              }
+            } else {
+              console.log('Gmail disconnected successfully');
+            }
           } catch (error) {
             console.warn('Failed to disconnect Gmail on logout:', error);
           }
@@ -195,6 +275,13 @@ class AuthService {
         console.error('Logout error:', error);
       }
     }
+    
+    // Clear session interval
+    if (this.sessionCheckInterval) {
+      window.clearInterval(this.sessionCheckInterval);
+      this.sessionCheckInterval = null;
+    }
+    
     this.clearSession();
   }
 
@@ -211,6 +298,9 @@ class AuthService {
         return false;
       }
 
+      // Update user status to online
+      this.updateUserStatus('online');
+      
       return true;
     } catch (error) {
       this.clearSession();

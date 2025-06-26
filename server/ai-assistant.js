@@ -7,7 +7,7 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.AI_ASSISTANT_PORT || 8000;
+const PORT = process.env.AI_ASSISTANT_PORT || 8001;
 
 // Environment variables
 const VITE_APP_URL = process.env.VITE_APP_URL;
@@ -31,11 +31,11 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     const allowedOrigins = [
-      VITE_API_URL,
-      VITE_AI_API_URL,
-      VITE_MEDIA_API_URL,
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:4173',
       'https://simally.vercel.app',
-      VITE_WORKSPACE_API_URL,
+      'https://simally-webapp.vercel.app',
       FRONTEND_URL,
       VITE_APP_URL
     ].filter(Boolean); // Remove any undefined values
@@ -759,11 +759,27 @@ async function executeGmailDisconnect(userId) {
     const result = await supabase.rpc('revoke_gmail_tokens', { p_user_id: userId });
     
     if (result.error) {
-      return { success: false, error: result.error.message };
+      console.error('Error revoking Gmail tokens:', result.error);
+      
+      // Fallback to direct deletion if RPC fails
+      const { error: deleteError } = await supabase
+        .from('gmail_tokens')
+        .delete()
+        .eq('user_id', userId);
+        
+      if (deleteError) {
+        return { success: false, error: deleteError.message };
+      }
     }
 
-    return { success: true };
+    // Remove session data for this user
+    if (userSessions.has(userId)) {
+      userSessions.delete(userId);
+    }
+
+    return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
+    console.error('Error disconnecting Gmail:', error);
     return { success: false, error: error.message };
   }
 }
@@ -1899,7 +1915,12 @@ app.post('/api/gmail/disconnect', async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID is required' });
     }
 
+    console.log(`Disconnecting Gmail for user ${userId}`);
     const result = await executeGmailDisconnect(userId);
+    
+    // Log the result for debugging
+    console.log('Gmail disconnection result:', result);
+    
     res.json(result);
   } catch (error) {
     console.error('Error disconnecting Gmail:', error);
