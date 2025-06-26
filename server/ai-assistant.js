@@ -8,7 +8,7 @@ const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.AI_ASSISTANT_PORT || 8000;
+const PORT = process.env.AI_ASSISTANT_PORT || 8001;
 
 // Environment variables
 const VITE_APP_URL = process.env.VITE_APP_URL;
@@ -34,7 +34,7 @@ const oauth2Client = new OAuth2Client(
   process.env.GMAIL_REDIRECT_URI
 );
 
-// Store active AI sessions with enhanced security
+// Store active AI sessions
 const activeSessions = new Map();
 
 // Enhanced CORS configuration for production
@@ -178,7 +178,7 @@ const WEBAPP_ENDPOINTS = {
     implementation: 'executeGmailExtractTasks'
   },
   gmail_promotions: {
-    endpoint: '/api/gmail/emails',
+    endpoint: '/api/gmail/promotions',
     method: 'GET',
     description: 'Get promotional and marketing emails with unsubscribe links',
     parameters: ['userId', 'maxResults?'],
@@ -393,7 +393,7 @@ const WEBAPP_ENDPOINTS = {
   }
 };
 
-// Initialize AI session with enhanced security
+// Initialize AI session
 app.post('/api/init-session', async (req, res) => {
   try {
     const { userId } = req.body;
@@ -408,15 +408,12 @@ app.post('/api/init-session', async (req, res) => {
     // Generate a secure session ID
     const sessionId = crypto.randomBytes(32).toString('hex');
     
-    // Store session with timestamp and security measures
+    // Store session with timestamp
     activeSessions.set(sessionId, {
       userId,
       createdAt: new Date(),
       lastActivity: new Date(),
-      history: [],
-      securityLevel: 'enhanced',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
+      history: []
     });
     
     console.log(`AI session initialized for user: ${userId} with enhanced security`);
@@ -446,20 +443,17 @@ app.post('/api/chat/general', async (req, res) => {
       });
     }
     
-    // Get or create session with security validation
+    // Get or create session
     let sessionId = req.headers['x-session-id'];
     let session = sessionId ? activeSessions.get(sessionId) : null;
     
-    if (!session || session.userId !== userId) {
+    if (!session) {
       sessionId = crypto.randomBytes(32).toString('hex');
       session = {
         userId,
         createdAt: new Date(),
         lastActivity: new Date(),
-        history: [],
-        securityLevel: 'enhanced',
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
+        history: []
       };
       activeSessions.set(sessionId, session);
     }
@@ -474,7 +468,7 @@ app.post('/api/chat/general', async (req, res) => {
     });
     
     // Generate AI response
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const chat = model.startChat({
       history: session.history
     });
@@ -556,9 +550,7 @@ INSTRUCTIONS:
    - Use the provided userId: "${userId}" when needed
    - For optional parameters, only include if mentioned or relevant
    - Be smart about parameter extraction (e.g., extract email addresses, task titles, etc.)
-   - For promotional/marketing emails, use the gmail_promotions endpoint
-   - For unread emails specifically, use gmail_unread endpoint
-   - For general email viewing, use gmail_get_emails endpoint
+   - For promotional/marketing emails, use the gmail_promotions endpoint. If the user wants to unsubscribe, include the unsubscribeUrl in the response if available.
 
 4. For general chat:
    - Answer questions about any topic (weather, cooking, science, etc.)
@@ -811,7 +803,7 @@ app.get('/api/gmail/auth-url', (req, res) => {
   }
 });
 
-// Gmail auth callback with enhanced security
+// Gmail auth callback
 app.get('/auth/gmail/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
@@ -832,11 +824,11 @@ app.get('/auth/gmail/callback', async (req, res) => {
     console.log('Received tokens from Google:', {
       hasAccessToken: !!tokens.access_token,
       hasRefreshToken: !!tokens.refresh_token,
-      expiresIn: tokens.expiry_date,
+      expiresIn: tokens.expires_in,
       expiryDate: tokens.expiry_date
     });
     
-    // Store tokens in database with enhanced security
+    // Store tokens in database using the new function
     const sessionToken = crypto.randomBytes(32).toString('hex');
     
     const { data, error } = await supabase.rpc('store_encrypted_gmail_tokens_with_fallback', {
@@ -844,13 +836,18 @@ app.get('/auth/gmail/callback', async (req, res) => {
       p_session_token: sessionToken,
       p_access_token: tokens.access_token,
       p_refresh_token: tokens.refresh_token || null,
-      p_token_type: tokens.token_type,
+      p_token_type: tokens.token_type || 'Bearer',
       p_expires_at: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
       p_scope: tokens.scope
     });
     
     if (error) {
       console.error('Error storing Gmail tokens:', error);
+      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
+    }
+    
+    if (!data.success) {
+      console.error('Failed to store Gmail tokens:', data.error);
       return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
     }
     
@@ -864,7 +861,7 @@ app.get('/auth/gmail/callback', async (req, res) => {
   }
 });
 
-// Gmail status endpoint with enhanced security
+// Gmail status endpoint
 app.get('/api/gmail/status', async (req, res) => {
   try {
     const { userId } = req.query;
@@ -892,7 +889,7 @@ app.get('/api/gmail/status', async (req, res) => {
     // Generate a session token for decryption
     const sessionToken = crypto.randomBytes(32).toString('hex');
     
-    // Get tokens with fallback
+    // Get tokens
     const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
       p_user_id: userId,
       p_session_token: sessionToken
@@ -1259,7 +1256,7 @@ app.post('/api/meetings/auto-notes', async (req, res) => {
     }
     
     // Generate notes
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `
       Extract key points, action items, or decisions from this meeting transcript segment:
       
@@ -1298,7 +1295,7 @@ app.post('/api/meetings/summary', async (req, res) => {
     }
     
     // Generate summary
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `
       Generate a comprehensive summary of this meeting transcript:
       
@@ -1349,7 +1346,7 @@ async function executeGmailStatus(userId) {
     // Generate a session token for decryption
     const sessionToken = crypto.randomBytes(32).toString('hex');
     
-    // Get tokens with fallback
+    // Get tokens
     const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
       p_user_id: userId,
       p_session_token: sessionToken
@@ -1359,23 +1356,35 @@ async function executeGmailStatus(userId) {
       return { success: true, connected: false };
     }
     
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
+    
+    // Get Gmail profile to verify connection
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const profile = await gmail.users.getProfile({ userId: 'me' });
     
-    return { 
-      success: true, 
-      connected: true, 
+    // Get unread count
+    const unreadResponse = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'is:unread',
+      maxResults: 1
+    });
+    
+    const unreadCount = unreadResponse.data.resultSizeEstimate || 0;
+    
+    return {
+      success: true,
+      connected: true,
       email: profile.data.emailAddress,
-      unreadCount: profile.data.messagesTotal 
+      unreadCount
     };
   } catch (error) {
+    console.error('Error checking Gmail status:', error);
     return { success: true, connected: false };
   }
 }
@@ -1386,7 +1395,7 @@ async function executeGmailConnect(userId) {
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify'
     ];
-
+    
     const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
     
     const authUrl = oauth2Client.generateAuthUrl({
@@ -1395,7 +1404,7 @@ async function executeGmailConnect(userId) {
       state,
       prompt: 'consent'
     });
-
+    
     return { success: true, authUrl };
   } catch (error) {
     return { success: false, error: error.message };
@@ -1404,21 +1413,21 @@ async function executeGmailConnect(userId) {
 
 async function executeGmailDisconnect(userId) {
   try {
-    const { error } = await supabase.rpc('revoke_gmail_tokens', {
+    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
       p_user_id: userId
     });
-
+    
     if (error) {
       return { success: false, error: error.message };
     }
-
-    return { success: true };
+    
+    return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
     return { success: false, error: error.message };
   }
 }
 
-async function executeGmailGetEmails(userId, query = '', maxResults = 20) {
+async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   try {
     // Generate a session token for decryption
     const sessionToken = crypto.randomBytes(32).toString('hex');
@@ -1432,52 +1441,55 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 20) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
+    // Get emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: parseInt(maxResults)
     });
-
+    
     const messages = response.data.messages || [];
     const emails = [];
-
-    for (const message of messages.slice(0, maxResults)) {
+    
+    // Get email details
+    for (const message of messages) {
       const emailData = await gmail.users.messages.get({
         userId: 'me',
         id: message.id,
         format: 'metadata',
         metadataHeaders: ['From', 'Subject', 'Date']
       });
-
+      
       const headers = emailData.data.payload.headers;
-      const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
-      const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+      const from = headers.find(h => h.name === 'From')?.value || '';
+      const subject = headers.find(h => h.name === 'Subject')?.value || '';
       const date = headers.find(h => h.name === 'Date')?.value || '';
-
+      
       emails.push({
         id: message.id,
+        threadId: message.threadId,
         from,
         subject,
         date,
-        snippet: emailData.data.snippet || '',
-        isUnread: emailData.data.labelIds?.includes('UNREAD') || false
+        snippet: emailData.data.snippet,
+        isUnread: emailData.data.labelIds.includes('UNREAD')
       });
     }
-
-    return { success: true, emails, totalCount: emails.length };
+    
+    return { success: true, emails };
   } catch (error) {
-    console.error('Error fetching emails:', error);
-    return { success: false, error: 'Failed to fetch emails' };
+    console.error('Error getting emails:', error);
+    return { success: false, error: 'Failed to get emails' };
   }
 }
 
@@ -1508,56 +1520,83 @@ async function executeGmailGetEmail(userId, emailId) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
-    const emailData = await gmail.users.messages.get({
+    // Get email
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const response = await gmail.users.messages.get({
       userId: 'me',
       id: emailId,
       format: 'full'
     });
-
-    const headers = emailData.data.payload.headers;
-    const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
-    const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+    
+    const headers = response.data.payload.headers;
+    const from = headers.find(h => h.name === 'From')?.value || '';
+    const subject = headers.find(h => h.name === 'Subject')?.value || '';
     const date = headers.find(h => h.name === 'Date')?.value || '';
-
+    
     // Extract body
     let body = '';
-    if (emailData.data.payload.body.data) {
-      body = Buffer.from(emailData.data.payload.body.data, 'base64').toString();
-    } else if (emailData.data.payload.parts) {
-      for (const part of emailData.data.payload.parts) {
-        if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
-          if (part.body.data) {
-            body = Buffer.from(part.body.data, 'base64').toString();
-            break;
-          }
+    
+    if (response.data.payload.parts) {
+      // Multipart message
+      for (const part of response.data.payload.parts) {
+        if (part.mimeType === 'text/html') {
+          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+          break;
+        } else if (part.mimeType === 'text/plain' && !body) {
+          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
         }
       }
+    } else if (response.data.payload.body.data) {
+      // Simple message
+      body = Buffer.from(response.data.payload.body.data, 'base64').toString('utf-8');
     }
-
+    
+    // Check for unsubscribe link
+    const unsubscribeHeader = headers.find(h => h.name.toLowerCase() === 'list-unsubscribe')?.value;
+    let unsubscribeUrl = null;
+    
+    if (unsubscribeHeader) {
+      const match = unsubscribeHeader.match(/<(https?:\/\/[^>]+)>/);
+      if (match) {
+        unsubscribeUrl = match[1];
+      }
+    }
+    
+    // If no unsubscribe header, try to find one in the body
+    if (!unsubscribeUrl && body) {
+      const unsubscribeRegex = /href=["'](https?:\/\/[^"']+unsubscribe[^"']+)["']/i;
+      const match = body.match(unsubscribeRegex);
+      if (match) {
+        unsubscribeUrl = match[1];
+      }
+    }
+    
     return {
       success: true,
       email: {
         id: emailId,
+        threadId: response.data.threadId,
         from,
         subject,
         date,
+        snippet: response.data.snippet,
+        isUnread: response.data.labelIds.includes('UNREAD'),
         body,
-        snippet: emailData.data.snippet || ''
+        unsubscribeUrl
       }
     };
   } catch (error) {
-    console.error('Error fetching email:', error);
-    return { success: false, error: 'Failed to fetch email' };
+    console.error('Error getting email:', error);
+    return { success: false, error: 'Failed to get email' };
   }
 }
 
@@ -1575,32 +1614,34 @@ async function executeGmailDeleteEmails(userId, messageIds) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
+    
+    // Delete emails
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     let deleted = 0;
     let failed = 0;
-
+    
     for (const messageId of messageIds) {
       try {
-        await gmail.users.messages.delete({
+        await gmail.users.messages.trash({
           userId: 'me',
           id: messageId
         });
         deleted++;
       } catch (error) {
-        console.error(`Failed to delete message ${messageId}:`, error);
+        console.error(`Error deleting email ${messageId}:`, error);
         failed++;
       }
     }
-
+    
     return { success: true, deleted, failed };
   } catch (error) {
     console.error('Error deleting emails:', error);
@@ -1622,14 +1663,15 @@ async function executeGmailSummarize(userId, messageIds) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
+    
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     const emails = [];
@@ -1687,14 +1729,15 @@ async function executeGmailExtractTasks(userId, messageIds) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       token_type: data.token_type,
       expiry_date: new Date(data.expires_at).getTime()
     });
-
+    
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     const emails = [];
@@ -1811,7 +1854,8 @@ async function executeGmailPromotions(userId, maxResults = 20) {
     if (error || !data.success) {
       return { success: false, error: 'Gmail not connected' };
     }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials({
       access_token: data.access_token,
       refresh_token: data.refresh_token,
@@ -1862,6 +1906,7 @@ async function executeGmailPromotions(userId, maxResults = 20) {
         unsubscribeUrl
       });
     }
+    
     return { success: true, emails, totalCount: emails.length };
   } catch (error) {
     console.error('Error fetching promotional emails:', error);
@@ -2384,7 +2429,7 @@ async function executeGeneralQuery(message) {
   }
 }
 
-// Session cleanup job with enhanced security
+// Session cleanup job
 function cleanupInactiveSessions() {
   const now = new Date();
   const inactiveThreshold = 30 * 60 * 1000; // 30 minutes in milliseconds
@@ -2394,7 +2439,7 @@ function cleanupInactiveSessions() {
     const inactiveDuration = now - lastActivity;
     
     if (inactiveDuration > inactiveThreshold) {
-      console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId} (security level: ${session.securityLevel})`);
+      console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId}`);
       activeSessions.delete(sessionId);
     }
   }
@@ -2408,9 +2453,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     activeSessions: activeSessions.size,
-    availableEndpoints: Object.keys(WEBAPP_ENDPOINTS).length,
-    framework: 'Express.js',
-    securityLevel: 'enhanced'
+    framework: 'Express.js'
   });
 });
 
@@ -2418,18 +2461,15 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'SimAlly AI Assistant API',
-    framework: 'Express.js',
-    availableEndpoints: Object.keys(WEBAPP_ENDPOINTS).length,
-    securityLevel: 'enhanced'
+    framework: 'Express.js'
   });
 });
 
 app.listen(PORT, () => {
   console.log(`AI Assistant server running on http://localhost:${PORT}`);
-  console.log(`Enhanced with ${Object.keys(WEBAPP_ENDPOINTS).length} available endpoints`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`CORS configured for: ${FRONTEND_URL}`);
-  console.log('Security level: Enhanced with session management and token encryption');
+  console.log(`Enhanced with ${Object.keys(WEBAPP_ENDPOINTS).length} available endpoints`);
 });
 
 module.exports = app;
