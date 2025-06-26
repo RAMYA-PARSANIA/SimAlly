@@ -990,20 +990,20 @@ See you there!`);
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3, delay: index * 0.1 }}
               >
+                {/* Remote Video */}
                 {peer.hasVideo && peer.videoStream && (
-                  <video
-                    ref={setVideoRef(peer)}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
+                  <>
+                    {/*
+                      Use a ref and useEffect to always update srcObject when peer.videoStream changes
+                    */}
+                    <RemoteVideo peer={peer} />
+                  </>
                 )}
+                {/* Remote Audio */}
                 {peer.hasAudio && peer.audioStream && (
-                  <audio
-                    ref={setAudioRef(peer)}
-                    autoPlay
-                    playsInline
-                  />
+                  <>
+                    <RemoteAudio peer={peer} />
+                  </>
                 )}
                 {!peer.hasVideo && (
                   <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
@@ -1323,5 +1323,48 @@ See you there!`);
     </div>
   );
 };
+
+function RemoteVideo({ peer }: { peer: Peer }) {
+  const ref = React.useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current && peer.videoStream) {
+      ref.current.srcObject = peer.videoStream;
+      ref.current.autoplay = true;
+      ref.current.playsInline = true;
+      ref.current.onloadedmetadata = () => {
+        ref.current?.play().catch(() => {});
+      };
+    }
+  }, [peer.videoStream]);
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      className="w-full h-full object-cover"
+    />
+  );
+}
+
+function RemoteAudio({ peer }: { peer: Peer }) {
+  const ref = React.useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (ref.current && peer.audioStream) {
+      ref.current.srcObject = peer.audioStream;
+      ref.current.autoplay = true;
+      ref.current.playsInline = true;
+      ref.current.onloadedmetadata = () => {
+        ref.current?.play().catch(() => {});
+      };
+    }
+  }, [peer.audioStream]);
+  return (
+    <audio
+      ref={ref}
+      autoPlay
+      playsInline
+    />
+  );
+}
 
 export default MediasoupMeeting;
