@@ -54,7 +54,6 @@ class AuthService {
         const session = JSON.parse(sessionData);
         if (new Date(session.expires_at) > new Date()) {
           this.currentSession = session;
-          this.setSupabaseContext(session.token);
           this.initializeAISession(); // Initialize AI session for existing session
         } else {
           localStorage.removeItem('simally_session');
@@ -68,7 +67,6 @@ class AuthService {
   private saveSession(session: Session) {
     this.currentSession = session;
     localStorage.setItem('simally_session', JSON.stringify(session));
-    this.setSupabaseContext(session.token);
     this.initializeAISession(); // Initialize AI session for new session
     this.notifyListeners();
   }
@@ -77,35 +75,7 @@ class AuthService {
     this.currentSession = null;
     this.sessionKey = null;
     localStorage.removeItem('simally_session');
-    this.clearSupabaseContext();
     this.notifyListeners();
-  }
-
-  private async setSupabaseContext(token: string) {
-    try {
-      // Set the token in Supabase context for RLS
-      await supabase.rpc('set_config', {
-        setting_name: 'app.current_user_token',
-        setting_value: token,
-        is_local: true
-      });
-    } catch (error) {
-      // Ignore errors for this context setting as it's not critical
-      console.warn('Failed to set Supabase context:', error);
-    }
-  }
-
-  private async clearSupabaseContext() {
-    try {
-      await supabase.rpc('set_config', {
-        setting_name: 'app.current_user_token',
-        setting_value: '',
-        is_local: true
-      });
-    } catch (error) {
-      // Ignore errors for this context setting as it's not critical
-      console.warn('Failed to clear Supabase context:', error);
-    }
   }
 
   private notifyListeners() {
