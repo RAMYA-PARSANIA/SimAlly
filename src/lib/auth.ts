@@ -31,10 +31,17 @@ class AuthService {
         // Initialize secure session with AI assistant
         const response = await fetch(`${import.meta.env.VITE_AI_API_URL}/api/init-session`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Origin': window.location.origin
+          },
           credentials: 'include',
           body: JSON.stringify({ userId: this.currentSession.user.id })
         });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to initialize AI session: ${response.status} ${response.statusText}`);
+        }
         
         const data = await response.json();
         if (data.success) {
@@ -168,7 +175,10 @@ class AuthService {
           try {
             await fetch(`${import.meta.env.VITE_AI_API_URL}/api/gmail/disconnect`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'Origin': window.location.origin
+              },
               credentials: 'include',
               body: JSON.stringify({ userId: this.currentSession.user.id })
             });

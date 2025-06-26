@@ -13,6 +13,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       eventsPerSecond: 10,
     },
   },
+  global: {
+    headers: {
+      'X-Client-Info': 'simally-webapp',
+      'Origin': window.location.origin
+    },
+  },
 });
 
 // Types for our custom auth system

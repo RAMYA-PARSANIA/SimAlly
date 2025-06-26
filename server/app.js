@@ -6,19 +6,62 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-VITE_APP_URL=process.env.VITE_APP_URL
-VITE_API_URL=process.env.VITE_API_URL
-VITE_AI_API_URL=process.env.VITE_AI_API_URL
-VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
-VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
-FRONTEND_URL=process.env.FRONTEND_URL
+// Environment variables
+const VITE_APP_URL = process.env.VITE_APP_URL;
+const VITE_API_URL = process.env.VITE_API_URL;
+const VITE_AI_API_URL = process.env.VITE_AI_API_URL;
+const VITE_MEDIA_API_URL = process.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = process.env.VITE_WORKSPACE_API_URL;
+const FRONTEND_URL = process.env.FRONTEND_URL;
 
-// Middleware
-app.use(cors({
-  origin: `${FRONTEND_URL}`,
-  credentials: true
-}));
-app.use(express.json());
+// Enhanced CORS configuration for production
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:4173',
+      'https://simally.vercel.app',
+      'https://simally-webapp.vercel.app',
+      FRONTEND_URL,
+      VITE_APP_URL
+    ].filter(Boolean); // Remove any undefined values
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400 // 24 hours
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+
+// Additional middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Add security headers
+app.use((req, res, next) => {
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  res.header('X-XSS-Protection', '1; mode=block');
+  res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 // Store active conversations per user session
 const activeConversations = new Map();
@@ -236,4 +279,5 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
