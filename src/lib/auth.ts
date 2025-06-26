@@ -1,4 +1,4 @@
-// Custom authentication service for username/password login
+// Custom authentication service for username/password login with enhanced security
 import { supabase } from './supabase';
 
 export interface User {
@@ -16,10 +16,35 @@ export interface Session {
 class AuthService {
   private currentSession: Session | null = null;
   private listeners: ((session: Session | null) => void)[] = [];
+  private sessionKey: string | null = null;
 
   constructor() {
     // Load session from localStorage on init
     this.loadSession();
+    // Initialize AI session when auth service starts
+    this.initializeAISession();
+  }
+
+  private async initializeAISession() {
+    if (this.currentSession?.user?.id) {
+      try {
+        // Initialize secure session with AI assistant
+        const response = await fetch(`${import.meta.env.VITE_AI_API_URL}/api/init-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: this.currentSession.user.id })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+          this.sessionKey = data.sessionId;
+          console.log('AI session initialized securely');
+        }
+      } catch (error) {
+        console.warn('Failed to initialize AI session:', error);
+      }
+    }
   }
 
   private loadSession() {
@@ -30,6 +55,7 @@ class AuthService {
         if (new Date(session.expires_at) > new Date()) {
           this.currentSession = session;
           this.setSupabaseContext(session.token);
+          this.initializeAISession(); // Initialize AI session for existing session
         } else {
           localStorage.removeItem('simally_session');
         }
@@ -43,11 +69,13 @@ class AuthService {
     this.currentSession = session;
     localStorage.setItem('simally_session', JSON.stringify(session));
     this.setSupabaseContext(session.token);
+    this.initializeAISession(); // Initialize AI session for new session
     this.notifyListeners();
   }
 
   private clearSession() {
     this.currentSession = null;
+    this.sessionKey = null;
     localStorage.removeItem('simally_session');
     this.clearSupabaseContext();
     this.notifyListeners();
@@ -165,6 +193,21 @@ class AuthService {
   async signOut(): Promise<void> {
     if (this.currentSession) {
       try {
+        // Disconnect Gmail if connected
+        if (this.currentSession.user?.id) {
+          try {
+            await fetch(`${import.meta.env.VITE_AI_API_URL}/api/gmail/disconnect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ userId: this.currentSession.user.id })
+            });
+          } catch (error) {
+            console.warn('Failed to disconnect Gmail on logout:', error);
+          }
+        }
+
+        // Logout from main session
         await supabase.rpc('logout_user', {
           p_token: this.currentSession.token
         });
@@ -201,6 +244,10 @@ class AuthService {
 
   getCurrentUser(): User | null {
     return this.currentSession?.user || null;
+  }
+
+  getSessionKey(): string | null {
+    return this.sessionKey;
   }
 
   isAuthenticated(): boolean {

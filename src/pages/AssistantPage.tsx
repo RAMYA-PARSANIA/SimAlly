@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare, Shield } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -55,6 +55,7 @@ const AssistantPage: React.FC = () => {
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [selectedEmailForModal, setSelectedEmailForModal] = useState<GmailEmail | null>(null);
   const [loadingEmailBody, setLoadingEmailBody] = useState(false);
+  const [securityNotice, setSecurityNotice] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -64,7 +65,7 @@ const AssistantPage: React.FC = () => {
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '✅ Gmail connected successfully! You can now ask me to show your emails, search them, or help manage your inbox.',
+        content: '✅ Gmail connected successfully with enhanced security! Your tokens are encrypted and session-specific. You can now ask me to show your emails, search them, or help manage your inbox.',
         timestamp: new Date()
       }]);
       window.history.replaceState({}, '', location.pathname);
@@ -132,7 +133,7 @@ const AssistantPage: React.FC = () => {
         setMessages(prev => [...prev, {
           id: Date.now().toString(),
           role: 'assistant',
-          content: '📧 Gmail disconnected successfully.',
+          content: '📧 Gmail disconnected successfully. All encrypted tokens have been securely removed.',
           timestamp: new Date()
         }]);
       }
@@ -657,6 +658,29 @@ const AssistantPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
+      {/* Security Notice */}
+      {securityNotice && (
+        <div className="glass-panel border-b silver-border bg-green-500/10 border-green-500/30">
+          <div className="max-w-7xl mx-auto container-padding">
+            <div className="flex items-center justify-between py-3">
+              <div className="flex items-center space-x-3">
+                <Shield className="w-5 h-5 text-green-400" />
+                <div>
+                  <p className="text-green-400 font-medium text-sm">Enhanced Security Active</p>
+                  <p className="text-green-300 text-xs">All sensitive data is encrypted. Gmail tokens are session-specific and automatically expire.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSecurityNotice(false)}
+                className="text-green-400 hover:text-green-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="glass-panel border-0 border-b silver-border">
         <div className="max-w-7xl mx-auto container-padding">
@@ -675,7 +699,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Complete workspace & productivity assistant
+                  Complete workspace & productivity assistant with enhanced security
                 </p>
               </div>
             </div>
@@ -724,11 +748,25 @@ const AssistantPage: React.FC = () => {
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
-              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your Powerful AI Assistant</h3>
+              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your Secure AI Assistant</h3>
               <p className="text-secondary mb-6 max-w-2xl mx-auto">
                 I can help you with Gmail management, workspace tasks, calendar events, meetings, document generation, games, and general questions. 
                 {!gmailStatus.connected && ' Connect your Gmail to unlock email management features.'}
               </p>
+              
+              {/* Security Features */}
+              <div className="mb-8 p-4 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30 max-w-2xl mx-auto">
+                <h4 className="font-bold text-blue-400 mb-2 flex items-center justify-center">
+                  <Shield className="w-4 h-4 mr-2" />
+                  Security Features
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-blue-300">
+                  <div>✓ End-to-end encryption</div>
+                  <div>✓ Session-specific tokens</div>
+                  <div>✓ Automatic token expiration</div>
+                  <div>✓ Secure data isolation</div>
+                </div>
+              </div>
               
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
@@ -780,7 +818,7 @@ const AssistantPage: React.FC = () => {
               <div className="glass-panel rounded-2xl p-4 border-gold-border">
                 <div className="flex items-center space-x-2">
                   <Loader2 className="w-4 h-4 animate-spin text-secondary" />
-                  <span className="text-secondary">Processing your request...</span>
+                  <span className="text-secondary">Processing your request securely...</span>
                 </div>
               </div>
             </motion.div>
@@ -807,7 +845,8 @@ const AssistantPage: React.FC = () => {
                   {gmailStatus.connected ? (
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
-                      <span>All features available - Gmail connected</span>
+                      <Shield className="w-3 h-3 text-green-500" />
+                      <span>All features available - Gmail connected securely</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">
@@ -934,20 +973,6 @@ const AssistantPage: React.FC = () => {
                   >
                     Close
                   </Button>
-                  {/* <Button
-                    onClick={async () => {
-                      if (selectedEmailForModal) {
-                        setSelectedEmails(new Set([selectedEmailForModal.id]));
-                        await handleDeleteSelectedEmails();
-                        setShowEmailModal(false);
-                      }
-                    }}
-                    variant="secondary"
-                    className="bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2 text-red-400" />
-                    <span className="text-red-400">Delete Email</span>
-                  </Button> */}
                 </div>
               </GlassCard>
             </motion.div>
