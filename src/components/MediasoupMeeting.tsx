@@ -96,7 +96,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     console.log('[CLIENT] Initializing Mediasoup meeting...');
     setConnectionStatus('Connecting to server...');
     
-    socketRef.current = io(`${VITE_MEDIA_API_URL}`, {
+    // Fix: Use correct port for media server (3001 for mediasoup)
+    const mediaServerUrl = 'http://localhost:3001';
+    console.log('[CLIENT] Connecting to media server:', mediaServerUrl);
+    
+    socketRef.current = io(mediaServerUrl, {
       transports: ['websocket', 'polling']
     });
     
@@ -106,15 +110,20 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       joinRoom();
     });
 
-    socketRef.current.on('disconnect', () => {
-      console.log('[CLIENT] Disconnected from mediasoup server');
+    // Add detailed WebSocket error logging
+    socketRef.current.on("connect_error", (error: any) => {
+      console.error("[CLIENT] WebSocket connection error:", error);
+      setConnectionStatus('Connection failed');
+    });
+
+    socketRef.current.on("disconnect", (reason: any) => {
+      console.warn("[CLIENT] WebSocket disconnected. Reason:", reason);
       setConnectionStatus('Disconnected');
       setIsConnected(false);
     });
 
-    socketRef.current.on('connect_error', (error: any) => {
-      console.error('[CLIENT] Connection error:', error);
-      setConnectionStatus('Connection failed');
+    socketRef.current.on("error", (error: any) => {
+      console.error("[CLIENT] WebSocket error:", error);
     });
 
     // Socket event handlers
@@ -133,6 +142,11 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     socketRef.current.on('consumerClosed', handleConsumerClosed);
     socketRef.current.on('cannotConsume', handleCannotConsume);
     socketRef.current.on('error', handleError);
+
+    // Add a catch-all socket event logger
+    socketRef.current.onAny((event: any, ...args: any[]) => {
+      console.debug(`[CLIENT] Socket event: ${event}`, args);
+    });
 
     return () => {
       console.log('[CLIENT] Cleaning up Mediasoup meeting...');
@@ -197,12 +211,64 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     }
   }, [displayName, isTranscribing, isAIEnabled]);
 
+  // Fix: Ensure local video stream is captured and attached
+  useEffect(() => {
+    const getLocalStream = async () => {
+      try {
+        console.log('[CLIENT] Getting local user media...');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        
+        console.log('[CLIENT] Got local user media stream');
+        setLocalStream(stream);
+        
+        // Attach to local video element immediately
+        if (localVideoRef.current) {
+          console.log('[CLIENT] Attaching local stream to video element');
+          const videoElement = localVideoRef.current;
+          videoElement.srcObject = stream;
+          videoElement.muted = true;
+          videoElement.autoplay = true;
+          videoElement.playsInline = true;
+          
+          const playPromise = videoElement.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                console.log('[CLIENT] Local video playing successfully');
+              })
+              .catch(error => {
+                console.error('[CLIENT] Error playing local video:', error);
+              });
+          }
+        }
+      } catch (error) {
+        console.error('[CLIENT] Error accessing local media devices:', error);
+        setConnectionStatus('Media access denied');
+      }
+    };
+
+    getLocalStream();
+  }, []);
+
   const joinRoom = () => {
     console.log(`[CLIENT] Joining room: ${roomName} as ${displayName}`);
     socketRef.current.emit('join-room', {
       roomId: roomName,
       displayName: displayName
     });
+
+    // Don't create transports here - wait for router capabilities first
   };
 
   const handleRouterRtpCapabilities = async (rtpCapabilities: any) => {
@@ -215,7 +281,8 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
       console.log('[CLIENT] Device loaded successfully');
       
       setConnectionStatus('Creating transports...');
-      await createTransports();
+      // Wait longer to ensure server is ready and use retry logic
+      await createTransportsWithRetry();
       
     } catch (error) {
       console.error('[CLIENT] Error handling router RTP capabilities:', error);
@@ -226,11 +293,41 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
   const createTransports = async () => {
     console.log('[CLIENT] Creating WebRTC transports...');
     
+    // Add a small delay to ensure server has processed join-room
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     // Create send transport
     socketRef.current.emit('createWebRtcTransport', { direction: 'send' });
     
-    // Create receive transport
+    // Create receive transport  
     socketRef.current.emit('createWebRtcTransport', { direction: 'recv' });
+  };
+
+  const createTransportsWithRetry = async (retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        console.log(`[CLIENT] Creating WebRTC transports (attempt ${i + 1}/${retries})...`);
+        
+        // Add delay to ensure server is ready
+        await new Promise(resolve => setTimeout(resolve, 100 * (i + 1)));
+        
+        // Create send transport
+        socketRef.current.emit('createWebRtcTransport', { direction: 'send' });
+        
+        // Create receive transport  
+        socketRef.current.emit('createWebRtcTransport', { direction: 'recv' });
+        
+        // If we reach here without error, break the retry loop
+        break;
+        
+      } catch (error) {
+        console.error(`[CLIENT] Transport creation attempt ${i + 1} failed:`, error);
+        if (i === retries - 1) {
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
   };
 
   const handleTransportCreated = async (data: any) => {
@@ -298,10 +395,10 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
           console.log('[CLIENT] Send transport connection state:', state);
         });
 
-        if (recvTransportRef.current) {
+        if (sendTransportRef.current && localStream) {
+          console.log('[CLIENT] Both transports ready, starting media production...');
           await startProducing();
         }
-
       } else if (direction === 'recv' && !recvTransportRef.current) {
         console.log('[CLIENT] Creating receive transport');
         recvTransportRef.current = deviceRef.current!.createRecvTransport({
@@ -341,7 +438,8 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
           console.log('[CLIENT] Receive transport connection state:', state);
         });
 
-        if (sendTransportRef.current) {
+        if (sendTransportRef.current && recvTransportRef.current && localStream) {
+          console.log('[CLIENT] Both transports ready, starting media production...');
           await startProducing();
         }
       }
@@ -353,30 +451,17 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const startProducing = async () => {
     try {
-      setConnectionStatus('Getting user media...');
-      console.log('[CLIENT] Getting user media...');
+      if (!localStream || !sendTransportRef.current) {
+        console.warn('[CLIENT] Cannot start producing: missing stream or transport');
+        return;
+      }
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-      });
-      
-      console.log('[CLIENT] Got user media stream');
-      
-      // Set local stream state first
-      setLocalStream(stream);
+      setConnectionStatus('Starting media production...');
+      console.log('[CLIENT] Starting media production with existing stream...');
 
-      // Produce audio and video
-      const audioTrack = stream.getAudioTracks()[0];
-      const videoTrack = stream.getVideoTracks()[0];
+      // Produce audio and video using the existing local stream
+      const audioTrack = localStream.getAudioTracks()[0];
+      const videoTrack = localStream.getVideoTracks()[0];
 
       if (audioTrack && sendTransportRef.current) {
         console.log('[CLIENT] Producing audio track');
@@ -403,7 +488,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
     } catch (error) {
       console.error('[CLIENT] Error starting production:', error);
-      setConnectionStatus('Media access denied');
+      setConnectionStatus('Media production failed');
     }
   };
 
@@ -412,12 +497,12 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     if (localStream && localVideoRef.current) {
       console.log('[CLIENT] Attaching local stream to video element');
       const videoElement = localVideoRef.current;
-      
+
       videoElement.srcObject = localStream;
-      videoElement.muted = true;
+      videoElement.muted = true; // Mute local video to avoid echo
       videoElement.autoplay = true;
       videoElement.playsInline = true;
-      
+
       // Handle play promise properly
       const playPromise = videoElement.play();
       if (playPromise !== undefined) {
@@ -432,6 +517,18 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     }
   }, [localStream]);
 
+  // Effect to start producing when local stream and transports are ready
+  useEffect(() => {
+    const tryStartProducing = async () => {
+      if (localStream && sendTransportRef.current && recvTransportRef.current && !isConnected) {
+        console.log('[CLIENT] Local stream and transports ready, starting production...');
+        await startProducing();
+      }
+    };
+    
+    tryStartProducing();
+  }, [localStream, isConnected]);
+
   const handleTransportConnected = (data: any) => {
     console.log('[CLIENT] Transport connected:', data.transportId);
   };
@@ -445,77 +542,81 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     console.log(`[CLIENT] Consuming: ${id} for producer ${producerId} (${kind}) from peer ${peerId}`);
 
     try {
-      if (!recvTransportRef.current) {
-        console.error('[CLIENT] Receive transport not ready');
-        return;
-      }
-
       const consumer = await recvTransportRef.current.consume({
         id,
         producerId,
         kind,
-        rtpParameters,
+        rtpParameters
       });
-
-      console.log(`[CLIENT] Consumer created: ${consumer.id} for peer: ${peerId}`);
-      setConsumers(prev => new Map(prev.set(id, consumer)));
-
-      // Resume the consumer immediately
-      socketRef.current.emit('resumeConsumer', { consumerId: id });
-
-      // Create stream and update peer state
-      const stream = new MediaStream([consumer.track]);
       
-      // Update peer with stream info
+      let newStream = new MediaStream([consumer.track]);
+      
+      // Update peer state with the new stream
       setPeers(prev => {
         const newPeers = new Map(prev);
-        const existingPeer = newPeers.get(peerId);
-        
-        const peer: Peer = {
-          id: peerId,
-          displayName: existingPeer?.displayName || `User ${peerId.slice(0, 8)}`,
-          hasVideo: existingPeer?.hasVideo || false,
-          hasAudio: existingPeer?.hasAudio || false,
-          videoStream: existingPeer?.videoStream,
-          audioStream: existingPeer?.audioStream
-        };
-
-        if (kind === 'video') {
-          peer.videoStream = stream;
-          peer.hasVideo = true;
-          console.log(`[CLIENT] Updated peer ${peerId} with video stream`);
-        } else if (kind === 'audio') {
-          peer.audioStream = stream;
-          peer.hasAudio = true;
-          console.log(`[CLIENT] Updated peer ${peerId} with audio stream`);
+        const peer = newPeers.get(peerId);
+        if (!peer) {
+          console.warn(`[CLIENT] Consumed track for unknown peer: ${peerId}. Creating peer entry.`);
+          newPeers.set(peerId, {
+            id: peerId,
+            displayName: peerId,
+            hasVideo: kind === 'video',
+            hasAudio: kind === 'audio',
+            videoStream: kind === 'video' ? newStream : undefined,
+            audioStream: kind === 'audio' ? newStream : undefined
+          });
+        } else {
+          if (kind === 'video') {
+            newPeers.set(peerId, {
+              ...peer,
+              videoStream: newStream,
+              hasVideo: true
+            });
+            console.log(`[CLIENT] Set videoStream for peer ${peerId}`);
+          } else if (kind === 'audio') {
+            newPeers.set(peerId, {
+              ...peer,
+              audioStream: newStream,
+              hasAudio: true
+            });
+            console.log(`[CLIENT] Set audioStream for peer ${peerId}`);
+          }
         }
-
-        newPeers.set(peerId, peer);
         return newPeers;
       });
-
-      consumer.on('transportclose', () => {
-        console.log('[CLIENT] Consumer transport closed');
-        consumer.close();
-        setConsumers(prev => {
-          const map = new Map(prev);
-          map.delete(id);
-          return map;
-        });
-      });
-
+      
+      setConsumers((prev) => new Map(prev).set(id, consumer));
+      console.log(`[CLIENT] Consumer set in state for ${id}`);
+      
+      // CRITICAL: Resume the consumer to start receiving media
+      console.log(`[CLIENT] Resuming consumer ${id}`);
+      socketRef.current.emit('resumeConsumer', { consumerId: id });
+      
     } catch (error) {
-      console.error('[CLIENT] Error consuming:', error);
+      console.error('[CLIENT] Error consuming media:', error);
     }
   };
 
   const handleProducers = (producers: any[]) => {
     console.log('[CLIENT] Received existing producers:', producers);
     if (!producers || producers.length === 0) return;
-    
     producers.forEach(({ peerId, producerId, kind }) => {
       if (peerId && producerId) {
-        console.log(`[CLIENT] Consuming existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
+        console.log(`[CLIENT] Will consume existing producer: ${producerId} (${kind}) from peer: ${peerId}`);
+        // Ensure peer exists before consuming
+        setPeers(prev => {
+          const newPeers = new Map(prev);
+          if (!newPeers.has(peerId)) {
+            newPeers.set(peerId, {
+              id: peerId,
+              displayName: peerId,
+              hasVideo: false,
+              hasAudio: false
+            });
+            console.log(`[CLIENT] Added peer for producer: ${peerId}`);
+          }
+          return newPeers;
+        });
         consume(producerId, peerId);
       }
     });
@@ -554,37 +655,36 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     console.log(`[CLIENT] Peer joined: ${peerId} (${peerDisplayName})`);
     setPeers(prev => {
       const newPeers = new Map(prev);
-      const existingPeer = newPeers.get(peerId);
-      
-      newPeers.set(peerId, {
-        id: peerId,
-        displayName: peerDisplayName,
-        hasVideo: existingPeer?.hasVideo || false,
-        hasAudio: existingPeer?.hasAudio || false,
-        videoStream: existingPeer?.videoStream,
-        audioStream: existingPeer?.audioStream
-      });
-      
+      if (!newPeers.has(peerId)) {
+        newPeers.set(peerId, {
+          id: peerId,
+          displayName: peerDisplayName,
+          hasVideo: false,
+          hasAudio: false,
+          videoStream: undefined,
+          audioStream: undefined
+        });
+        console.log(`[CLIENT] Added new peer to state: ${peerId}`);
+      } else {
+        console.log(`[CLIENT] Peer already exists in state: ${peerId}`);
+      }
       return newPeers;
     });
   };
 
   const handlePeerLeft = ({ peerId }: any) => {
     console.log(`[CLIENT] Peer left: ${peerId}`);
-    
     // Clean up video and audio elements for this peer
     const videoElement = videoElementsRef.current.get(peerId);
     if (videoElement) {
       videoElement.srcObject = null;
       videoElementsRef.current.delete(peerId);
     }
-    
     const audioElement = audioElementsRef.current.get(peerId);
     if (audioElement) {
       audioElement.srcObject = null;
       audioElementsRef.current.delete(peerId);
     }
-    
     setPeers(prev => {
       const newPeers = new Map(prev);
       newPeers.delete(peerId);
@@ -620,7 +720,12 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
 
   const handleError = (error: any) => {
     console.error('[CLIENT] Socket error:', error);
-    setConnectionStatus(`Error: ${error.message || 'Unknown error'}`);
+    if (error instanceof Error) {
+        console.error('[CLIENT] Error message:', error.message);
+        console.error('[CLIENT] Error stack:', error.stack);
+    } else {
+        console.error('[CLIENT] Error details:', JSON.stringify(error, null, 2));
+    }
   };
 
   const toggleAudio = () => {
@@ -848,7 +953,6 @@ See you there!`);
       // Set stream and play
       el.srcObject = peer.audioStream;
       el.autoplay = true;
-      el.playsInline = true;
       
       // Handle play promise properly
       const playPromise = el.play();
@@ -1041,7 +1145,6 @@ See you there!`);
                   <audio
                     ref={setAudioRef(peer)}
                     autoPlay
-                    playsInline
                   />
                 )}
                 {!peer.hasVideo && (
