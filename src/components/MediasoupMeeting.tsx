@@ -97,7 +97,7 @@ const MediasoupMeeting: React.FC<MediasoupMeetingProps> = ({ roomName, displayNa
     setConnectionStatus('Connecting to server...');
     
     // Fix: Use correct port for media server (3001 for mediasoup)
-    const mediaServerUrl = 'http://localhost:3001';
+    const mediaServerUrl = import.meta.env.VITE_MEDIA_API_URL;
     console.log('[CLIENT] Connecting to media server:', mediaServerUrl);
     
     socketRef.current = io(mediaServerUrl, {
