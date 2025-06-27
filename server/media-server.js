@@ -267,7 +267,7 @@ io.on('connection', (socket) => {
         listenIps: [
           {
             ip: '0.0.0.0',
-            announcedIp: process.env.VITE_MEDIA_API_URL || '127.0.0.1',
+            announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP,
           },
         ],
         enableUdp: true,
@@ -561,7 +561,7 @@ async function startServer() {
       console.log(`[SERVER] Mediasoup server running on http://localhost:${PORT}`);
       console.log(`[SERVER] Health check: http://localhost:${PORT}/api/media/health`);
       console.log(`[SERVER] Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`[SERVER] Announced IP: ${process.env.VITE_MEDIA_API_URL || '127.0.0.1'}`);
+      console.log(`[SERVER] Announced IP: ${process.env.MEDIASOUP_ANNOUNCED_IP}`);
     });
   } catch (error) {
     console.error('[SERVER] Failed to start mediasoup server:', error);
