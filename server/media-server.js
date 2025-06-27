@@ -3,28 +3,25 @@ const http = require('http');
 const socketIo = require('socket.io');
 const mediasoup = require('mediasoup');
 const cors = require('cors');
-VITE_APP_URL=process.env.VITE_APP_URL
-VITE_API_URL=process.env.VITE_API_URL
-VITE_AI_API_URL=process.env.VITE_AI_API_URL
-VITE_MEDIA_API_URL=process.env.VITE_MEDIA_API_URL
-VITE_WORKSPACE_API_URL=process.env.VITE_WORKSPACE_API_URL
-FRONTEND_URL=process.env.FRONTEND_URL
+require('dotenv').config();
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: `${FRONTEND_URL}`,
-    methods: ["GET", "POST"]
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
 app.use(cors({
-  origin: `${FRONTEND_URL}`,
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true
 }));
 app.use(express.json());
 
-const PORT = process.env.MEDIA_PORT || 8000;
+const PORT = process.env.MEDIA_PORT || 8002;
 
 // Enhanced logging function
 function log(level, message, data = {}) {
@@ -363,7 +360,7 @@ io.on('connection', (socket) => {
         listenIps: [
           {
             ip: '0.0.0.0',
-            announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP,
+            announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
           },
         ],
         enableUdp: true,
@@ -380,7 +377,7 @@ io.on('connection', (socket) => {
 
       log('info', '🔧 Transport configuration', { 
         direction,
-        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP,
+        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
         enableUdp: transportOptions.enableUdp,
         enableTcp: transportOptions.enableTcp
       });
@@ -831,7 +828,7 @@ app.get('/api/media/health', (req, res) => {
     worker: worker ? 'running' : 'not initialized',
     timestamp: new Date().toISOString(),
     environment: {
-      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP,
+      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
       port: PORT,
       nodeVersion: process.version
     }
@@ -877,7 +874,7 @@ app.get('/api/media/debug', (req, res) => {
       joined: peer.joined
     })),
     environment: {
-      MEDIASOUP_ANNOUNCED_IP: process.env.MEDIASOUP_ANNOUNCED_IP,
+      MEDIASOUP_ANNOUNCED_IP: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
       NODE_ENV: process.env.NODE_ENV,
       PORT: PORT
     }
@@ -895,7 +892,7 @@ async function startServer() {
   try {
     log('info', '🚀 Starting mediasoup server', { 
       port: PORT,
-      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP ,
+      announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
       environment: process.env.NODE_ENV || 'development'
     });
     
@@ -906,7 +903,7 @@ async function startServer() {
         port: PORT,
         healthEndpoint: `http://localhost:${PORT}/api/media/health`,
         debugEndpoint: `http://localhost:${PORT}/api/media/debug`,
-        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP
+        announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1'
       });
     });
   } catch (error) {
