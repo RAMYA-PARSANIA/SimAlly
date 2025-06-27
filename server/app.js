@@ -94,56 +94,6 @@ const GAME_CONFIGS = {
   }
 };
 
-// Google Meet API configuration
-const createGoogleMeetMeeting = async (meetingName, userId) => {
-  try {
-    // In a real implementation, this would call the Google Meet API
-    // For now, we'll simulate a successful response
-    const meetingId = `${meetingName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}-${Math.random().toString(36).substring(2, 7)}-${Math.random().toString(36).substring(2, 7)}`;
-    const meetingUrl = `https://meet.google.com/${meetingId}`;
-    
-    return {
-      success: true,
-      meeting: {
-        id: meetingId,
-        name: meetingName,
-        url: meetingUrl,
-        created_by: userId,
-        created_at: new Date().toISOString()
-      }
-    };
-  } catch (error) {
-    console.error('Error creating Google Meet meeting:', error);
-    return {
-      success: false,
-      error: 'Failed to create Google Meet meeting'
-    };
-  }
-};
-
-// Create Google Meet meeting endpoint
-app.post('/api/create-meeting', async (req, res) => {
-  try {
-    const { meeting_name, user_id } = req.body;
-    
-    if (!meeting_name) {
-      return res.status(400).json({
-        success: false,
-        error: 'Meeting name is required'
-      });
-    }
-    
-    const result = await createGoogleMeetMeeting(meeting_name, user_id);
-    res.json(result);
-  } catch (error) {
-    console.error('Error creating meeting:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
 // Generic conversation creation endpoint
 const createConversation = async (gameType, userId) => {
   const config = GAME_CONFIGS[gameType];
@@ -331,5 +281,3 @@ app.listen(PORT, () => {
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
-
-module.exports = { app };
