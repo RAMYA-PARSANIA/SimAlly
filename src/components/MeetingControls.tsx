@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Video, Users, Plus, LogIn, ArrowRight, Copy, Check, Share2, QrCode, Link } from 'lucide-react';
 import GlassCard from './ui/GlassCard';
@@ -23,7 +23,6 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onStartMeeting, onJoi
   const [generatedRoom, setGeneratedRoom] = useState('');
   const [copied, setCopied] = useState(false);
   const [showShareOptions, setShowShareOptions] = useState(false);
-  const [isGoogleAuthenticated, setIsGoogleAuthenticated] = useState(false);
 
   const generateRoomName = () => {
     const adjectives = ['swift', 'bright', 'clever', 'dynamic', 'focused', 'creative', 'efficient', 'innovative'];
@@ -113,14 +112,8 @@ See you there!`);
     setShowStartModal(true);
   };
 
-  const authenticateWithGoogle = () => {
-    // In a real implementation, this would redirect to Google OAuth
-    // For now, we'll simulate successful authentication
-    setIsGoogleAuthenticated(true);
-  };
-
   // Check for room parameter in URL
-  useEffect(() => {
+  React.useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get('room');
     if (roomFromUrl) {
@@ -145,7 +138,7 @@ See you there!`);
             </div>
             <h3 className="text-xl font-bold text-primary mb-4">Start New Meeting</h3>
             <p className="text-secondary mb-6 text-sm">
-              Create a new Google Meet session and invite others to join your video conference.
+              Create a new meeting room and invite others to join your video conference with AI assistance.
             </p>
             <Button
               onClick={openStartModal}
@@ -170,7 +163,7 @@ See you there!`);
             </div>
             <h3 className="text-xl font-bold text-primary mb-4">Join Meeting</h3>
             <p className="text-secondary mb-6 text-sm">
-              Enter a meeting room name to join an existing Google Meet session.
+              Enter a meeting room name to join an existing video conference with AI-powered features.
             </p>
             <Button
               onClick={() => setShowJoinModal(true)}

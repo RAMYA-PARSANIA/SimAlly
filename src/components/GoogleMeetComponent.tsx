@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Settings, Users, MessageSquare, Share2, Copy, Check, AlertCircle } from 'lucide-react';
 import Button from './ui/Button';
-const VITE_API_URL = import.meta.env.VITE_API_URL;
 
 interface GoogleMeetComponentProps {
   roomName: string;
@@ -21,7 +20,6 @@ const GoogleMeetComponent: React.FC<GoogleMeetComponentProps> = ({ roomName, dis
   const [showSettings, setShowSettings] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
   const [participantCount, setParticipantCount] = useState(1);
-  const [isGoogleAuthenticated, setIsGoogleAuthenticated] = useState(false);
 
   useEffect(() => {
     // Create a Google Meet meeting
@@ -29,34 +27,18 @@ const GoogleMeetComponent: React.FC<GoogleMeetComponentProps> = ({ roomName, dis
       try {
         setIsConnecting(true);
         
-        // Call the backend API to create a Google Meet meeting
-        const response = await fetch(`${VITE_API_URL}/api/create-meeting`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            meeting_name: roomName,
-            user_id: 'user123' // In a real app, this would be the actual user ID
-          })
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Failed to create meeting: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.success) {
-          setMeetLink(data.meeting.url);
+        // In a real implementation, this would call your backend API to create a Google Meet meeting
+        // For now, we'll simulate the API call with a timeout
+        setTimeout(() => {
+          // Generate a fake Google Meet link based on the room name
+          const meetLink = `https://meet.google.com/${roomName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10)}-${Math.random().toString(36).substring(2, 7)}-${Math.random().toString(36).substring(2, 7)}`;
+          setMeetLink(meetLink);
           setIsConnected(true);
-        } else {
-          throw new Error(data.error || 'Failed to create meeting');
-        }
+          setIsConnecting(false);
+        }, 2000);
       } catch (error) {
         console.error('Error creating Google Meet meeting:', error);
         setError('Failed to create Google Meet meeting. Please try again.');
-      } finally {
         setIsConnecting(false);
       }
     };
@@ -95,12 +77,6 @@ const GoogleMeetComponent: React.FC<GoogleMeetComponentProps> = ({ roomName, dis
     }
   };
 
-  const authenticateWithGoogle = () => {
-    // In a real implementation, this would redirect to Google OAuth
-    // For now, we'll simulate successful authentication
-    setIsGoogleAuthenticated(true);
-  };
-
   // If there's an error, show error screen
   if (error) {
     return (
@@ -136,37 +112,6 @@ const GoogleMeetComponent: React.FC<GoogleMeetComponentProps> = ({ roomName, dis
             className="mt-6"
           >
             Cancel
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  // If not authenticated with Google, show auth screen
-  if (!isGoogleAuthenticated && false) { // Disabled for now
-    return (
-      <div className="min-h-screen bg-primary flex items-center justify-center">
-        <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
-          <div className="w-16 h-16 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-6">
-            <Video className="w-8 h-8 text-white" />
-          </div>
-          <h3 className="text-xl font-bold text-primary mb-4">Google Authentication Required</h3>
-          <p className="text-secondary mb-6">
-            To create or join Google Meet meetings, you need to authenticate with your Google account.
-          </p>
-          <Button
-            onClick={authenticateWithGoogle}
-            variant="premium"
-            className="px-6 py-3 rounded-lg"
-          >
-            Sign in with Google
-          </Button>
-          <Button
-            onClick={onLeave}
-            variant="secondary"
-            className="px-6 py-3 rounded-lg mt-4"
-          >
-            Go Back
           </Button>
         </div>
       </div>
