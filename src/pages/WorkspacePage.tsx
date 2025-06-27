@@ -10,7 +10,7 @@ import ChannelList from '../components/ChannelList';
 import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
 import MeetingControls from '../components/MeetingControls';
-import MediasoupMeeting from '../components/MediasoupMeeting';
+import GoogleMeetComponent from '../components/GoogleMeetComponent';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
@@ -696,7 +696,7 @@ const WorkspacePage: React.FC = () => {
                 transition={{ duration: 0.2 }}
               >
                 {currentMeeting ? (
-                  <MediasoupMeeting
+                  <GoogleMeetComponent
                     roomName={currentMeeting.roomName}
                     displayName={currentMeeting.displayName}
                     onLeave={handleLeaveMeeting}

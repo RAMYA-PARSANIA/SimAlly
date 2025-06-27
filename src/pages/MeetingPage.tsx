@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import MeetingControls from '../components/MeetingControls';
-import MediasoupMeeting from '../components/MediasoupMeeting';
+import GoogleMeetComponent from '../components/GoogleMeetComponent';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
@@ -99,20 +99,7 @@ See you there!`);
   if (currentMeeting) {
     return (
       <div className="min-h-screen bg-primary">
-        {/* Meeting Header with Invite Button */}
-        {/* <div className="absolute top-4 right-4 z-50">
-          <Button
-            onClick={() => setShowInviteModal(true)}
-            variant="secondary"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Invite Others</span>
-          </Button>
-        </div> */}
-
-        <MediasoupMeeting
+        <GoogleMeetComponent
           roomName={currentMeeting.roomName}
           displayName={currentMeeting.displayName}
           onLeave={handleLeaveMeeting}
@@ -226,7 +213,7 @@ See you there!`);
                   Video Meetings
                 </h1>
                 <p className="text-xs text-secondary">
-                  Powered by Mediasoup + AI Assistant
+                  Powered by Google Meet
                 </p>
               </div>
             </div>
@@ -256,8 +243,8 @@ See you there!`);
               transition={{ delay: 0.1 }}
               className="text-lg text-secondary max-w-2xl mx-auto mb-8"
             >
-              Professional video conferencing with AI-powered transcription, note-taking, and meeting summaries. 
-              Built with Mediasoup for superior performance and reliability.
+              Professional video conferencing with Google Meet integration, AI-powered transcription, 
+              note-taking, and meeting summaries.
             </motion.p>
 
             {/* Features Grid */}
@@ -396,7 +383,7 @@ See you there!`);
             </div>
           </div>
 
-          {/* Technical Advantages */}
+          {/* Google Meet Advantages */}
           <div className="mt-20">
             <div className="text-center mb-12">
               <motion.h2
@@ -404,27 +391,27 @@ See you there!`);
                 animate={{ y: 0, opacity: 1 }}
                 className="text-3xl font-bold gradient-gold-silver mb-4"
               >
-                Why Mediasoup?
+                Why Google Meet?
               </motion.h2>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
               {[
                 {
-                  title: 'Superior Performance',
-                  description: 'Low latency, high quality video with adaptive bitrate streaming'
+                  title: 'Superior Reliability',
+                  description: 'Enterprise-grade infrastructure with 99.9% uptime and global availability'
                 },
                 {
-                  title: 'Scalable Architecture',
-                  description: 'Handle hundreds of participants with efficient resource usage'
+                  title: 'Seamless Integration',
+                  description: 'Works with Google Calendar, Gmail, and other Google Workspace apps'
                 },
                 {
-                  title: 'Full Control',
-                  description: 'Complete customization and control over your meeting experience'
+                  title: 'Advanced Features',
+                  description: 'Noise cancellation, low-light mode, and background blur for professional meetings'
                 },
                 {
-                  title: 'Open Source',
-                  description: 'Free, transparent, and continuously improved by the community'
+                  title: 'Secure by Design',
+                  description: 'Enterprise-grade security with encryption and advanced anti-abuse features'
                 }
               ].map((advantage, index) => (
                 <motion.div
