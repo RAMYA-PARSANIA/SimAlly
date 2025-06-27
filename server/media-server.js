@@ -21,7 +21,7 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const PORT = process.env.MEDIA_PORT || 8000;
+const PORT = process.env.MEDIA_PORT || 8002;
 
 // Enhanced logging function
 function log(level, message, data = {}) {
