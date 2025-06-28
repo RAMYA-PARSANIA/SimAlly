@@ -1004,27 +1004,38 @@ async function executeGmailDisconnect(userId, req) {
   }
 }
 
-async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
+// Enhanced Gmail Get Emails function with logging
+async function executeGmailGetEmails(sessionId, query = '', maxResults = 10) {
   try {
-    if (!req) {
-      return { success: false, error: 'Request context required for Gmail access' };
+    if (!sessionId) {
+      console.error('No session ID provided');
+      return { success: false, error: 'No session ID provided' };
     }
-    
-    // Set up OAuth client with tokens from cookies
-    const clientForRequest = setupOAuthClientFromCookies(req);
-    
-    // Get emails
-    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
+
+    const tokens = tokenStore.get(sessionId);
+
+    if (!tokens) {
+      console.error(`No tokens found for session ID: ${sessionId}`);
+      return { success: false, error: 'No valid OAuth tokens found in cookies' };
+    }
+
+    if (!tokens.access_token) {
+      console.error(`Tokens for session ID ${sessionId} are missing access_token`);
+      return { success: false, error: 'No valid OAuth tokens found in cookies' };
+    }
+
+    oauth2Client.setCredentials(tokens);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: parseInt(maxResults)
     });
-    
+
     const messages = response.data.messages || [];
     const emails = [];
-    
-    // Get email details
+
     for (const message of messages) {
       const emailData = await gmail.users.messages.get({
         userId: 'me',
@@ -1032,12 +1043,12 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
         format: 'metadata',
         metadataHeaders: ['From', 'Subject', 'Date']
       });
-      
+
       const headers = emailData.data.payload.headers;
       const from = headers.find(h => h.name === 'From')?.value || '';
       const subject = headers.find(h => h.name === 'Subject')?.value || '';
       const date = headers.find(h => h.name === 'Date')?.value || '';
-      
+
       emails.push({
         id: message.id,
         threadId: message.threadId,
@@ -1048,7 +1059,7 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
         isUnread: emailData.data.labelIds.includes('UNREAD')
       });
     }
-    
+
     return { success: true, emails };
   } catch (error) {
     console.error('Error getting emails:', error);
