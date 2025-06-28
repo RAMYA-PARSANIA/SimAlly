@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
 require('dotenv').config();
+const { tokenStore } = require('./google-api');
 
 const app = express();
 const PORT = process.env.AI_ASSISTANT_PORT || 8000;
@@ -885,68 +886,46 @@ app.get('/auth/gmail/callback', async (req, res) => {
   }
 });
 
-// Gmail status endpoint
+// Refactored Gmail status endpoint
 app.get('/api/gmail/status', async (req, res) => {
   try {
     const { userId } = req.query;
-    
+
     if (!userId) {
       return res.status(400).json({
         success: false,
         error: 'User ID is required'
       });
     }
-    
+
     console.log(`Gmail status check for user ${userId}: checking...`);
-    
-    // Check if tokens exist
-    const { data: tokensExist } = await supabase.rpc('check_gmail_tokens_exist', {
-      p_user_id: userId
-    });
-    
-    if (!tokensExist) {
+
+    // Retrieve tokens from tokenStore using session ID
+    const sessionId = req.cookies.google_session_id;
+    const tokens = tokenStore.get(sessionId);
+
+    if (!tokens || !tokens.access_token) {
       return res.json({
         connected: false
       });
     }
-    
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
-      return res.json({
-        connected: false
-      });
-    }
-    
+
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
-    
+    oauth2Client.setCredentials(tokens);
+
     // Get Gmail profile to verify connection
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const profile = await gmail.users.getProfile({ userId: 'me' });
-    
+
     // Get unread count
     const unreadResponse = await gmail.users.messages.list({
       userId: 'me',
       q: 'is:unread',
       maxResults: 1
     });
-    
+
     const unreadCount = unreadResponse.data.resultSizeEstimate || 0;
-    
+
     res.json({
       connected: true,
       email: profile.data.emailAddress,
@@ -961,31 +940,22 @@ app.get('/api/gmail/status', async (req, res) => {
   }
 });
 
-// Gmail disconnect endpoint
+// Refactored Gmail disconnect endpoint
 app.post('/api/gmail/disconnect', async (req, res) => {
   try {
     const { userId } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({
         success: false,
         error: 'User ID is required'
       });
     }
-    
-    // Revoke tokens
-    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (error) {
-      console.error('Error revoking Gmail tokens:', error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to revoke Gmail tokens'
-      });
-    }
-    
+
+    // Clear tokens from tokenStore
+    const sessionId = req.cookies.google_session_id;
+    tokenStore.delete(sessionId);
+
     res.json({
       success: true,
       message: 'Gmail disconnected successfully'
@@ -1021,7 +991,6 @@ app.get('/api/gmail/emails', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -1108,7 +1077,6 @@ app.get('/api/gmail/email/:id', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -1195,7 +1163,7 @@ app.get('/api/gmail/email/:id', async (req, res) => {
     try {
       await gmail.users.messages.modify({
         userId: 'me',
-        id,
+        id: emailId,
         resource: {
           removeLabelIds: ['UNREAD']
         }
@@ -1208,7 +1176,7 @@ app.get('/api/gmail/email/:id', async (req, res) => {
     res.json({
       success: true,
       email: {
-        id,
+        id: emailId,
         threadId: response.data.threadId,
         from,
         subject,
@@ -1250,7 +1218,6 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -1320,7 +1287,6 @@ app.post('/api/gmail/summarize-emails', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -1407,7 +1373,6 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -1582,7 +1547,6 @@ app.get('/api/gmail/promotions', async (req, res) => {
     });
     
     if (error || !data.success) {
-      console.error('Error getting Gmail tokens:', error || data.error);
       return res.status(500).json({
         success: false,
         error: 'Failed to get Gmail tokens'
@@ -2242,10 +2206,42 @@ async function executeGmailExtractTasks(userId, messageIds) {
         const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
         const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
         
+        // Extract body
+        let body = '';
+        
+        // Function to extract body parts recursively
+        const extractBody = (part) => {
+          if (part.mimeType === 'text/html' && part.body && part.body.data) {
+            return Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.mimeType === 'text/plain' && part.body && part.body.data && !body) {
+            return Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.parts) {
+            for (const subPart of part.parts) {
+              const extractedBody = extractBody(subPart);
+              if (extractedBody) {
+                return extractedBody;
+              }
+            }
+          }
+          return null;
+        };
+        
+        if (emailData.data.payload.parts) {
+          for (const part of emailData.data.payload.parts) {
+            const extractedBody = extractBody(part);
+            if (extractedBody) {
+              body = extractedBody;
+              break;
+            }
+          }
+        } else if (emailData.data.payload.body && emailData.data.payload.body.data) {
+          body = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
+        }
+        
         emails.push({
           from,
           subject,
-          snippet: emailData.data.snippet || ''
+          body: body || emailData.data.snippet || ''
         });
       } catch (error) {
         console.error(`Failed to fetch email ${messageId}:`, error);
@@ -2254,7 +2250,7 @@ async function executeGmailExtractTasks(userId, messageIds) {
 
     // Extract tasks and events using AI
     const emailText = emails.map(email => 
-      `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.snippet}`
+      `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.body}`
     ).join('\n\n');
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
@@ -2272,6 +2268,7 @@ async function executeGmailExtractTasks(userId, messageIds) {
         extracted = { tasks: [], events: [] };
       }
     } catch (parseError) {
+      console.error('Error parsing AI response:', parseError);
       extracted = { tasks: [], events: [] };
     }
 
