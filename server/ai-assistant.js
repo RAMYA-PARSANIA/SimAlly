@@ -776,14 +776,19 @@ app.get('/api/gmail/auth-url', (req, res) => {
       });
     }
     
+    // Expanded scopes for more access
     const scopes = [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events'
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/drive.readonly'
     ];
     
-    const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
+    // Use a simple string for state to avoid parsing issues
+    const state = userId;
     
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -814,35 +819,32 @@ app.get('/auth/gmail/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
     }
     
-    // Decode state
-    let stateData;
-    try {
-      stateData = JSON.parse(Buffer.from(state.toString(), 'base64').toString());
-    } catch (parseError) {
-      console.error('Error parsing state:', parseError);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    const userId = stateData.userId;
+    // Use state directly as userId (simplified to avoid parsing issues)
+    const userId = state.toString();
     
     console.log(`Gmail OAuth callback for user: ${userId}`);
     
-    // Exchange code for tokens
+    // Exchange code for tokens with improved error handling
     let tokens;
     try {
       const tokenResponse = await oauth2Client.getToken(code.toString());
       tokens = tokenResponse.tokens;
-      
-      console.log('Received tokens from Google:', {
-        hasAccessToken: !!tokens.access_token,
-        hasRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in,
-        expiryDate: tokens.expiry_date
-      });
     } catch (tokenError) {
       console.error('Error getting tokens:', tokenError);
       return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
     }
+    
+    if (!tokens) {
+      console.error('No tokens received from Google');
+      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
+    }
+    
+    console.log('Received tokens from Google:', {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      expiryDate: tokens.expiry_date
+    });
     
     // Store tokens in database using the new function
     const sessionToken = crypto.randomBytes(32).toString('hex');
@@ -889,7 +891,7 @@ app.get('/api/gmail/status', async (req, res) => {
       });
     }
     
-    console.log(`Gmail status check for user ${userId}: checking...`);
+    console.log(`Gmail status check for user ${userId}`);
     
     // Check if tokens exist
     const { data: tokensExist } = await supabase.rpc('check_gmail_tokens_exist', {
@@ -1131,14 +1133,30 @@ app.get('/api/gmail/email/:id', async (req, res) => {
     // Extract body
     let body = '';
     
+    // Function to extract body parts recursively
+    const extractBody = (part) => {
+      if (part.mimeType === 'text/html' && part.body.data) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.mimeType === 'text/plain' && part.body.data && !body) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.parts) {
+        for (const subPart of part.parts) {
+          const extractedBody = extractBody(subPart);
+          if (extractedBody) {
+            return extractedBody;
+          }
+        }
+      }
+      return null;
+    };
+    
     if (response.data.payload.parts) {
       // Multipart message
       for (const part of response.data.payload.parts) {
-        if (part.mimeType === 'text/html') {
-          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+        const extractedBody = extractBody(part);
+        if (extractedBody) {
+          body = extractedBody;
           break;
-        } else if (part.mimeType === 'text/plain' && !body) {
-          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
         }
       }
     } else if (response.data.payload.body.data) {
@@ -1255,6 +1273,337 @@ app.post('/api/gmail/delete-emails', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to delete emails'
+    });
+  }
+});
+
+// Gmail summarize emails endpoint
+app.post('/api/gmail/summarize-emails', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and Message IDs are required'
+      });
+    }
+    
+    // Generate a session token for decryption
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
+      p_user_id: userId,
+      p_session_token: sessionToken
+    });
+    
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
+    }
+    
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Get emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    const emails = [];
+    for (const messageId of messageIds) {
+      try {
+        const emailData = await gmail.users.messages.get({
+          userId: 'me',
+          id: messageId,
+          format: 'full'
+        });
+
+        const headers = emailData.data.payload.headers;
+        const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+        
+        emails.push({
+          from,
+          subject,
+          snippet: emailData.data.snippet || ''
+        });
+      } catch (error) {
+        console.error(`Failed to fetch email ${messageId}:`, error);
+      }
+    }
+
+    // Generate AI summary
+    const emailText = emails.map(email => 
+      `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.snippet}`
+    ).join('\n\n');
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const prompt = `Summarize these emails concisely, highlighting key topics, important information, and any action items:\n\n${emailText}`;
+    
+    const result = await model.generateContent(prompt);
+    const summary = result.response.text();
+
+    res.json({
+      success: true,
+      summary,
+      emailCount: emails.length
+    });
+  } catch (error) {
+    console.error('Error summarizing emails:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to summarize emails'
+    });
+  }
+});
+
+// Gmail extract tasks and events endpoint
+app.post('/api/gmail/extract-tasks-events', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and Message IDs are required'
+      });
+    }
+    
+    // Generate a session token for decryption
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
+      p_user_id: userId,
+      p_session_token: sessionToken
+    });
+    
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
+    }
+    
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Get emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    const emails = [];
+    for (const messageId of messageIds) {
+      try {
+        const emailData = await gmail.users.messages.get({
+          userId: 'me',
+          id: messageId,
+          format: 'full'
+        });
+
+        const headers = emailData.data.payload.headers;
+        const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+        
+        emails.push({
+          from,
+          subject,
+          snippet: emailData.data.snippet || ''
+        });
+      } catch (error) {
+        console.error(`Failed to fetch email ${messageId}:`, error);
+      }
+    }
+
+    // Extract tasks and events using AI
+    const emailText = emails.map(email => 
+      `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.snippet}`
+    ).join('\n\n');
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const prompt = `Extract tasks and calendar events from these emails. Return a JSON object with "tasks" and "events" arrays. Each task should have title, description, priority, due_date. Each event should have title, description, start_time, end_time:\n\n${emailText}`;
+    
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+    
+    let extracted;
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        extracted = JSON.parse(jsonMatch[0]);
+      } else {
+        extracted = { tasks: [], events: [] };
+      }
+    } catch (parseError) {
+      extracted = { tasks: [], events: [] };
+    }
+
+    // Create tasks in database
+    let tasksCreated = 0;
+    for (const task of extracted.tasks || []) {
+      try {
+        const { error } = await supabase
+          .from('tasks')
+          .insert({
+            title: task.title,
+            description: task.description,
+            priority: task.priority || 'medium',
+            due_date: task.due_date,
+            created_by: userId
+          });
+
+        if (!error) tasksCreated++;
+      } catch (error) {
+        console.error('Error creating task:', error);
+      }
+    }
+
+    // Create events in database
+    let eventsCreated = 0;
+    for (const event of extracted.events || []) {
+      try {
+        const { error } = await supabase
+          .from('calendar_events')
+          .insert({
+            title: event.title,
+            description: event.description,
+            start_time: event.start_time,
+            end_time: event.end_time,
+            user_id: userId
+          });
+
+        if (!error) eventsCreated++;
+      } catch (error) {
+        console.error('Error creating event:', error);
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      tasksCreated, 
+      eventsCreated,
+      tasks: extracted.tasks || [],
+      events: extracted.events || [],
+      summary: `Extracted ${tasksCreated} tasks and ${eventsCreated} events from ${emails.length} emails.`
+    });
+  } catch (error) {
+    console.error('Error extracting tasks and events:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to extract tasks and events'
+    });
+  }
+});
+
+// Gmail get promotional emails endpoint
+app.get('/api/gmail/promotions', async (req, res) => {
+  try {
+    const { userId, maxResults = 20 } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    // Generate a session token for decryption
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
+      p_user_id: userId,
+      p_session_token: sessionToken
+    });
+    
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
+    }
+    
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Get promotional emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'category:promotions',
+      maxResults: parseInt(maxResults.toString())
+    });
+    
+    const messages = response.data.messages || [];
+    const emails = [];
+    
+    for (const message of messages) {
+      try {
+        const emailData = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date', 'List-Unsubscribe']
+        });
+        
+        const headers = emailData.data.payload.headers;
+        const from = headers.find(h => h.name === 'From')?.value || '';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '';
+        const date = headers.find(h => h.name === 'Date')?.value || '';
+        
+        // Extract unsubscribe URL
+        let unsubscribeUrl = null;
+        const listUnsubscribe = headers.find(h => h.name === 'List-Unsubscribe')?.value;
+        if (listUnsubscribe) {
+          const match = listUnsubscribe.match(/<(https?:\/\/[^>]+)>/);
+          if (match) {
+            unsubscribeUrl = match[1];
+          }
+        }
+        
+        emails.push({
+          id: message.id,
+          threadId: message.threadId,
+          from,
+          subject,
+          date,
+          snippet: emailData.data.snippet,
+          isUnread: emailData.data.labelIds.includes('UNREAD'),
+          unsubscribeUrl
+        });
+      } catch (error) {
+        console.error(`Error getting email ${message.id}:`, error);
+      }
+    }
+    
+    res.json({
+      success: true,
+      emails
+    });
+  } catch (error) {
+    console.error('Error getting promotional emails:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get promotional emails'
     });
   }
 });
@@ -1407,14 +1756,19 @@ async function executeGmailStatus(userId) {
 
 async function executeGmailConnect(userId) {
   try {
+    // Expanded scopes for more access
     const scopes = [
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events'
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/drive.readonly'
     ];
     
-    const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
+    // Use a simple string for state to avoid parsing issues
+    const state = userId;
     
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -1563,14 +1917,30 @@ async function executeGmailGetEmail(userId, emailId) {
     // Extract body
     let body = '';
     
+    // Function to extract body parts recursively
+    const extractBody = (part) => {
+      if (part.mimeType === 'text/html' && part.body.data) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.mimeType === 'text/plain' && part.body.data && !body) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.parts) {
+        for (const subPart of part.parts) {
+          const extractedBody = extractBody(subPart);
+          if (extractedBody) {
+            return extractedBody;
+          }
+        }
+      }
+      return null;
+    };
+    
     if (response.data.payload.parts) {
       // Multipart message
       for (const part of response.data.payload.parts) {
-        if (part.mimeType === 'text/html') {
-          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+        const extractedBody = extractBody(part);
+        if (extractedBody) {
+          body = extractedBody;
           break;
-        } else if (part.mimeType === 'text/plain' && !body) {
-          body = Buffer.from(part.body.data, 'base64').toString('utf-8');
         }
       }
     } else if (response.data.payload.body.data) {
@@ -2447,75 +2817,298 @@ async function executeGeneralQuery(message) {
   }
 }
 
-// Gmail callback handler - improved error handling
-app.get('/api/gmail/callback', async (req, res) => {
+// Gmail email endpoint
+app.get('/api/gmail/email/:id', async (req, res) => {
   try {
-    const { code, state } = req.query;
+    const { id } = req.params;
+    const { userId } = req.query;
     
-    if (!code || !state) {
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    // Decode state
-    let stateData;
-    try {
-      stateData = JSON.parse(Buffer.from(state.toString(), 'base64').toString());
-    } catch (parseError) {
-      console.error('Error parsing state:', parseError);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    const userId = stateData.userId;
-    
-    console.log(`Gmail OAuth callback for user: ${userId}`);
-    
-    // Exchange code for tokens
-    let tokens;
-    try {
-      const tokenResponse = await oauth2Client.getToken(code.toString());
-      tokens = tokenResponse.tokens;
-      
-      console.log('Received tokens from Google:', {
-        hasAccessToken: !!tokens.access_token,
-        hasRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in,
-        expiryDate: tokens.expiry_date
+    if (!userId || !id) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and Email ID are required'
       });
-    } catch (tokenError) {
-      console.error('Error getting tokens:', tokenError);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
     }
     
-    // Store tokens in database using the new function
+    // Generate a session token for decryption
     const sessionToken = crypto.randomBytes(32).toString('hex');
     
-    const { data, error } = await supabase.rpc('store_encrypted_gmail_tokens_with_fallback', {
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
       p_user_id: userId,
-      p_session_token: sessionToken,
-      p_access_token: tokens.access_token,
-      p_refresh_token: tokens.refresh_token || null,
-      p_token_type: tokens.token_type || 'Bearer',
-      p_expires_at: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
-      p_scope: tokens.scope
+      p_session_token: sessionToken
     });
     
-    if (error) {
-      console.error('Error storing Gmail tokens:', error);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
     }
     
-    if (!data.success) {
-      console.error('Failed to store Gmail tokens:', data.error);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Get email
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const response = await gmail.users.messages.get({
+      userId: 'me',
+      id,
+      format: 'full'
+    });
+    
+    const message = response.data;
+    const headers = message.payload.headers;
+    const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
+    const from = headers.find(h => h.name === 'From')?.value || '';
+    const date = headers.find(h => h.name === 'Date')?.value || '';
+    
+    // Extract body content
+    let body = '';
+    
+    // Function to extract body parts recursively
+    const extractBody = (part) => {
+      if (part.mimeType === 'text/html' && part.body.data) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.mimeType === 'text/plain' && part.body.data && !body) {
+        return Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.parts) {
+        for (const subPart of part.parts) {
+          const extractedBody = extractBody(subPart);
+          if (extractedBody) {
+            return extractedBody;
+          }
+        }
+      }
+      return null;
+    };
+    
+    // Try to get HTML body first
+    if (message.payload.mimeType === 'text/html' && message.payload.body.data) {
+      body = Buffer.from(message.payload.body.data, 'base64').toString('utf-8');
+    } else if (message.payload.parts) {
+      for (const part of message.payload.parts) {
+        const extractedBody = extractBody(part);
+        if (extractedBody) {
+          body = extractedBody;
+          break;
+        }
+      }
+    } else if (message.payload.body.data) {
+      body = Buffer.from(message.payload.body.data, 'base64').toString('utf-8');
     }
     
-    console.log(`Gmail tokens stored securely for user ${userId}`);
+    // Check for unsubscribe link
+    let unsubscribeUrl = null;
+    const listUnsubscribe = headers.find(h => h.name === 'List-Unsubscribe')?.value;
+    if (listUnsubscribe) {
+      const match = listUnsubscribe.match(/<(https?:\/\/[^>]+)>/);
+      if (match) {
+        unsubscribeUrl = match[1];
+      }
+    }
     
-    // Redirect back to assistant page
-    res.redirect(`${FRONTEND_URL}/assistant?gmail_connected=true`);
+    // Mark as read
+    await gmail.users.messages.modify({
+      userId: 'me',
+      id,
+      resource: {
+        removeLabelIds: ['UNREAD']
+      }
+    });
+    
+    res.json({
+      success: true,
+      email: {
+        id: message.id,
+        threadId: message.threadId,
+        subject,
+        from,
+        date,
+        body,
+        unsubscribeUrl,
+        isUnread: message.labelIds?.includes('UNREAD') || false
+      }
+    });
   } catch (error) {
-    console.error('Error in Gmail callback:', error);
-    res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
+    console.error('Error fetching email content:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch email content' });
+  }
+});
+
+// Gmail delete emails endpoint
+app.post('/api/gmail/delete-emails', async (req, res) => {
+  try {
+    const { userId, messageIds } = req.body;
+    
+    if (!userId || !messageIds || !Array.isArray(messageIds)) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and Message IDs are required'
+      });
+    }
+    
+    // Generate a session token for decryption
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
+      p_user_id: userId,
+      p_session_token: sessionToken
+    });
+    
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
+    }
+    
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Delete emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    
+    let deleted = 0;
+    let failed = 0;
+    
+    for (const messageId of messageIds) {
+      try {
+        await gmail.users.messages.trash({
+          userId: 'me',
+          id: messageId
+        });
+        deleted++;
+      } catch (error) {
+        console.error(`Error deleting email ${messageId}:`, error);
+        failed++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      deleted,
+      failed
+    });
+  } catch (error) {
+    console.error('Error deleting Gmail emails:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete emails'
+    });
+  }
+});
+
+// Gmail get promotional emails endpoint
+app.get('/api/gmail/promotions', async (req, res) => {
+  try {
+    const { userId, maxResults = 20 } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    // Generate a session token for decryption
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    
+    // Get tokens
+    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
+      p_user_id: userId,
+      p_session_token: sessionToken
+    });
+    
+    if (error || !data.success) {
+      console.error('Error getting Gmail tokens:', error || data.error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to get Gmail tokens'
+      });
+    }
+    
+    // Set up OAuth client with tokens
+    oauth2Client.setCredentials({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type,
+      expiry_date: new Date(data.expires_at).getTime()
+    });
+    
+    // Get promotional emails
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      q: 'category:promotions',
+      maxResults: parseInt(maxResults.toString())
+    });
+    
+    const messages = response.data.messages || [];
+    const emails = [];
+    
+    for (const message of messages) {
+      try {
+        const emailData = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject', 'Date', 'List-Unsubscribe']
+        });
+        
+        const headers = emailData.data.payload.headers;
+        const from = headers.find(h => h.name === 'From')?.value || '';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '';
+        const date = headers.find(h => h.name === 'Date')?.value || '';
+        
+        // Extract unsubscribe URL
+        let unsubscribeUrl = null;
+        const listUnsubscribe = headers.find(h => h.name === 'List-Unsubscribe')?.value;
+        if (listUnsubscribe) {
+          const match = listUnsubscribe.match(/<(https?:\/\/[^>]+)>/);
+          if (match) {
+            unsubscribeUrl = match[1];
+          }
+        }
+        
+        emails.push({
+          id: message.id,
+          threadId: message.threadId,
+          from,
+          subject,
+          date,
+          snippet: emailData.data.snippet,
+          isUnread: emailData.data.labelIds.includes('UNREAD'),
+          unsubscribeUrl
+        });
+      } catch (error) {
+        console.error(`Error getting email ${message.id}:`, error);
+      }
+    }
+    
+    res.json({
+      success: true,
+      emails
+    });
+  } catch (error) {
+    console.error('Error getting promotional emails:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get promotional emails'
+    });
   }
 });
 
