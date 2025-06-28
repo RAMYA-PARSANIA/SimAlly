@@ -307,32 +307,21 @@ class AuthService {
         // Disconnect Gmail if connected
         if (this.currentSession.user?.id) {
           try {
-            const response = await fetch(`${import.meta.env.VITE_AI_API_URL}/api/gmail/disconnect`, {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'Origin': window.location.origin
-              },
-              credentials: 'include',
-              body: JSON.stringify({ userId: this.currentSession.user.id })
+            // Check if user has Gmail tokens
+            const { data: hasTokens } = await supabase.rpc('has_gmail_tokens', {
+              p_user_id: this.currentSession.user.id
             });
             
-            // Check if the response is ok
-            if (!response.ok) {
-              console.warn(`Failed to disconnect Gmail: ${response.status} ${response.statusText}`);
+            if (hasTokens) {
+              // Revoke tokens
+              await supabase.rpc('revoke_gmail_tokens', {
+                p_user_id: this.currentSession.user.id
+              });
               
-              // Try to parse the error message
-              try {
-                const errorData = await response.json();
-                console.warn('Disconnect Gmail error:', errorData);
-              } catch (e) {
-                // Ignore JSON parsing errors
-              }
-            } else {
-              console.log('Gmail disconnected successfully');
+              console.log('Gmail tokens revoked on logout');
             }
           } catch (error) {
-            console.warn('Failed to disconnect Gmail on logout:', error);
+            console.warn('Failed to check/revoke Gmail tokens on logout:', error);
           }
         }
 

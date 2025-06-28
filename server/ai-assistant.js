@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
+const { tokenStore } = require('./google-api');
 require('dotenv').config();
 
 const app = express();
@@ -615,7 +616,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 
       // Execute the endpoint function directly
       try {
-        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId);
+        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId, req);
         
         return res.json({
           success: true,
@@ -660,7 +661,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 });
 
 // Master function to execute any endpoint
-async function executeEndpointFunction(endpoint, parameters, userId) {
+async function executeEndpointFunction(endpoint, parameters, userId, req = null) {
   const config = WEBAPP_ENDPOINTS[endpoint];
   if (!config || !config.implementation) {
     throw new Error('Invalid endpoint or missing implementation');
@@ -766,137 +767,55 @@ async function executeEndpointFunction(endpoint, parameters, userId) {
   }
 }
 
-// Function to get tokens from Supabase for a user
-async function getTokensForUser(userId) {
-  try {
-    console.log(`Getting tokens for userId: ${userId}`);
-    
-    // Call the Supabase function to get tokens
-    const { data, error } = await supabase.rpc('get_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (error) {
-      console.error('Error getting tokens from Supabase:', error);
-      return null;
-    }
-    
-    if (!data || !data.success) {
-      console.log('No tokens found or tokens expired:', data?.error || 'Unknown error');
-      return null;
-    }
-    
-    // Return tokens in the format expected by the Google API
-    return {
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type || 'Bearer',
-      expiry_date: new Date(data.expires_at).getTime()
-    };
-  } catch (error) {
-    console.error('Error in getTokensForUser:', error);
-    return null;
-  }
-}
-
-// Function to store tokens in Supabase
-async function storeTokensInSupabase(userId, tokens, sessionId) {
-  try {
-    console.log(`Storing tokens for userId: ${userId}`);
-    
-    // Call the Supabase function to store tokens
-    const { data, error } = await supabase.rpc('store_gmail_tokens', {
-      p_user_id: userId,
-      p_access_token: tokens.access_token,
-      p_refresh_token: tokens.refresh_token || null,
-      p_token_type: tokens.token_type || 'Bearer',
-      p_expires_at: new Date(tokens.expiry_date).toISOString(),
-      p_scope: tokens.scope || null,
-      p_session_id: sessionId || crypto.randomBytes(16).toString('hex')
-    });
-    
-    if (error) {
-      console.error('Error storing tokens in Supabase:', error);
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Error in storeTokensInSupabase:', error);
-    return false;
-  }
-}
-
-// Function to revoke tokens in Supabase
-async function revokeTokensInSupabase(userId) {
-  try {
-    console.log(`Revoking tokens for userId: ${userId}`);
-    
-    // Call the Supabase function to revoke tokens
-    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (error) {
-      console.error('Error revoking tokens in Supabase:', error);
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Error in revokeTokensInSupabase:', error);
-    return false;
-  }
-}
-
-// Function to check if user has valid tokens
-async function hasValidTokens(userId) {
-  try {
-    console.log(`Checking if user ${userId} has valid tokens`);
-    
-    // Call the Supabase function to check tokens
-    const { data, error } = await supabase.rpc('has_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (error) {
-      console.error('Error checking tokens in Supabase:', error);
-      return false;
-    }
-    
-    return data || false;
-  } catch (error) {
-    console.error('Error in hasValidTokens:', error);
-    return false;
-  }
-}
-
 // Implementation functions for all endpoints
 
 // Gmail Functions - Updated to use Supabase
 async function executeGmailStatus(userId) {
   try {
-    console.log(`Checking Gmail status for userId: ${userId}`);
+    if (!userId) {
+      return { success: true, connected: false, error: 'User ID required' };
+    }
     
-    // Check if user has valid tokens
-    const hasTokens = await hasValidTokens(userId);
+    // Check if tokens exist in Supabase
+    const { data: hasTokens, error: checkError } = await supabase.rpc('has_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (checkError) {
+      console.error('Error checking Gmail token status:', checkError);
+      return { success: true, connected: false };
+    }
     
     if (!hasTokens) {
       return { success: true, connected: false };
     }
     
     // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
     
-    if (!tokens) {
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
       return { success: true, connected: false };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const clientForRequest = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
+    
+    clientForRequest.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     // Get Gmail profile to verify connection
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     const profile = await gmail.users.getProfile({ userId: 'me' });
     
     // Get unread count
@@ -951,46 +870,77 @@ async function executeGmailConnect(userId) {
 
 async function executeGmailDisconnect(userId) {
   try {
-    // Revoke tokens in Supabase
-    const success = await revokeTokensInSupabase(userId);
+    if (!userId) {
+      return { success: false, error: 'User ID is required' };
+    }
     
-    if (!success) {
-      return { success: false, error: 'Failed to revoke tokens' };
+    // Revoke tokens in Supabase
+    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (error) {
+      console.error('Error revoking Gmail tokens:', error);
+      return { success: false, error: 'Failed to disconnect Gmail account' };
+    }
+    
+    // Also remove from memory cache if present
+    if (tokenStore.has(userId)) {
+      tokenStore.delete(userId);
     }
     
     return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
+    console.error('Error disconnecting Gmail:', error);
     return { success: false, error: error.message };
   }
 }
 
+// Enhanced Gmail Get Emails function with Supabase token storage
 async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   try {
     console.log(`Getting emails for userId: ${userId}, query: ${query}`);
     
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
-    
-    if (!tokens) {
-      console.error(`No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Gmail' };
+    if (!userId) {
+      console.error('No userId provided');
+      return { success: false, error: 'User ID is required' };
     }
+
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
     
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
+    }
+
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
     
-    // Get emails
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: parseInt(maxResults)
     });
-    
-    const messages = [];
-    
-    // Get details for each message
-    for (const message of response.data.messages || []) {
+
+    const messages = response.data.messages || [];
+    const emails = [];
+
+    for (const message of messages) {
       const details = await gmail.users.messages.get({
         userId: 'me',
         id: message.id,
@@ -1003,7 +953,7 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
       const from = headers.find(h => h.name === 'From')?.value || '';
       const date = headers.find(h => h.name === 'Date')?.value || '';
       
-      messages.push({
+      emails.push({
         id: message.id,
         threadId: message.threadId,
         subject,
@@ -1013,11 +963,11 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
         isUnread: details.data.labelIds?.includes('UNREAD') || false
       });
     }
-    
-    return { success: true, emails: messages };
+
+    return { success: true, emails };
   } catch (error) {
-    console.error('Error getting emails:', error);
-    return { success: false, error: 'Failed to get emails' };
+    console.error('Error in executeGmailGetEmails:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -1036,18 +986,36 @@ async function executeGmailSearchSender(userId, sender, maxResults = 10) {
 
 async function executeGmailGetEmail(userId, emailId) {
   try {
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    if (!userId || !emailId) {
+      return { success: false, error: 'User ID and Email ID are required' };
+    }
     
-    if (!tokens) {
-      return { success: false, error: 'Not authenticated with Gmail' };
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
+    
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     // Get email
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: emailId,
@@ -1150,18 +1118,36 @@ async function executeGmailGetEmail(userId, emailId) {
 
 async function executeGmailDeleteEmails(userId, messageIds) {
   try {
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    if (!tokens) {
-      return { success: false, error: 'Not authenticated with Gmail' };
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
+    
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     // Delete emails
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
     let deleted = 0;
     let failed = 0;
@@ -1188,17 +1174,35 @@ async function executeGmailDeleteEmails(userId, messageIds) {
 
 async function executeGmailSummarize(userId, messageIds) {
   try {
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    if (!tokens) {
-      return { success: false, error: 'Not authenticated with Gmail' };
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
     
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+    
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1243,17 +1247,35 @@ async function executeGmailSummarize(userId, messageIds) {
 
 async function executeGmailExtractTasks(userId, messageIds) {
   try {
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    if (!tokens) {
-      return { success: false, error: 'Not authenticated with Gmail' };
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
     
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+    
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1390,17 +1412,35 @@ async function executeGmailExtractTasks(userId, messageIds) {
 
 async function executeGmailPromotions(userId, maxResults = 20) {
   try {
-    // Get tokens from Supabase
-    const tokens = await getTokensForUser(userId);
+    if (!userId) {
+      return { success: false, error: 'User ID is required' };
+    }
     
-    if (!tokens) {
-      return { success: false, error: 'Not authenticated with Gmail' };
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      return { success: false, error: 'Not authenticated with Google' };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
+    const oAuth2Client = new OAuth2Client(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      process.env.GMAIL_REDIRECT_URI
+    );
+    
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
 
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     // Use Gmail's category:promotions search
     const response = await gmail.users.messages.list({
       userId: 'me',

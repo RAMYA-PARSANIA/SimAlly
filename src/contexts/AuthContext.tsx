@@ -50,7 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const userId = authService.getCurrentUser()?.id;
       
-      // Check if user has valid Gmail tokens in Supabase
+      // Check if user has Gmail tokens in Supabase
       const { data, error } = await supabase.rpc('has_gmail_tokens', {
         p_user_id: userId
       });
@@ -61,17 +61,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       
-      setIsGoogleConnected(!!data);
+      setIsGoogleConnected(data || false);
       
-      // If connected, get token info
+      // If connected, get token details
       if (data) {
-        const tokensResult = await supabase.rpc('get_gmail_tokens', {
+        const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
           p_user_id: userId
         });
         
-        if (!tokensResult.error && tokensResult.data && tokensResult.data.success) {
-          setGoogleToken(tokensResult.data.access_token);
+        if (tokensError || !tokensData.success) {
+          console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+          return;
         }
+        
+        setGoogleToken(tokensData.access_token);
       }
     } catch (error) {
       console.error('Error checking Google connection status:', error);

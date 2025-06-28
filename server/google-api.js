@@ -10,17 +10,17 @@ dotenv.config();
 
 const router = express.Router();
 
-// Google OAuth configuration
-const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/google/callback';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Google OAuth configuration
+const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
+const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/google/callback';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Scopes for Google APIs - expanded for more access
 const SCOPES = [
@@ -32,6 +32,9 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/drive.readonly'
 ];
+
+// Store tokens temporarily in memory (in production, use a database)
+const tokenStore = new Map();
 
 // Create OAuth client
 const createOAuthClient = () => {
@@ -58,7 +61,7 @@ router.get('/auth-url', async (req, res) => {
     
     console.log(`[${Date.now()}] Generated session ID: ${sessionId} (userId: ${userId || 'none'})`);
     
-    // Generate auth URL with state parameter for OAuth flow
+    // Store session ID in state parameter for OAuth flow
     const authUrl = oAuth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
@@ -104,7 +107,8 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
 
-    // Use the state parameter as the session ID/userId
+    // Use the state parameter as the session ID
+    // This ensures consistency between the auth request and callback
     const userId = state;
     
     if (!userId) {
@@ -112,17 +116,20 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
 
-    // Store tokens in Supabase
+    // Store tokens in Supabase with encryption
     try {
-      // Call the Supabase function to store tokens
+      // Generate a unique session ID
+      const sessionId = generateSessionId();
+      
+      // Store tokens in Supabase
       const { data, error } = await supabase.rpc('store_gmail_tokens', {
         p_user_id: userId,
         p_access_token: tokens.access_token,
         p_refresh_token: tokens.refresh_token || null,
         p_token_type: tokens.token_type || 'Bearer',
         p_expires_at: new Date(tokens.expiry_date).toISOString(),
-        p_scope: tokens.scope || null,
-        p_session_id: userId
+        p_scope: tokens.scope || '',
+        p_session_id: sessionId
       });
       
       if (error) {
@@ -130,11 +137,14 @@ router.get('/callback', async (req, res) => {
         return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
       }
       
-      console.log(`[${Date.now()}] Tokens stored successfully in Supabase for user: ${userId}`);
+      console.log(`[${Date.now()}] Tokens stored successfully in Supabase for user ${userId}`);
     } catch (storageError) {
-      console.error(`[${Date.now()}] Error storing tokens in Supabase:`, storageError);
+      console.error(`[${Date.now()}] Error storing tokens:`, storageError);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
+
+    // Also store in memory for immediate use
+    tokenStore.set(userId, tokens);
 
     // Redirect back to frontend
     console.log(`[${Date.now()}] Redirecting to frontend with success`);
@@ -147,7 +157,7 @@ router.get('/callback', async (req, res) => {
 
 // Check connection status
 router.get('/status', async (req, res) => {
-  // Try to get user ID from query parameter
+  // Try to get user ID from query
   const userId = req.query.userId;
   
   console.log(`[${Date.now()}] Checking Google connection status for user ID: ${userId}`);
@@ -158,41 +168,61 @@ router.get('/status', async (req, res) => {
   }
 
   try {
-    // Check if user has valid tokens in Supabase
+    // Check if tokens exist in Supabase
     const { data, error } = await supabase.rpc('has_gmail_tokens', {
       p_user_id: userId
     });
     
     if (error) {
-      console.error(`[${Date.now()}] Error checking token status in Supabase:`, error);
+      console.error(`[${Date.now()}] Error checking token existence:`, error);
       return res.json({ success: true, connected: false });
     }
     
-    if (!data) {
-      console.log(`[${Date.now()}] No valid tokens found for user: ${userId}`);
+    const connected = data || false;
+    
+    if (connected) {
+      // Get tokens from Supabase
+      const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+        p_user_id: userId
+      });
+      
+      if (tokensError || !tokensData.success) {
+        console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
+        return res.json({ success: true, connected: false });
+      }
+      
+      // Check if token is expired
+      const expiresAt = new Date(tokensData.expires_at);
+      const isExpired = expiresAt < new Date();
+      console.log(`[${Date.now()}] Token expiry status for user ID: ${userId}: ${isExpired}`);
+      
+      if (isExpired && !tokensData.refresh_token) {
+        console.log(`[${Date.now()}] Token expired and no refresh token available for user ID: ${userId}`);
+        
+        // Revoke expired tokens
+        await supabase.rpc('revoke_gmail_tokens', {
+          p_user_id: userId
+        });
+        
+        return res.json({ success: true, connected: false });
+      }
+      
+      // If we have a refresh token and the token is expired, we should refresh it
+      // This would be implemented in a production environment
+      
+      console.log(`[${Date.now()}] Google connection status: connected for user ID: ${userId}`);
+      return res.json({ 
+        success: true, 
+        connected: true,
+        token: tokensData.access_token,
+        expiresAt: tokensData.expires_at
+      });
+    } else {
+      console.log(`[${Date.now()}] No tokens found for user ID: ${userId}`);
       return res.json({ success: true, connected: false });
     }
-    
-    // Get tokens to check expiration
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
-      return res.json({ success: true, connected: false });
-    }
-    
-    console.log(`[${Date.now()}] Google connection status: connected for user ID: ${userId}`);
-    
-    // Return connection status with token info
-    return res.json({ 
-      success: true, 
-      connected: true,
-      expiresAt: tokensResult.data.expires_at
-    });
-  } catch (error) {
-    console.error(`[${Date.now()}] Error checking Google connection status:`, error);
+  } catch (err) {
+    console.error(`[${Date.now()}] Error checking Google connection status:`, err);
     return res.json({ success: true, connected: false });
   }
 });
@@ -204,8 +234,7 @@ router.post('/disconnect', async (req, res) => {
   console.log(`[${Date.now()}] Disconnecting Google for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
@@ -215,15 +244,22 @@ router.post('/disconnect', async (req, res) => {
     });
     
     if (error) {
-      console.error(`[${Date.now()}] Error revoking tokens in Supabase:`, error);
-      return res.json({ success: false, error: 'Failed to disconnect Google account' });
+      console.error(`[${Date.now()}] Error revoking tokens:`, error);
+      return res.status(500).json({ success: false, error: 'Failed to disconnect Google account' });
     }
     
-    console.log(`[${Date.now()}] Successfully revoked tokens for user: ${userId}`);
-    return res.json({ success: true, message: 'Google account disconnected' });
+    // Also remove from memory cache
+    if (tokenStore.has(userId)) {
+      tokenStore.delete(userId);
+      console.log(`[${Date.now()}] Deleted tokens from memory for user ID: ${userId}`);
+    } else {
+      console.log(`[${Date.now()}] No tokens found in memory for user ID: ${userId}`);
+    }
+    
+    res.json({ success: true, message: 'Google account disconnected' });
   } catch (error) {
     console.error(`[${Date.now()}] Error disconnecting Google:`, error);
-    return res.json({ success: false, error: 'Failed to disconnect Google account' });
+    res.status(500).json({ success: false, error: 'Failed to disconnect Google account' });
   }
 });
 
@@ -235,34 +271,29 @@ router.get('/gmail/messages', async (req, res) => {
   console.log(`[${Date.now()}] Fetching Gmail messages for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-    
-    console.log(`[${Date.now()}] Getting emails for userId: ${userId}, query: ${query}`);
     
     const response = await gmail.users.messages.list({
       userId: 'me',
@@ -312,30 +343,27 @@ router.get('/gmail/email/:emailId', async (req, res) => {
   console.log(`[${Date.now()}] Fetching email content for user ID: ${userId}, email ID: ${emailId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
@@ -425,15 +453,14 @@ router.get('/gmail/email/:emailId', async (req, res) => {
 });
 
 // Delete emails
-router.post('/delete-emails', async (req, res) => {
+router.post('/gmail/delete-emails', async (req, res) => {
   const userId = req.body.userId;
   const { messageIds } = req.body;
   
   console.log(`[${Date.now()}] Deleting emails for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   if (!messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
@@ -442,24 +469,22 @@ router.post('/delete-emails', async (req, res) => {
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
@@ -497,30 +522,27 @@ router.get('/user-profile', async (req, res) => {
   console.log(`[${Date.now()}] Fetching user profile for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const people = google.people({ version: 'v1', auth: oAuth2Client });
     
@@ -545,35 +567,33 @@ router.get('/user-profile', async (req, res) => {
 // Get drive files
 router.get('/drive/files', async (req, res) => {
   const userId = req.query.userId;
+  
   const { maxResults = 10, query = '' } = req.query;
   
   console.log(`[${Date.now()}] Fetching Drive files for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const drive = google.drive({ version: 'v3', auth: oAuth2Client });
     
@@ -600,52 +620,49 @@ router.post('/refresh-token', async (req, res) => {
   console.log(`[${Date.now()}] Refreshing token for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
-    if (!tokens.refresh_token) {
+    if (!tokensData.refresh_token) {
       return res.status(400).json({ success: false, error: 'No refresh token available' });
     }
     
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      refresh_token: tokensData.refresh_token
+    });
     
     const { credentials } = await oAuth2Client.refreshAccessToken();
     
-    // Update stored tokens in Supabase
+    // Update tokens in Supabase
     const { data, error } = await supabase.rpc('store_gmail_tokens', {
       p_user_id: userId,
       p_access_token: credentials.access_token,
-      p_refresh_token: credentials.refresh_token || tokens.refresh_token,
+      p_refresh_token: credentials.refresh_token || tokensData.refresh_token,
       p_token_type: credentials.token_type || 'Bearer',
       p_expires_at: new Date(credentials.expiry_date).toISOString(),
-      p_scope: credentials.scope || tokens.scope,
-      p_session_id: userId
+      p_scope: credentials.scope || tokensData.scope,
+      p_session_id: tokensData.session_id
     });
     
     if (error) {
-      console.error(`[${Date.now()}] Error storing refreshed tokens in Supabase:`, error);
-      return res.status(500).json({ success: false, error: 'Failed to refresh token' });
+      console.error(`[${Date.now()}] Error updating tokens:`, error);
+      return res.status(500).json({ success: false, error: 'Failed to update tokens' });
     }
+    
+    // Also update in memory cache
+    tokenStore.set(userId, credentials);
     
     res.json({
       success: true,
@@ -665,30 +682,27 @@ router.get('/gmail/unread', async (req, res) => {
   console.log(`[${Date.now()}] Fetching unread emails for user ID: ${userId}`);
   
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
-    return res.status(401).json({ success: false, error: 'User ID is required' });
+    return res.status(400).json({ success: false, error: 'User ID is required' });
   }
   
   try {
     // Get tokens from Supabase
-    const tokensResult = await supabase.rpc('get_gmail_tokens', {
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
-    if (tokensResult.error || !tokensResult.data || !tokensResult.data.success) {
-      console.log(`[${Date.now()}] Error retrieving tokens or tokens invalid:`, tokensResult.error || 'Invalid tokens');
+    if (tokensError || !tokensData.success) {
+      console.error(`[${Date.now()}] Error retrieving tokens:`, tokensError || tokensData.error);
       return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
     }
     
-    const tokens = {
-      access_token: tokensResult.data.access_token,
-      refresh_token: tokensResult.data.refresh_token,
-      token_type: tokensResult.data.token_type || 'Bearer',
-      expiry_date: new Date(tokensResult.data.expires_at).getTime()
-    };
-    
     const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
     
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
@@ -732,4 +746,4 @@ router.get('/gmail/unread', async (req, res) => {
   }
 });
 
-module.exports = { router };
+module.exports = { router, tokenStore };
