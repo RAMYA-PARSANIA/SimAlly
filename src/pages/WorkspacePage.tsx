@@ -13,7 +13,7 @@ import ProjectPanel from '../components/ProjectPanel';
 import AnalyticsPanel from '../components/AnalyticsPanel';
 import TimeTrackingPanel from '../components/TimeTrackingPanel';
 import MeetingControls from '../components/MeetingControls';
-import MediasoupMeeting from '../components/MediasoupMeeting';
+import VideoMeeting from '../components/VideoMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 
@@ -771,7 +771,7 @@ const WorkspacePage: React.FC = () => {
                 transition={{ duration: 0.2 }}
               >
                 {currentMeeting ? (
-                  <MediasoupMeeting
+                  <VideoMeeting
                     roomName={currentMeeting.roomName}
                     displayName={currentMeeting.displayName}
                     onLeave={handleLeaveMeeting}

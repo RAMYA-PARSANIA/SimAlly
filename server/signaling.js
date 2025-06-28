@@ -9,7 +9,6 @@ const app = express();
 const VITE_APP_URL = process.env.VITE_APP_URL;
 const VITE_API_URL = process.env.VITE_API_URL;
 const VITE_AI_API_URL = process.env.VITE_AI_API_URL;
-const VITE_MEDIA_API_URL = process.env.VITE_MEDIA_API_URL;
 const VITE_WORKSPACE_API_URL = process.env.VITE_WORKSPACE_API_URL;
 const FRONTEND_URL = process.env.FRONTEND_URL;
 

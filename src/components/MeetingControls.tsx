@@ -1,14 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Video, Users, Plus, LogIn, ArrowRight, Copy, Check, Share2, QrCode, Link } from 'lucide-react';
+import { ArrowRight, HelpCircle, LogIn, User, Bot, Loader2, Video, Users, Plus, Copy, Check, Share2, ExternalLink } from 'lucide-react';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
-const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const VITE_API_URL = import.meta.env.VITE_API_URL;
-const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
-const VITE_APP_URL = import.meta.env.VITE_APP_URL;
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface MeetingControlsProps {
   onStartMeeting: (roomName: string, displayName: string) => void;
@@ -257,7 +251,7 @@ See you there!`);
                           size="sm"
                           className="w-full justify-start"
                         >
-                          <Link className="w-4 h-4 mr-2" />
+                          <ExternalLink className="w-4 h-4 mr-2" />
                           Copy Meeting Link
                         </Button>
                         <Button

@@ -5,15 +5,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import MeetingControls from '../components/MeetingControls';
-import MediasoupMeeting from '../components/MediasoupMeeting';
+import VideoMeeting from '../components/VideoMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
-const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const VITE_API_URL = import.meta.env.VITE_API_URL;
-const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
-const VITE_APP_URL = import.meta.env.VITE_APP_URL;
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const MeetingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -100,7 +94,7 @@ See you there!`);
     return (
       <div className="min-h-screen bg-primary">
         {/* Meeting Header with Invite Button */}
-        {/* <div className="absolute top-4 right-4 z-50">
+        <div className="absolute top-4 right-4 z-50">
           <Button
             onClick={() => setShowInviteModal(true)}
             variant="secondary"
@@ -110,9 +104,9 @@ See you there!`);
             <Share2 className="w-4 h-4" />
             <span>Invite Others</span>
           </Button>
-        </div> */}
+        </div>
 
-        <MediasoupMeeting
+        <VideoMeeting
           roomName={currentMeeting.roomName}
           displayName={currentMeeting.displayName}
           onLeave={handleLeaveMeeting}
@@ -226,7 +220,7 @@ See you there!`);
                   Video Meetings
                 </h1>
                 <p className="text-xs text-secondary">
-                  Powered by Mediasoup + AI Assistant
+                  Powered by Daily.co + AI Assistant
                 </p>
               </div>
             </div>
@@ -257,7 +251,7 @@ See you there!`);
               className="text-lg text-secondary max-w-2xl mx-auto mb-8"
             >
               Professional video conferencing with AI-powered transcription, note-taking, and meeting summaries. 
-              Built with Mediasoup for superior performance and reliability.
+              Built with Daily.co for superior performance and reliability.
             </motion.p>
 
             {/* Features Grid */}
@@ -391,52 +385,6 @@ See you there!`);
                   </div>
                   <h3 className="font-bold text-primary mb-2">{step.title}</h3>
                   <p className="text-secondary text-sm">{step.description}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          {/* Technical Advantages */}
-          <div className="mt-20">
-            <div className="text-center mb-12">
-              <motion.h2
-                initial={{ y: 30, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="text-3xl font-bold gradient-gold-silver mb-4"
-              >
-                Why Mediasoup?
-              </motion.h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-              {[
-                {
-                  title: 'Superior Performance',
-                  description: 'Low latency, high quality video with adaptive bitrate streaming'
-                },
-                {
-                  title: 'Scalable Architecture',
-                  description: 'Handle hundreds of participants with efficient resource usage'
-                },
-                {
-                  title: 'Full Control',
-                  description: 'Complete customization and control over your meeting experience'
-                },
-                {
-                  title: 'Open Source',
-                  description: 'Free, transparent, and continuously improved by the community'
-                }
-              ].map((advantage, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ y: 30, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.5 + index * 0.1 }}
-                >
-                  <GlassCard className="p-6" hover>
-                    <h3 className="font-bold text-primary mb-3">{advantage.title}</h3>
-                    <p className="text-secondary text-sm">{advantage.description}</p>
-                  </GlassCard>
                 </motion.div>
               ))}
             </div>
