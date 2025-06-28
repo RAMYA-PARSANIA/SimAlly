@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, HelpCircle, LogIn, User, Bot, Loader2, Video, Users, Plus, Copy, Check, Share2, ExternalLink } from 'lucide-react';
+import { ArrowRight, Video, Users, Plus, LogIn, Copy, Check, Share2, ExternalLink } from 'lucide-react';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
