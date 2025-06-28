@@ -52,8 +52,8 @@ router.get('/auth-url', (req, res) => {
     // Store session ID in cookie
     res.cookie('google_session_id', sessionId, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      secure: true,
+      maxAge: 30 * 24 * 60 * 30 , // 21 mins
       sameSite: 'None' // Allows cross-site cookies
     });
     
