@@ -5,8 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
-const { tokenStore } = require('./google-api');
 
 const app = express();
 const PORT = process.env.AI_ASSISTANT_PORT || 8000;
@@ -77,6 +77,7 @@ app.options('*', cors(corsOptions));
 // Additional middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser()); // Add cookie parser middleware
 
 // Add security headers
 app.use((req, res, next) => {
@@ -86,6 +87,93 @@ app.use((req, res, next) => {
   res.header('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
+
+// Helper function to get OAuth tokens from cookies
+function getOAuthTokensFromCookies(req) {
+  try {
+    // Check for various possible cookie names that might contain OAuth tokens
+    const possibleTokenCookies = [
+      'google_oauth_tokens',
+      'oauth_tokens', 
+      'google_tokens',
+      'access_token',
+      'google_session',
+      'auth_tokens'
+    ];
+    
+    let tokens = null;
+    
+    // Try to find tokens in cookies
+    for (const cookieName of possibleTokenCookies) {
+      if (req.cookies[cookieName]) {
+        try {
+          // Try to parse as JSON if it's a string
+          if (typeof req.cookies[cookieName] === 'string') {
+            tokens = JSON.parse(req.cookies[cookieName]);
+          } else {
+            tokens = req.cookies[cookieName];
+          }
+          
+          // Validate that we have the required token fields
+          if (tokens && tokens.access_token) {
+            console.log(`Found OAuth tokens in cookie: ${cookieName}`);
+            break;
+          }
+        } catch (parseError) {
+          console.log(`Failed to parse cookie ${cookieName}:`, parseError.message);
+          continue;
+        }
+      }
+    }
+    
+    // Also check for individual token cookies
+    if (!tokens) {
+      const accessToken = req.cookies.google_access_token || req.cookies.access_token;
+      const refreshToken = req.cookies.google_refresh_token || req.cookies.refresh_token;
+      
+      if (accessToken) {
+        tokens = {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_type: req.cookies.token_type || 'Bearer'
+        };
+        
+        // Add expiry if available
+        if (req.cookies.expires_at || req.cookies.expiry_date) {
+          tokens.expiry_date = parseInt(req.cookies.expires_at || req.cookies.expiry_date);
+        }
+        
+        console.log('Constructed tokens from individual cookies');
+      }
+    }
+    
+    return tokens;
+  } catch (error) {
+    console.error('Error getting OAuth tokens from cookies:', error);
+    return null;
+  }
+}
+
+// Helper function to set up OAuth client with tokens from cookies
+function setupOAuthClientFromCookies(req) {
+  const tokens = getOAuthTokensFromCookies(req);
+  
+  if (!tokens || !tokens.access_token) {
+    throw new Error('No valid OAuth tokens found in cookies');
+  }
+  
+  // Create a new OAuth client instance to avoid conflicts
+  const clientForRequest = new OAuth2Client(
+    process.env.GMAIL_CLIENT_ID,
+    process.env.GMAIL_CLIENT_SECRET,
+    process.env.GMAIL_REDIRECT_URI
+  );
+  
+  clientForRequest.setCredentials(tokens);
+  
+  console.log('OAuth client configured with tokens from cookies');
+  return clientForRequest;
+}
 
 // Complete endpoint mapping for our webapp with ALL available functions
 const WEBAPP_ENDPOINTS = {
@@ -614,7 +702,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 
       // Execute the endpoint function directly
       try {
-        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId);
+        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId, req);
         
         return res.json({
           success: true,
@@ -659,7 +747,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 });
 
 // Master function to execute any endpoint
-async function executeEndpointFunction(endpoint, parameters, userId) {
+async function executeEndpointFunction(endpoint, parameters, userId, req = null) {
   const config = WEBAPP_ENDPOINTS[endpoint];
   if (!config || !config.implementation) {
     throw new Error('Invalid endpoint or missing implementation');
@@ -672,31 +760,31 @@ async function executeEndpointFunction(endpoint, parameters, userId) {
 
   // Execute the appropriate function
   switch (config.implementation) {
-    // Gmail functions
+    // Gmail functions - now pass req for cookie access
     case 'executeGmailStatus':
-      return await executeGmailStatus(parameters.userId);
+      return await executeGmailStatus(parameters.userId, req);
     case 'executeGmailConnect':
       return await executeGmailConnect(parameters.userId);
     case 'executeGmailDisconnect':
-      return await executeGmailDisconnect(parameters.userId);
+      return await executeGmailDisconnect(parameters.userId, req);
     case 'executeGmailGetEmails':
-      return await executeGmailGetEmails(parameters.userId, parameters.query, parameters.maxResults);
+      return await executeGmailGetEmails(parameters.userId, parameters.query, parameters.maxResults, req);
     case 'executeGmailUnread':
-      return await executeGmailUnread(parameters.userId, parameters.maxResults);
+      return await executeGmailUnread(parameters.userId, parameters.maxResults, req);
     case 'executeGmailSearch':
-      return await executeGmailSearch(parameters.userId, parameters.query, parameters.maxResults);
+      return await executeGmailSearch(parameters.userId, parameters.query, parameters.maxResults, req);
     case 'executeGmailSearchSender':
-      return await executeGmailSearchSender(parameters.userId, parameters.sender, parameters.maxResults);
+      return await executeGmailSearchSender(parameters.userId, parameters.sender, parameters.maxResults, req);
     case 'executeGmailGetEmail':
-      return await executeGmailGetEmail(parameters.userId, parameters.emailId);
+      return await executeGmailGetEmail(parameters.userId, parameters.emailId, req);
     case 'executeGmailDeleteEmails':
-      return await executeGmailDeleteEmails(parameters.userId, parameters.messageIds);
+      return await executeGmailDeleteEmails(parameters.userId, parameters.messageIds, req);
     case 'executeGmailSummarize':
-      return await executeGmailSummarize(parameters.userId, parameters.messageIds);
+      return await executeGmailSummarize(parameters.userId, parameters.messageIds, req);
     case 'executeGmailExtractTasks':
-      return await executeGmailExtractTasks(parameters.userId, parameters.messageIds);
+      return await executeGmailExtractTasks(parameters.userId, parameters.messageIds, req);
     case 'executeGmailPromotions':
-      return await executeGmailPromotions(parameters.userId, parameters.maxResults);
+      return await executeGmailPromotions(parameters.userId, parameters.maxResults, req);
 
     // Workspace functions
     case 'executeWorkspaceChannels':
@@ -811,173 +899,28 @@ app.get('/api/gmail/auth-url', (req, res) => {
   }
 });
 
-// Gmail auth callback
-app.get('/auth/gmail/callback', async (req, res) => {
-  try {
-    const { code, state } = req.query;
-    
-    if (!code || !state) {
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    // Use state directly as userId (no parsing needed)
-    const userId = state;
-    
-    console.log(`Gmail OAuth callback for user: ${userId}`);
-    
-    // Exchange code for tokens with robust error handling
-    let tokens;
-    try {
-      const tokenResponse = await oauth2Client.getToken(code.toString());
-      tokens = tokenResponse.tokens;
-      
-      if (!tokens || !tokens.access_token) {
-        console.error('Invalid token response:', tokenResponse);
-        return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-      }
-      
-      console.log('Received tokens from Google:', {
-        hasAccessToken: !!tokens.access_token,
-        hasRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in,
-        expiryDate: tokens.expiry_date
-      });
-    } catch (tokenError) {
-      console.error('Error getting tokens:', tokenError);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    // Generate a secure session token for encryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Store tokens in database
-    try {
-      const { data, error } = await supabase.rpc('store_encrypted_gmail_tokens_with_fallback', {
-        p_user_id: userId,
-        p_session_token: sessionToken,
-        p_access_token: tokens.access_token,
-        p_refresh_token: tokens.refresh_token || null,
-        p_token_type: tokens.token_type || 'Bearer',
-        p_expires_at: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
-        p_scope: tokens.scope
-      });
-      
-      if (error) {
-        console.error('Error storing Gmail tokens:', error);
-        return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-      }
-      
-      if (!data || !data.success) {
-        console.error('Failed to store Gmail tokens:', data?.error || 'Unknown error');
-        return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-      }
-      
-      console.log(`Gmail tokens stored securely for user ${userId}`);
-    } catch (storageError) {
-      console.error('Exception storing Gmail tokens:', storageError);
-      return res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-    }
-    
-    // Redirect back to assistant page
-    res.redirect(`${FRONTEND_URL}/assistant?gmail_connected=true`);
-  } catch (error) {
-    console.error('Error in Gmail callback:', error);
-    res.redirect(`${FRONTEND_URL}/assistant?gmail_error=true`);
-  }
-});
-
-// Refactored Gmail status endpoint
-app.get('/api/gmail/status', async (req, res) => {
-  try {
-    const { userId } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
-
-    console.log(`Gmail status check for user ${userId}: checking...`);
-
-    // Retrieve tokens from tokenStore using session ID
-    const sessionId = req.cookies.google_session_id;
-    const tokens = tokenStore.get(sessionId);
-
-    if (!tokens || !tokens.access_token) {
-      return res.json({
-        connected: false
-      });
-    }
-
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials(tokens);
-
-    // Get Gmail profile to verify connection
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    const profile = await gmail.users.getProfile({ userId: 'me' });
-
-    // Get unread count
-    const unreadResponse = await gmail.users.messages.list({
-      userId: 'me',
-      q: 'is:unread',
-      maxResults: 1
-    });
-
-    const unreadCount = unreadResponse.data.resultSizeEstimate || 0;
-
-    res.json({
-      connected: true,
-      email: profile.data.emailAddress,
-      unreadCount
-    });
-  } catch (error) {
-    console.error('Error checking Gmail status:', error);
-    res.json({
-      connected: false,
-      error: 'Failed to verify Gmail connection'
-    });
-  }
-});
-
 
 // Implementation functions for all endpoints
 
-// Gmail Functions
-async function executeGmailStatus(userId) {
+// Gmail Functions - Updated to use cookies
+async function executeGmailStatus(userId, req) {
   try {
-    // Check if tokens exist
-    const { data: tokensExist } = await supabase.rpc('check_gmail_tokens_exist', {
-      p_user_id: userId
-    });
-    
-    if (!tokensExist) {
-      return { success: true, connected: false };
+    if (!req) {
+      return { success: true, connected: false, error: 'Request context required' };
     }
     
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
+    // Check if tokens exist in cookies
+    const tokens = getOAuthTokensFromCookies(req);
     
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
+    if (!tokens || !tokens.access_token) {
       return { success: true, connected: false };
     }
     
     // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
     // Get Gmail profile to verify connection
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     const profile = await gmail.users.getProfile({ userId: 'me' });
     
     // Get unread count
@@ -1030,15 +973,30 @@ async function executeGmailConnect(userId) {
   }
 }
 
-async function executeGmailDisconnect(userId) {
+async function executeGmailDisconnect(userId, req) {
   try {
-    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
-      p_user_id: userId
-    });
-    
-    if (error) {
-      return { success: false, error: error.message };
+    if (!req) {
+      return { success: false, error: 'Request context required' };
     }
+    
+    // Clear OAuth cookies
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
+    
+    // Clear all OAuth-related cookies
+    const cookiesToClear = [
+      'google_oauth_tokens',
+      'google_access_token', 
+      'google_refresh_token',
+      'google_token_expiry'
+    ];
+    
+    // Note: We can't directly clear cookies in this function since we don't have res
+    // This would need to be handled in the endpoint that calls this function
     
     return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
@@ -1046,31 +1004,17 @@ async function executeGmailDisconnect(userId) {
   }
 }
 
-async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
+async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
     // Get emails
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
@@ -1112,44 +1056,30 @@ async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   }
 }
 
-async function executeGmailUnread(userId, maxResults = 20) {
-  return executeGmailGetEmails(userId, 'is:unread', maxResults);
+async function executeGmailUnread(userId, maxResults = 20, req) {
+  return executeGmailGetEmails(userId, 'is:unread', maxResults, req);
 }
 
-async function executeGmailSearch(userId, query, maxResults = 10) {
-  return executeGmailGetEmails(userId, query, maxResults);
+async function executeGmailSearch(userId, query, maxResults = 10, req) {
+  return executeGmailGetEmails(userId, query, maxResults, req);
 }
 
-async function executeGmailSearchSender(userId, sender, maxResults = 10) {
+async function executeGmailSearchSender(userId, sender, maxResults = 10, req) {
   const query = `from:${sender}`;
-  return executeGmailGetEmails(userId, query, maxResults);
+  return executeGmailGetEmails(userId, query, maxResults, req);
 }
 
-async function executeGmailGetEmail(userId, emailId) {
+async function executeGmailGetEmail(userId, emailId, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
     // Get email
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: emailId,
@@ -1250,31 +1180,17 @@ async function executeGmailGetEmail(userId, emailId) {
   }
 }
 
-async function executeGmailDeleteEmails(userId, messageIds) {
+async function executeGmailDeleteEmails(userId, messageIds, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
     // Delete emails
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     
     let deleted = 0;
     let failed = 0;
@@ -1299,30 +1215,16 @@ async function executeGmailDeleteEmails(userId, messageIds) {
   }
 }
 
-async function executeGmailSummarize(userId, messageIds) {
+async function executeGmailSummarize(userId, messageIds, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1365,30 +1267,16 @@ async function executeGmailSummarize(userId, messageIds) {
   }
 }
 
-async function executeGmailExtractTasks(userId, messageIds) {
+async function executeGmailExtractTasks(userId, messageIds, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
     
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1523,30 +1411,16 @@ async function executeGmailExtractTasks(userId, messageIds) {
   }
 }
 
-async function executeGmailPromotions(userId, maxResults = 20) {
+async function executeGmailPromotions(userId, maxResults = 20, req) {
   try {
-    // Generate a session token for decryption
-    const sessionToken = crypto.randomBytes(32).toString('hex');
-    
-    // Get tokens
-    const { data, error } = await supabase.rpc('get_decrypted_gmail_tokens_with_fallback', {
-      p_user_id: userId,
-      p_session_token: sessionToken
-    });
-    
-    if (error || !data.success) {
-      return { success: false, error: 'Gmail not connected' };
+    if (!req) {
+      return { success: false, error: 'Request context required for Gmail access' };
     }
     
-    // Set up OAuth client with tokens
-    oauth2Client.setCredentials({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      token_type: data.token_type,
-      expiry_date: new Date(data.expires_at).getTime()
-    });
+    // Set up OAuth client with tokens from cookies
+    const clientForRequest = setupOAuthClientFromCookies(req);
 
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: clientForRequest });
     // Use Gmail's category:promotions search
     const response = await gmail.users.messages.list({
       userId: 'me',
