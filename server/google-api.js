@@ -54,7 +54,7 @@ router.get('/auth-url', (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      sameSite: 'lax'
+      sameSite: 'None' // Allows cross-site cookies
     });
     
     const authUrl = oAuth2Client.generateAuthUrl({
@@ -118,21 +118,27 @@ router.get('/callback', async (req, res) => {
 // Check connection status
 router.get('/status', (req, res) => {
   const sessionId = req.cookies.google_session_id;
-  
+  console.log(`[${Date.now()}] Checking Google connection status for session ID: ${sessionId}`);
+
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No session ID or tokens found for session ID: ${sessionId}`);
     return res.json({ success: true, connected: false });
   }
-  
+
   const tokens = tokenStore.get(sessionId);
-  
+  console.log(`[${Date.now()}] Tokens retrieved for session ID: ${sessionId}`, tokens);
+
   // Check if token is expired
   const isExpired = tokens.expiry_date && tokens.expiry_date < Date.now();
-  
+  console.log(`[${Date.now()}] Token expiry status for session ID: ${sessionId}: ${isExpired}`);
+
   if (isExpired && !tokens.refresh_token) {
+    console.log(`[${Date.now()}] Token expired and no refresh token available for session ID: ${sessionId}`);
     tokenStore.delete(sessionId);
     return res.json({ success: true, connected: false });
   }
-  
+
+  console.log(`[${Date.now()}] Google connection status: connected for session ID: ${sessionId}`);
   res.json({ 
     success: true, 
     connected: true,
