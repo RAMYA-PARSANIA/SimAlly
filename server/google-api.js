@@ -74,36 +74,43 @@ router.get('/auth-url', (req, res) => {
 // OAuth callback
 router.get('/callback', async (req, res) => {
   const { code, state } = req.query;
-  
+  console.log(`[${Date.now()}] Google OAuth callback triggered with code: ${code}, state: ${state}`);
+
   if (!code) {
+    console.error(`[${Date.now()}] No code received in callback`);
     return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
   }
-  
+
   try {
     const oAuth2Client = createOAuthClient();
-    
+    console.log(`[${Date.now()}] OAuth client created successfully`);
+
     // Get tokens with error handling
     let tokens;
     try {
+      console.log(`[${Date.now()}] Attempting to exchange code for tokens`);
       const tokenResponse = await oAuth2Client.getToken(code);
       tokens = tokenResponse.tokens;
+      console.log(`[${Date.now()}] Tokens received:`, tokens);
     } catch (tokenError) {
-      console.error('Error getting tokens:', tokenError);
+      console.error(`[${Date.now()}] Error getting tokens:`, tokenError);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
-    
+
     if (!tokens) {
-      console.error('No tokens received from Google');
+      console.error(`[${Date.now()}] No tokens received from Google`);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
-    
+
     // Store tokens with session ID
+    console.log(`[${Date.now()}] Storing tokens for state: ${state}`);
     tokenStore.set(state, tokens);
-    
+
     // Redirect back to frontend
+    console.log(`[${Date.now()}] Redirecting to frontend with success`);
     res.redirect(`${FRONTEND_URL}/dashboard?google_connected=true`);
   } catch (error) {
-    console.error('Error in callback:', error);
+    console.error(`[${Date.now()}] Error in callback:`, error);
     res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
   }
 });
