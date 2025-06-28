@@ -2082,6 +2082,10 @@ app.get('/', (req, res) => {
   });
 });
 
+// Mount the Google API router
+const { router: googleApiRouter } = require('./google-api');
+app.use('/api', googleApiRouter);
+
 app.listen(PORT, () => {
   console.log(`AI Assistant server running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
