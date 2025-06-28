@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, FileText } from 'lucide-react';
+import { X, Calendar, Clock, FileText, Users, AlertCircle } from 'lucide-react';
 import { meetingService } from '../services/meetingService';
 import { Meeting } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
 
@@ -11,32 +12,52 @@ interface CreateMeetingModalProps {
 }
 
 const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeetingCreated }) => {
+  const { user, isGoogleConnected } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     startTime: new Date(new Date().getTime() + 30 * 60000).toISOString().slice(0, 16), // 30 minutes from now
-    duration: 60
+    duration: 60,
+    attendees: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    if (!isGoogleConnected) {
+      setError('You need to connect your Google account first. Please go to Dashboard and connect Google.');
+      return;
+    }
 
     try {
       setIsLoading(true);
+      
+      // Parse attendees from comma-separated string to array
+      const attendeesList = formData.attendees
+        ? formData.attendees.split(',').map(email => email.trim()).filter(email => email)
+        : [];
+      
       const response = await meetingService.createMeeting({
+        userId: user?.id,
         title: formData.title || 'Google Meet Meeting',
         description: formData.description,
         startTime: new Date(formData.startTime).toISOString(),
-        duration: formData.duration
+        duration: formData.duration,
+        attendees: attendeesList
       });
 
       if (response.success) {
         onMeetingCreated(response.meeting);
         onClose();
+      } else {
+        setError(response.error || 'Failed to create meeting');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create meeting:', error);
+      setError(error.response?.data?.error || 'Failed to create meeting. Please ensure you have connected your Google account.');
     } finally {
       setIsLoading(false);
     }
@@ -67,6 +88,14 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeet
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Error message */}
+            {error && (
+              <div className="p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30 flex items-center space-x-2">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+            
             {/* Title */}
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-primary mb-2">
@@ -143,6 +172,28 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeet
               </div>
             </div>
 
+            {/* Attendees */}
+            <div>
+              <label htmlFor="attendees" className="block text-sm font-medium text-primary mb-2">
+                Attendees (Optional)
+              </label>
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary" />
+                <input
+                  type="text"
+                  id="attendees"
+                  name="attendees"
+                  value={formData.attendees}
+                  onChange={handleInputChange}
+                  placeholder="Enter email addresses separated by commas"
+                  className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-primary placeholder-secondary"
+                />
+              </div>
+              <p className="text-xs text-secondary mt-1">
+                Invitations will be sent to all attendees
+              </p>
+            </div>
+
             {/* Actions */}
             <div className="flex space-x-3 pt-4">
               <Button
@@ -155,7 +206,7 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeet
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !isGoogleConnected}
                 variant="premium"
                 className="flex-1 flex items-center justify-center"
               >

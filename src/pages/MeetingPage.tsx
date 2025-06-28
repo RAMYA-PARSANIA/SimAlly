@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check, Plus, Calendar, Clock, Trash2, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check, Plus, Calendar, Clock, Trash2, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -23,24 +23,28 @@ const MeetingPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (isGoogleConnected) {
+    if (user) {
       fetchMeetings();
     } else {
       setLoading(false);
     }
-  }, [isGoogleConnected]);
+  }, [user]);
 
   const fetchMeetings = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await meetingService.listMeetings();
+      
+      const response = await meetingService.listMeetings(user?.id);
+      
       if (response.success) {
         setMeetings(response.meetings);
+      } else {
+        setError(response.error || 'Failed to load meetings');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch meetings:', error);
-      setError('Failed to load meetings. Please try again later.');
+      setError(error.response?.data?.error || 'Failed to load meetings. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -75,13 +79,15 @@ const MeetingPage: React.FC = () => {
     if (!confirm('Are you sure you want to cancel this meeting?')) return;
     
     try {
-      const response = await meetingService.deleteMeeting(eventId);
+      const response = await meetingService.deleteMeeting(eventId, user?.id);
       if (response.success) {
         setMeetings(prev => prev.filter(meeting => meeting.id !== eventId));
+      } else {
+        setError(response.error || 'Failed to cancel meeting');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete meeting:', error);
-      setError('Failed to cancel meeting. Please try again.');
+      setError(error.response?.data?.error || 'Failed to cancel meeting. Please try again.');
     }
   };
 
@@ -161,16 +167,19 @@ const MeetingPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* Error Message */}
+              {error && (
+                <div className="mb-6 p-4 glass-panel rounded-lg bg-red-500/10 border-red-500/30 flex items-center space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <p className="text-red-400">{error}</p>
+                </div>
+              )}
+
               {/* Meetings List */}
               {loading ? (
                 <div className="flex justify-center items-center py-12">
                   <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full"></div>
                 </div>
-              ) : error ? (
-                <GlassCard className="p-8 text-center">
-                  <p className="text-red-400 mb-4">{error}</p>
-                  <Button onClick={handleRefresh} variant="secondary">Try Again</Button>
-                </GlassCard>
               ) : meetings.length === 0 ? (
                 <GlassCard className="p-8 text-center">
                   <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />

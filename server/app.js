@@ -100,6 +100,10 @@ const GAME_CONFIGS = {
 const { router: googleApiRoutes } = require('./google-api');
 app.use('/api/google', googleApiRoutes);
 
+// Import Meeting API routes
+const meetingApiRoutes = require('./meeting-api');
+app.use('/api/google', meetingApiRoutes);
+
 // Generic conversation creation endpoint
 const createConversation = async (gameType, userId) => {
   const config = GAME_CONFIGS[gameType];

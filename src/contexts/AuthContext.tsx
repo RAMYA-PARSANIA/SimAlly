@@ -31,6 +31,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(session);
       setUser(session?.user || null);
       setLoading(false);
+      
+      // Store user ID in localStorage for API calls
+      if (session?.user) {
+        localStorage.setItem('userId', session.user.id);
+        localStorage.setItem('userEmail', session.user.username);
+      } else {
+        localStorage.removeItem('userId');
+        localStorage.removeItem('userEmail');
+      }
     });
 
     // Verify current session on mount
