@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authService, type User, type Session } from '../lib/auth';
-import axios from 'axios';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -49,22 +49,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     try {
       const userId = authService.getCurrentUser()?.id;
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/google/status?userId=${userId}`, {
-        credentials: 'include',
-        headers: {
-          'Origin': window.location.origin
-        }
+      
+      // Check if user has valid Gmail tokens in Supabase
+      const { data, error } = await supabase.rpc('has_gmail_tokens', {
+        p_user_id: userId
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        setIsGoogleConnected(data.connected);
-        if (data.token) {
-          setGoogleToken(data.token);
-        }
-      } else {
-        console.warn(`Google status check failed: ${response.status} ${response.statusText}`);
+      if (error) {
+        console.error('Error checking Gmail token status:', error);
         setIsGoogleConnected(false);
+        return;
+      }
+      
+      setIsGoogleConnected(!!data);
+      
+      // If connected, get token info
+      if (data) {
+        const tokensResult = await supabase.rpc('get_gmail_tokens', {
+          p_user_id: userId
+        });
+        
+        if (!tokensResult.error && tokensResult.data && tokensResult.data.success) {
+          setGoogleToken(tokensResult.data.access_token);
+        }
       }
     } catch (error) {
       console.error('Error checking Google connection status:', error);

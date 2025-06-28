@@ -6,7 +6,6 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
-const { tokenStore } = require('./google-api');
 require('dotenv').config();
 
 const app = express();
@@ -89,119 +88,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Helper function to get OAuth tokens from cookies
-function getOAuthTokensFromCookies(req) {
-  try {
-    // Check for various possible cookie names that might contain OAuth tokens
-    const possibleTokenCookies = [
-      'google_oauth_tokens',
-      'oauth_tokens', 
-      'google_tokens',
-      'access_token',
-      'google_session',
-      'auth_tokens'
-    ];
-    
-    let tokens = null;
-    
-    // Try to find tokens in cookies
-    for (const cookieName of possibleTokenCookies) {
-      if (req.cookies[cookieName]) {
-        try {
-          // Try to parse as JSON if it's a string
-          if (typeof req.cookies[cookieName] === 'string') {
-            tokens = JSON.parse(req.cookies[cookieName]);
-          } else {
-            tokens = req.cookies[cookieName];
-          }
-          
-          // Validate that we have the required token fields
-          if (tokens && tokens.access_token) {
-            console.log(`Found OAuth tokens in cookie: ${cookieName}`);
-            break;
-          }
-        } catch (parseError) {
-          console.log(`Failed to parse cookie ${cookieName}:`, parseError.message);
-          continue;
-        }
-      }
-    }
-    
-    // Also check for individual token cookies
-    if (!tokens) {
-      const accessToken = req.cookies.google_access_token || req.cookies.access_token;
-      const refreshToken = req.cookies.google_refresh_token || req.cookies.refresh_token;
-      
-      if (accessToken) {
-        tokens = {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          token_type: req.cookies.token_type || 'Bearer'
-        };
-        
-        // Add expiry if available
-        if (req.cookies.expires_at || req.cookies.expiry_date) {
-          tokens.expiry_date = parseInt(req.cookies.expires_at || req.cookies.expiry_date);
-        }
-        
-        console.log('Constructed tokens from individual cookies');
-      }
-    }
-    
-    return tokens;
-  } catch (error) {
-    console.error('Error getting OAuth tokens from cookies:', error);
-    return null;
-  }
-}
-
-// Helper function to set up OAuth client with tokens from cookies
-function setupOAuthClientFromCookies(req) {
-  const tokens = getOAuthTokensFromCookies(req);
-  
-  if (!tokens || !tokens.access_token) {
-    throw new Error('No valid OAuth tokens found in cookies');
-  }
-  
-  // Create a new OAuth client instance to avoid conflicts
-  const clientForRequest = new OAuth2Client(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    process.env.GMAIL_REDIRECT_URI
-  );
-  
-  clientForRequest.setCredentials(tokens);
-  
-  console.log('OAuth client configured with tokens from cookies');
-  return clientForRequest;
-}
-
-// Helper function to get tokens from tokenStore using userId
-function getTokensForUser(userId) {
-  // Try to get tokens directly with userId
-  let tokens = tokenStore.get(userId);
-  
-  // If not found, try to find tokens where the state matches userId
-  if (!tokens) {
-    console.log(`[${Date.now()}] Tokens not found directly for userId: ${userId}, searching all tokens...`);
-    
-    // Iterate through all entries in tokenStore
-    for (const [key, value] of tokenStore.entries()) {
-      // Check if this entry has a state that matches our userId
-      if (value.state === userId) {
-        console.log(`[${Date.now()}] Found tokens with matching state for userId: ${userId}`);
-        tokens = value;
-        
-        // Also store these tokens directly with userId for future lookups
-        tokenStore.set(userId, value);
-        break;
-      }
-    }
-  }
-  
-  return tokens;
-}
-
 // Complete endpoint mapping for our webapp with ALL available functions
 const WEBAPP_ENDPOINTS = {
   // Gmail Management
@@ -238,7 +124,7 @@ const WEBAPP_ENDPOINTS = {
     implementation: 'executeGmailGetEmails'
   },
   gmail_unread: {
-    endpoint: '/api/gmail/unread',
+    endpoint: '/api/gmail/emails',
     method: 'GET',
     description: 'Get unread emails',
     parameters: ['userId', 'maxResults?'],
@@ -626,7 +512,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
 
-    console.log(`[${Date.now()}] Processing message: "${message}" for user: ${userId}`);
+    console.log(`Processing message: "${message}" for user: ${userId}`);
 
     // Create comprehensive prompt with all endpoints
     const endpointsList = Object.entries(WEBAPP_ENDPOINTS)
@@ -692,7 +578,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
     const result = await model.generateContent(systemPrompt);
     const aiResponse = result.response.text();
 
-    console.log(`[${Date.now()}] AI Response:`, aiResponse);
+    console.log('AI Response:', aiResponse);
 
     // Parse AI response
     let parsedResponse;
@@ -729,7 +615,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 
       // Execute the endpoint function directly
       try {
-        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId, req);
+        const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId);
         
         return res.json({
           success: true,
@@ -774,7 +660,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
 });
 
 // Master function to execute any endpoint
-async function executeEndpointFunction(endpoint, parameters, userId, req = null) {
+async function executeEndpointFunction(endpoint, parameters, userId) {
   const config = WEBAPP_ENDPOINTS[endpoint];
   if (!config || !config.implementation) {
     throw new Error('Invalid endpoint or missing implementation');
@@ -787,31 +673,31 @@ async function executeEndpointFunction(endpoint, parameters, userId, req = null)
 
   // Execute the appropriate function
   switch (config.implementation) {
-    // Gmail functions - now pass req for cookie access
+    // Gmail functions
     case 'executeGmailStatus':
-      return await executeGmailStatus(parameters.userId, req);
+      return await executeGmailStatus(parameters.userId);
     case 'executeGmailConnect':
       return await executeGmailConnect(parameters.userId);
     case 'executeGmailDisconnect':
-      return await executeGmailDisconnect(parameters.userId, req);
+      return await executeGmailDisconnect(parameters.userId);
     case 'executeGmailGetEmails':
-      return await executeGmailGetEmails(parameters.userId, parameters.query, parameters.maxResults, req);
+      return await executeGmailGetEmails(parameters.userId, parameters.query, parameters.maxResults);
     case 'executeGmailUnread':
-      return await executeGmailUnread(parameters.userId, parameters.maxResults, req);
+      return await executeGmailUnread(parameters.userId, parameters.maxResults);
     case 'executeGmailSearch':
-      return await executeGmailSearch(parameters.userId, parameters.query, parameters.maxResults, req);
+      return await executeGmailSearch(parameters.userId, parameters.query, parameters.maxResults);
     case 'executeGmailSearchSender':
-      return await executeGmailSearchSender(parameters.userId, parameters.sender, parameters.maxResults, req);
+      return await executeGmailSearchSender(parameters.userId, parameters.sender, parameters.maxResults);
     case 'executeGmailGetEmail':
-      return await executeGmailGetEmail(parameters.userId, parameters.emailId, req);
+      return await executeGmailGetEmail(parameters.userId, parameters.emailId);
     case 'executeGmailDeleteEmails':
-      return await executeGmailDeleteEmails(parameters.userId, parameters.messageIds, req);
+      return await executeGmailDeleteEmails(parameters.userId, parameters.messageIds);
     case 'executeGmailSummarize':
-      return await executeGmailSummarize(parameters.userId, parameters.messageIds, req);
+      return await executeGmailSummarize(parameters.userId, parameters.messageIds);
     case 'executeGmailExtractTasks':
-      return await executeGmailExtractTasks(parameters.userId, parameters.messageIds, req);
+      return await executeGmailExtractTasks(parameters.userId, parameters.messageIds);
     case 'executeGmailPromotions':
-      return await executeGmailPromotions(parameters.userId, parameters.maxResults, req);
+      return await executeGmailPromotions(parameters.userId, parameters.maxResults);
 
     // Workspace functions
     case 'executeWorkspaceChannels':
@@ -880,24 +766,129 @@ async function executeEndpointFunction(endpoint, parameters, userId, req = null)
   }
 }
 
+// Function to get tokens from Supabase for a user
+async function getTokensForUser(userId) {
+  try {
+    console.log(`Getting tokens for userId: ${userId}`);
+    
+    // Call the Supabase function to get tokens
+    const { data, error } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (error) {
+      console.error('Error getting tokens from Supabase:', error);
+      return null;
+    }
+    
+    if (!data || !data.success) {
+      console.log('No tokens found or tokens expired:', data?.error || 'Unknown error');
+      return null;
+    }
+    
+    // Return tokens in the format expected by the Google API
+    return {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      token_type: data.token_type || 'Bearer',
+      expiry_date: new Date(data.expires_at).getTime()
+    };
+  } catch (error) {
+    console.error('Error in getTokensForUser:', error);
+    return null;
+  }
+}
+
+// Function to store tokens in Supabase
+async function storeTokensInSupabase(userId, tokens, sessionId) {
+  try {
+    console.log(`Storing tokens for userId: ${userId}`);
+    
+    // Call the Supabase function to store tokens
+    const { data, error } = await supabase.rpc('store_gmail_tokens', {
+      p_user_id: userId,
+      p_access_token: tokens.access_token,
+      p_refresh_token: tokens.refresh_token || null,
+      p_token_type: tokens.token_type || 'Bearer',
+      p_expires_at: new Date(tokens.expiry_date).toISOString(),
+      p_scope: tokens.scope || null,
+      p_session_id: sessionId || crypto.randomBytes(16).toString('hex')
+    });
+    
+    if (error) {
+      console.error('Error storing tokens in Supabase:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error in storeTokensInSupabase:', error);
+    return false;
+  }
+}
+
+// Function to revoke tokens in Supabase
+async function revokeTokensInSupabase(userId) {
+  try {
+    console.log(`Revoking tokens for userId: ${userId}`);
+    
+    // Call the Supabase function to revoke tokens
+    const { data, error } = await supabase.rpc('revoke_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (error) {
+      console.error('Error revoking tokens in Supabase:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error in revokeTokensInSupabase:', error);
+    return false;
+  }
+}
+
+// Function to check if user has valid tokens
+async function hasValidTokens(userId) {
+  try {
+    console.log(`Checking if user ${userId} has valid tokens`);
+    
+    // Call the Supabase function to check tokens
+    const { data, error } = await supabase.rpc('has_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (error) {
+      console.error('Error checking tokens in Supabase:', error);
+      return false;
+    }
+    
+    return data || false;
+  } catch (error) {
+    console.error('Error in hasValidTokens:', error);
+    return false;
+  }
+}
+
 // Implementation functions for all endpoints
 
-// Gmail Functions - Updated to use cookies and direct userId lookup
-async function executeGmailStatus(userId, req) {
+// Gmail Functions - Updated to use Supabase
+async function executeGmailStatus(userId) {
   try {
-    if (!req) {
-      return { success: true, connected: false, error: 'Request context required' };
+    console.log(`Checking Gmail status for userId: ${userId}`);
+    
+    // Check if user has valid tokens
+    const hasTokens = await hasValidTokens(userId);
+    
+    if (!hasTokens) {
+      return { success: true, connected: false };
     }
     
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
-    // If not found in tokenStore, try cookies
     if (!tokens) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
-    
-    if (!tokens || !tokens.access_token) {
       return { success: true, connected: false };
     }
     
@@ -958,42 +949,14 @@ async function executeGmailConnect(userId) {
   }
 }
 
-async function executeGmailDisconnect(userId, req) {
+async function executeGmailDisconnect(userId) {
   try {
-    if (!req) {
-      return { success: false, error: 'Request context required' };
+    // Revoke tokens in Supabase
+    const success = await revokeTokensInSupabase(userId);
+    
+    if (!success) {
+      return { success: false, error: 'Failed to revoke tokens' };
     }
-    
-    // Delete tokens from tokenStore using userId
-    if (tokenStore.has(userId)) {
-      tokenStore.delete(userId);
-    }
-    
-    // Also try to find and delete any tokens where state matches userId
-    for (const [key, value] of tokenStore.entries()) {
-      if (value.state === userId) {
-        tokenStore.delete(key);
-      }
-    }
-    
-    // Clear OAuth cookies
-    const cookieOptions = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/'
-    };
-    
-    // Clear all OAuth-related cookies
-    const cookiesToClear = [
-      'google_oauth_tokens',
-      'google_access_token', 
-      'google_refresh_token',
-      'google_token_expiry'
-    ];
-    
-    // Note: We can't directly clear cookies in this function since we don't have res
-    // This would need to be handled in the endpoint that calls this function
     
     return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
@@ -1001,114 +964,86 @@ async function executeGmailDisconnect(userId, req) {
   }
 }
 
-// Enhanced Gmail Get Emails function with improved token retrieval
-async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
+async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   try {
-    if (!userId) {
-      console.error('No userId provided');
-      return { success: false, error: 'No userId provided' };
-    }
-
-    console.log(`[${Date.now()}] Getting emails for userId: ${userId}, query: ${query}`);
-
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
+    console.log(`Getting emails for userId: ${userId}, query: ${query}`);
     
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
-
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
+    
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'No valid OAuth tokens found' };
+      console.error(`No tokens found for userId: ${userId}`);
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
-
-    if (!tokens.access_token) {
-      console.error(`[${Date.now()}] Tokens for userId ${userId} are missing access_token`);
-      return { success: false, error: 'No valid OAuth tokens found' };
-    }
-
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
-
+    
+    // Get emails
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const response = await gmail.users.messages.list({
       userId: 'me',
       q: query,
       maxResults: parseInt(maxResults)
     });
-
-    const messages = response.data.messages || [];
-    const emails = [];
-
-    for (const message of messages) {
-      try {
-        const details = await gmail.users.messages.get({
-          userId: 'me',
-          id: message.id,
-          format: 'metadata',
-          metadataHeaders: ['Subject', 'From', 'Date']
-        });
-        
-        const headers = details.data.payload.headers;
-        const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-        const from = headers.find(h => h.name === 'From')?.value || '';
-        const date = headers.find(h => h.name === 'Date')?.value || '';
-        
-        emails.push({
-          id: message.id,
-          threadId: message.threadId,
-          subject,
-          from,
-          date,
-          snippet: details.data.snippet,
-          isUnread: details.data.labelIds?.includes('UNREAD') || false
-        });
-      } catch (error) {
-        console.error(`Error fetching details for message ${message.id}:`, error);
-      }
+    
+    const messages = [];
+    
+    // Get details for each message
+    for (const message of response.data.messages || []) {
+      const details = await gmail.users.messages.get({
+        userId: 'me',
+        id: message.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'Date']
+      });
+      
+      const headers = details.data.payload.headers;
+      const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
+      const from = headers.find(h => h.name === 'From')?.value || '';
+      const date = headers.find(h => h.name === 'Date')?.value || '';
+      
+      messages.push({
+        id: message.id,
+        threadId: message.threadId,
+        subject,
+        from,
+        date,
+        snippet: details.data.snippet,
+        isUnread: details.data.labelIds?.includes('UNREAD') || false
+      });
     }
-
-    return { success: true, emails };
+    
+    return { success: true, emails: messages };
   } catch (error) {
-    console.error('Error in executeGmailGetEmails:', error);
-    return { success: false, error: error.message };
+    console.error('Error getting emails:', error);
+    return { success: false, error: 'Failed to get emails' };
   }
 }
 
-async function executeGmailUnread(userId, maxResults = 20, req) {
-  return executeGmailGetEmails(userId, 'is:unread', maxResults, req);
+async function executeGmailUnread(userId, maxResults = 20) {
+  return executeGmailGetEmails(userId, 'is:unread', maxResults);
 }
 
-async function executeGmailSearch(userId, query, maxResults = 10, req) {
-  return executeGmailGetEmails(userId, query, maxResults, req);
+async function executeGmailSearch(userId, query, maxResults = 10) {
+  return executeGmailGetEmails(userId, query, maxResults);
 }
 
-async function executeGmailSearchSender(userId, sender, maxResults = 10, req) {
+async function executeGmailSearchSender(userId, sender, maxResults = 10) {
   const query = `from:${sender}`;
-  return executeGmailGetEmails(userId, query, maxResults, req);
+  return executeGmailGetEmails(userId, query, maxResults);
 }
 
-async function executeGmailGetEmail(userId, emailId, req) {
+async function executeGmailGetEmail(userId, emailId) {
   try {
-    if (!userId || !emailId) {
-      return { success: false, error: 'User ID and Email ID are required' };
-    }
-    
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
-    
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
     
-    // Set up OAuth client
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
     
     // Get email
@@ -1213,26 +1148,16 @@ async function executeGmailGetEmail(userId, emailId, req) {
   }
 }
 
-async function executeGmailDeleteEmails(userId, messageIds, req) {
+async function executeGmailDeleteEmails(userId, messageIds) {
   try {
-    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-      return { success: false, error: 'User ID and message IDs are required' };
-    }
-    
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
-    
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
     
-    // Set up OAuth client
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
     
     // Delete emails
@@ -1261,26 +1186,16 @@ async function executeGmailDeleteEmails(userId, messageIds, req) {
   }
 }
 
-async function executeGmailSummarize(userId, messageIds, req) {
+async function executeGmailSummarize(userId, messageIds) {
   try {
-    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-      return { success: false, error: 'User ID and message IDs are required' };
-    }
-    
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
-    
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
     
-    // Set up OAuth client
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
     
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
@@ -1326,26 +1241,16 @@ async function executeGmailSummarize(userId, messageIds, req) {
   }
 }
 
-async function executeGmailExtractTasks(userId, messageIds, req) {
+async function executeGmailExtractTasks(userId, messageIds) {
   try {
-    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-      return { success: false, error: 'User ID and message IDs are required' };
-    }
-    
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
-    
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
     
-    // Set up OAuth client
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
     
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
@@ -1483,26 +1388,16 @@ async function executeGmailExtractTasks(userId, messageIds, req) {
   }
 }
 
-async function executeGmailPromotions(userId, maxResults = 20, req) {
+async function executeGmailPromotions(userId, maxResults = 20) {
   try {
-    if (!userId) {
-      return { success: false, error: 'User ID is required' };
-    }
-    
-    // First try to get tokens from tokenStore using userId directly
-    let tokens = getTokensForUser(userId);
-    
-    // If not found in tokenStore, try cookies
-    if (!tokens && req) {
-      tokens = getOAuthTokensFromCookies(req);
-    }
+    // Get tokens from Supabase
+    const tokens = await getTokensForUser(userId);
     
     if (!tokens) {
-      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+      return { success: false, error: 'Not authenticated with Gmail' };
     }
-
-    // Set up OAuth client
+    
+    // Set up OAuth client with tokens
     oauth2Client.setCredentials(tokens);
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });

@@ -27,7 +27,8 @@
     "simple-peer": "^9.11.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "crypto": "^1.0.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
