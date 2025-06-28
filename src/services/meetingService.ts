@@ -5,12 +5,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 export const meetingService = {
   async createMeeting(meetingData: {
+    userId?: string;
     title?: string;
     description?: string;
     startTime?: string;
     duration?: number;
     attendees?: string[];
-    userId?: string;
   }): Promise<{ success: boolean; meeting: Meeting; error?: string }> {
     try {
       const response = await axios.post(`${API_BASE_URL}/google/meetings/create`, {
@@ -21,7 +21,10 @@ export const meetingService = {
         duration: meetingData.duration,
         attendees: meetingData.attendees
       }, {
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       return response.data;
     } catch (error: any) {
@@ -38,7 +41,10 @@ export const meetingService = {
     try {
       const response = await axios.get(`${API_BASE_URL}/google/meetings/${eventId}`, {
         params: { userId },
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       return response.data;
     } catch (error: any) {
@@ -55,7 +61,10 @@ export const meetingService = {
     try {
       const response = await axios.get(`${API_BASE_URL}/google/meetings`, {
         params: { userId },
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       return response.data;
     } catch (error: any) {
@@ -72,7 +81,10 @@ export const meetingService = {
     try {
       const response = await axios.delete(`${API_BASE_URL}/google/meetings/${eventId}`, {
         params: { userId },
-        withCredentials: true
+        withCredentials: true,
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       return response.data;
     } catch (error: any) {

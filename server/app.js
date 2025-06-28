@@ -28,10 +28,11 @@ const corsOptions = {
       'https://simally.vercel.app',
       VITE_WORKSPACE_API_URL,
       FRONTEND_URL,
-      VITE_APP_URL
+      VITE_APP_URL,
+      'http://localhost:5173'
     ].filter(Boolean); // Remove any undefined values
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
