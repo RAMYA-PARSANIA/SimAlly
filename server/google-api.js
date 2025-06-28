@@ -24,7 +24,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Scopes for Google APIs - expanded for more access
 const SCOPES = [
-  'https://mail.google.com',
+  'https://mail.google.com/',
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar',
