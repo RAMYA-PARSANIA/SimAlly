@@ -5,7 +5,7 @@ const WorkspaceProcessor = require('./workspace-processor');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.WORKSPACE_PORT || 8000;
+const PORT = process.env.WORKSPACE_PORT || 8003;
 
 // Environment variables
 const VITE_APP_URL = process.env.VITE_APP_URL;
@@ -606,6 +606,415 @@ app.get('/api/workspace/channels/:userId', async (req, res) => {
     });
   } catch (error) {
     console.error('Error getting channels:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get projects
+app.get('/api/workspace/projects', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select(`
+        *,
+        department:departments(name),
+        project_manager:profiles!project_manager_id(full_name),
+        tasks(id, status),
+        milestones:project_milestones(id, status)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching projects:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch projects'
+      });
+    }
+
+    res.json({
+      success: true,
+      projects: data || []
+    });
+  } catch (error) {
+    console.error('Error getting projects:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Create project
+app.post('/api/workspace/projects', async (req, res) => {
+  try {
+    const { name, description, status, priority, start_date, end_date, budget, department_id, project_manager_id, client_name } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        error: 'Project name is required'
+      });
+    }
+    
+    const { data, error } = await supabase
+      .from('projects')
+      .insert({
+        name,
+        description,
+        status: status || 'planning',
+        priority: priority || 'medium',
+        start_date,
+        end_date,
+        budget,
+        department_id,
+        project_manager_id,
+        client_name
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating project:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create project'
+      });
+    }
+    
+    res.json({
+      success: true,
+      project: data
+    });
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get time tracking entries
+app.get('/api/workspace/time-tracking/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { period } = req.query;
+    
+    let query = supabase
+      .from('time_tracking')
+      .select(`
+        *,
+        task:tasks(title),
+        project:projects(name)
+      `)
+      .eq('user_id', userId)
+      .order('start_time', { ascending: false });
+    
+    // Apply date filter
+    if (period) {
+      const now = new Date();
+      let startDate;
+      
+      switch (period) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case 'week':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+      }
+      
+      if (startDate) {
+        query = query.gte('start_time', startDate.toISOString());
+      }
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error('Error fetching time entries:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch time entries'
+      });
+    }
+    
+    res.json({
+      success: true,
+      timeEntries: data || []
+    });
+  } catch (error) {
+    console.error('Error getting time entries:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Start time tracking
+app.post('/api/workspace/time-tracking/start', async (req, res) => {
+  try {
+    const { userId, taskId, projectId, description, billable, hourlyRate } = req.body;
+    
+    if (!userId || !description) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and description are required'
+      });
+    }
+    
+    // Check if there's already an active timer
+    const { data: existingTimer } = await supabase
+      .from('time_tracking')
+      .select('id')
+      .eq('user_id', userId)
+      .is('end_time', null)
+      .single();
+    
+    if (existingTimer) {
+      return res.status(400).json({
+        success: false,
+        error: 'You already have an active timer'
+      });
+    }
+    
+    const { data, error } = await supabase
+      .from('time_tracking')
+      .insert({
+        user_id: userId,
+        task_id: taskId || null,
+        project_id: projectId || null,
+        description,
+        start_time: new Date().toISOString(),
+        billable: billable !== undefined ? billable : true,
+        hourly_rate: hourlyRate || 75
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error starting timer:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to start timer'
+      });
+    }
+    
+    res.json({
+      success: true,
+      timer: data
+    });
+  } catch (error) {
+    console.error('Error starting timer:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Stop time tracking
+app.post('/api/workspace/time-tracking/stop', async (req, res) => {
+  try {
+    const { userId, timerId } = req.body;
+    
+    if (!userId || !timerId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID and timer ID are required'
+      });
+    }
+    
+    // Get the timer
+    const { data: timer, error: timerError } = await supabase
+      .from('time_tracking')
+      .select('*')
+      .eq('id', timerId)
+      .eq('user_id', userId)
+      .single();
+    
+    if (timerError || !timer) {
+      return res.status(404).json({
+        success: false,
+        error: 'Timer not found'
+      });
+    }
+    
+    if (timer.end_time) {
+      return res.status(400).json({
+        success: false,
+        error: 'Timer is already stopped'
+      });
+    }
+    
+    const endTime = new Date();
+    const startTime = new Date(timer.start_time);
+    const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+    
+    const { data, error } = await supabase
+      .from('time_tracking')
+      .update({
+        end_time: endTime.toISOString(),
+        duration_minutes: durationMinutes
+      })
+      .eq('id', timerId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error stopping timer:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to stop timer'
+      });
+    }
+    
+    res.json({
+      success: true,
+      timer: data
+    });
+  } catch (error) {
+    console.error('Error stopping timer:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get analytics
+app.get('/api/workspace/analytics', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('workspace_analytics')
+      .select('*')
+      .order('date_recorded', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching analytics:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch analytics'
+      });
+    }
+    
+    res.json({
+      success: true,
+      analytics: data || []
+    });
+  } catch (error) {
+    console.error('Error getting analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get departments
+app.get('/api/workspace/departments', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('departments')
+      .select('*')
+      .order('name');
+    
+    if (error) {
+      console.error('Error fetching departments:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch departments'
+      });
+    }
+    
+    res.json({
+      success: true,
+      departments: data || []
+    });
+  } catch (error) {
+    console.error('Error getting departments:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get notifications
+app.get('/api/workspace/notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching notifications:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch notifications'
+      });
+    }
+    
+    res.json({
+      success: true,
+      notifications: data || []
+    });
+  } catch (error) {
+    console.error('Error getting notifications:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Mark notification as read
+app.put('/api/workspace/notifications/:notificationId/read', async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    const { data, error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notificationId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error marking notification as read:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to mark notification as read'
+      });
+    }
+    
+    res.json({
+      success: true,
+      notification: data
+    });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
     res.status(500).json({
       success: false,
       error: error.message

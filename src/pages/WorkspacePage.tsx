@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, Video, UserPlus } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, Video, UserPlus, BarChart3, Clock, Target, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -9,16 +9,13 @@ import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
 import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
+import ProjectPanel from '../components/ProjectPanel';
+import AnalyticsPanel from '../components/AnalyticsPanel';
+import TimeTrackingPanel from '../components/TimeTrackingPanel';
 import MeetingControls from '../components/MeetingControls';
 import MediasoupMeeting from '../components/MediasoupMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
-const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const VITE_API_URL = import.meta.env.VITE_API_URL;
-const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
-const VITE_APP_URL = import.meta.env.VITE_APP_URL;
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
@@ -27,7 +24,7 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'meeting'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time' | 'meeting'>('chat');
   const [loading, setLoading] = useState(true);
   const [currentMeeting, setCurrentMeeting] = useState<{
     roomName: string;
@@ -90,7 +87,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
     
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${user.id}`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/channels/${user.id}`, {
         credentials: 'include'
       });
       
@@ -215,7 +212,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -244,7 +241,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/messages/${messageId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -272,7 +269,7 @@ const WorkspacePage: React.FC = () => {
 
   const processMessageForTasks = async (message: Message, mentions: string[]) => {
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/process-message`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/process-message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -323,7 +320,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/channels`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -356,7 +353,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/join`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/join`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -386,7 +383,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/leave`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}/leave`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -403,7 +400,7 @@ const WorkspacePage: React.FC = () => {
         // If the left channel was active, switch to another channel
         if (activeChannel?.id === channelId) {
           const remainingChannels = channels.filter(c => c.id !== channelId && c.is_member);
-          setActiveChannel(remainingChannels.length > 0 ? remainingChannels[0] : null);
+          setActiveChannel(remainingChannels.length > 0  ? remainingChannels[0] : null);
         }
 
         // Reload channels
@@ -419,7 +416,7 @@ const WorkspacePage: React.FC = () => {
 
   const handleDeleteChannel = async (channelId: string) => {
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/channels/${channelId}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -454,7 +451,7 @@ const WorkspacePage: React.FC = () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`${VITE_WORKSPACE_API_URL}/api/workspace/summarize-channel`, {
+      const response = await fetch(`${import.meta.env.VITE_WORKSPACE_API_URL}/api/workspace/summarize-channel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -574,6 +571,7 @@ const WorkspacePage: React.FC = () => {
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
+                  title="Chat"
                 >
                   <MessageSquare className="w-4 h-4" />
                 </button>
@@ -584,8 +582,20 @@ const WorkspacePage: React.FC = () => {
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
+                  title="Tasks"
                 >
                   <CheckSquare className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setActivePanel('projects')}
+                  className={`p-2 rounded-md transition-all ${
+                    activePanel === 'projects' 
+                      ? 'bg-gradient-gold-silver text-white' 
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                  title="Projects"
+                >
+                  <Target className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setActivePanel('calendar')}
@@ -594,8 +604,31 @@ const WorkspacePage: React.FC = () => {
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
+                  title="Calendar"
                 >
                   <Calendar className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setActivePanel('time')}
+                  className={`p-2 rounded-md transition-all ${
+                    activePanel === 'time' 
+                      ? 'bg-gradient-gold-silver text-white' 
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                  title="Time Tracking"
+                >
+                  <Clock className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setActivePanel('analytics')}
+                  className={`p-2 rounded-md transition-all ${
+                    activePanel === 'analytics' 
+                      ? 'bg-gradient-gold-silver text-white' 
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                  title="Analytics"
+                >
+                  <BarChart3 className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setActivePanel('meeting')}
@@ -604,6 +637,7 @@ const WorkspacePage: React.FC = () => {
                       ? 'bg-gradient-gold-silver text-white' 
                       : 'text-secondary hover:text-primary'
                   }`}
+                  title="Meetings"
                 >
                   <Video className="w-4 h-4" />
                 </button>
@@ -671,6 +705,21 @@ const WorkspacePage: React.FC = () => {
               </motion.div>
             )}
             
+            {activePanel === 'projects' && (
+              <motion.div 
+                key="projects-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ProjectPanel
+                  onProjectUpdate={() => {}}
+                />
+              </motion.div>
+            )}
+            
             {activePanel === 'calendar' && (
               <motion.div 
                 key="calendar-panel"
@@ -683,6 +732,32 @@ const WorkspacePage: React.FC = () => {
                 <CalendarPanel
                   tasks={tasks}
                 />
+              </motion.div>
+            )}
+            
+            {activePanel === 'time' && (
+              <motion.div 
+                key="time-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <TimeTrackingPanel />
+              </motion.div>
+            )}
+            
+            {activePanel === 'analytics' && (
+              <motion.div 
+                key="analytics-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AnalyticsPanel />
               </motion.div>
             )}
 

@@ -65,6 +65,13 @@ export interface Task {
   created_at: string;
   updated_at: string;
   assignments?: TaskAssignment[];
+  project_id?: string;
+  estimated_hours?: number;
+  actual_hours?: number;
+  story_points?: number;
+  tags?: string[];
+  blocked_reason?: string;
+  parent_task_id?: string;
 }
 
 export interface TaskAssignment {
@@ -82,6 +89,131 @@ export interface CalendarEvent {
   end_time: string;
   user_id: string;
   task_id?: string;
+  created_at: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  start_date: string;
+  end_date: string;
+  budget: number;
+  spent_budget: number;
+  progress_percentage: number;
+  project_manager_id: string;
+  department_id: string;
+  client_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  description?: string;
+  head_id?: string;
+  parent_department_id?: string;
+  budget?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimeTracking {
+  id: string;
+  user_id: string;
+  task_id?: string;
+  project_id?: string;
+  description: string;
+  start_time: string;
+  end_time?: string;
+  duration_minutes?: number;
+  billable: boolean;
+  hourly_rate: number;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'warning' | 'error' | 'success';
+  category: 'general' | 'task' | 'project' | 'meeting' | 'system';
+  read: boolean;
+  action_url?: string;
+  created_at: string;
+}
+
+export interface FileAttachment {
+  id: string;
+  filename: string;
+  original_filename: string;
+  file_size: number;
+  mime_type: string;
+  file_path: string;
+  uploaded_by: string;
+  task_id?: string;
+  project_id?: string;
+  message_id?: string;
+  is_public: boolean;
+  download_count: number;
+  created_at: string;
+}
+
+export interface ProjectMilestone {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  due_date: string;
+  completed_date?: string;
+  status: 'pending' | 'completed' | 'overdue';
+  created_by: string;
+  created_at: string;
+}
+
+export interface TaskDependency {
+  id: string;
+  task_id: string;
+  depends_on_task_id: string;
+  dependency_type: 'finish_to_start' | 'start_to_start' | 'finish_to_finish' | 'start_to_finish';
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  parent_comment_id?: string;
+  created_at: string;
+  updated_at: string;
+  user?: Profile;
+}
+
+export interface WorkspaceAnalytics {
+  id: string;
+  metric_name: string;
+  metric_value: number;
+  dimensions: any;
+  date_recorded: string;
+  created_at: string;
+}
+
+export interface MeetingRecording {
+  id: string;
+  meeting_room: string;
+  title?: string;
+  recording_url?: string;
+  transcript?: string;
+  duration_minutes?: number;
+  participants?: string[];
+  host_id?: string;
+  summary?: string;
+  action_items?: string[];
   created_at: string;
 }
 
@@ -164,7 +296,8 @@ export const workspaceAPI = {
           assignments:task_assignments(
             user_id,
             user:profiles(*)
-          )
+          ),
+          project:projects(name)
         `)
         .eq('created_by', userId);
 
@@ -192,7 +325,8 @@ export const workspaceAPI = {
             assignments:task_assignments(
               user_id,
               user:profiles(*)
-            )
+            ),
+            project:projects(name)
           `)
           .in('id', taskIds);
 
@@ -214,6 +348,102 @@ export const workspaceAPI = {
       );
     } catch (error) {
       console.error('Error in getUserTasks:', error);
+      return [];
+    }
+  },
+
+  // Get projects for user
+  async getUserProjects(userId: string): Promise<Project[]> {
+    try {
+      // Get projects where user is a member
+      const { data: memberProjects, error: memberError } = await supabase
+        .from('projects')
+        .select(`
+          *,
+          project_members!inner(user_id, role),
+          department:departments(name),
+          project_manager:profiles!project_manager_id(full_name)
+        `)
+        .eq('project_members.user_id', userId);
+
+      if (memberError) {
+        console.error('Error fetching member projects:', memberError);
+        return [];
+      }
+
+      return memberProjects || [];
+    } catch (error) {
+      console.error('Error in getUserProjects:', error);
+      return [];
+    }
+  },
+
+  // Get time tracking entries for user
+  async getUserTimeTracking(userId: string, period?: string): Promise<TimeTracking[]> {
+    try {
+      let query = supabase
+        .from('time_tracking')
+        .select(`
+          *,
+          task:tasks(title),
+          project:projects(name)
+        `)
+        .eq('user_id', userId)
+        .order('start_time', { ascending: false });
+
+      // Apply date filter
+      if (period) {
+        const now = new Date();
+        let startDate;
+        
+        switch (period) {
+          case 'today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            break;
+          case 'week':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+        }
+        
+        if (startDate) {
+          query = query.gte('start_time', startDate.toISOString());
+        }
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching time tracking:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getUserTimeTracking:', error);
+      return [];
+    }
+  },
+
+  // Get notifications for user
+  async getUserNotifications(userId: string): Promise<Notification[]> {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getUserNotifications:', error);
       return [];
     }
   },
@@ -264,4 +494,51 @@ export const workspaceAPI = {
       )
       .subscribe();
   },
+
+  subscribeToProjects(userId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`projects:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'projects',
+        },
+        callback
+      )
+      .subscribe();
+  },
+
+  subscribeToNotifications(userId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        callback
+      )
+      .subscribe();
+  },
+
+  subscribeToTimeTracking(userId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`time_tracking:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'time_tracking',
+          filter: `user_id=eq.${userId}`,
+        },
+        callback
+      )
+      .subscribe();
+  }
 };
