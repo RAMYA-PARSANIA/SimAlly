@@ -26,7 +26,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly'
 ];
 
-// Store tokens temporarily in memory (in production, use a database)
+// Store tokens temporarily (in production, use a database)
 const tokenStore = new Map();
 
 // Create OAuth client
@@ -383,7 +383,7 @@ router.get('/gmail/messages', async (req, res) => {
       });
     }
     
-    res.json({ success: true, messages });
+    res.json({ success: true, emails: messages });
   } catch (error) {
     console.error('Error fetching Gmail messages:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch Gmail messages' });
