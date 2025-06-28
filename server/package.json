@@ -13,12 +13,11 @@
     "dev": "concurrently \"npm run dev:start\" \"npm run dev:ai\" \"npm run dev:workspace\""
   },
   "dependencies": {
-    "@google-apps/meet": "^3.0.0",
+    "@google-apps/meet": "^0.6.0",
     "@google/generative-ai": "^0.2.1",
     "@supabase/supabase-js": "^2.50.1",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
     "fs-extra": "^11.3.0",
