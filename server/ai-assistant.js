@@ -843,6 +843,7 @@ async function executeGmailConnect(userId) {
   try {
     // Define expanded scopes for more access
     const scopes = [
+      'https://mail.google.com/',
       'https://www.googleapis.com/auth/gmail.readonly',
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/calendar',
