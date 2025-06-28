@@ -16,6 +16,7 @@
     "@daily-co/daily-js": "^0.55.0",
     "@daily-co/daily-react": "^0.15.0",
     "@supabase/supabase-js": "^2.39.0",
+    "axios": "^1.6.2",
     "clsx": "^2.0.0",
     "framer-motion": "^10.16.16",
     "lucide-react": "^0.344.0",

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ExternalLink, Copy, Trash2, Calendar, Clock } from 'lucide-react';
 import { Meeting } from '../types';
+import Button from './ui/Button';
 
 interface MeetingCardProps {
   meeting: Meeting;
@@ -33,14 +34,14 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ meeting, onJoin, onCopyLink, 
   const upcoming = isUpcoming(meeting.startTime);
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div className="glass-panel rounded-lg p-6 hover:border-gold-border transition-all">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">{meeting.title}</h3>
+          <h3 className="text-lg font-semibold text-primary mb-2">{meeting.title}</h3>
           {meeting.description && (
-            <p className="text-gray-600 text-sm mb-3">{meeting.description}</p>
+            <p className="text-secondary text-sm mb-3">{meeting.description}</p>
           )}
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
+          <div className="flex items-center space-x-4 text-sm text-secondary">
             <span className="flex items-center">
               <Calendar className="w-4 h-4 mr-1" />
               {startDateTime.date}
@@ -51,8 +52,8 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ meeting, onJoin, onCopyLink, 
             </span>
             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
               upcoming 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-gray-100 text-gray-800'
+                ? 'bg-green-500/20 text-green-500' 
+                : 'bg-gray-500/20 text-gray-500'
             }`}>
               {upcoming ? 'Upcoming' : 'Past'}
             </span>
@@ -62,30 +63,36 @@ const MeetingCard: React.FC<MeetingCardProps> = ({ meeting, onJoin, onCopyLink, 
 
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <button
+          <Button
             onClick={() => onJoin(meeting.url)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
+            variant="premium"
+            size="sm"
+            className="flex items-center space-x-2"
           >
             <ExternalLink className="w-4 h-4" />
             <span>Join Meeting</span>
-          </button>
+          </Button>
           
-          <button
+          <Button
             onClick={() => onCopyLink(meeting.url)}
-            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
           >
             <Copy className="w-4 h-4" />
             <span>Copy Link</span>
-          </button>
+          </Button>
         </div>
 
-        <button
+        <Button
           onClick={() => onDelete(meeting.id)}
-          className="text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+          variant="ghost"
+          size="sm"
+          className="text-red-400 hover:text-red-500 p-2"
           title="Cancel Meeting"
         >
           <Trash2 className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
     </div>
   );

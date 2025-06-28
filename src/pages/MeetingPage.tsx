@@ -1,205 +1,90 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Video, Bot, Users, Zap, Shield, Mic, Share2, Copy, Check, Plus, Calendar, Clock, Trash2, ExternalLink, RefreshCw } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
-import MeetingControls from '../components/MeetingControls';
-import VideoMeeting from '../components/VideoMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
+import CreateMeetingModal from '../components/CreateMeetingModal';
+import MeetingCard from '../components/MeetingCard';
+import { meetingService } from '../services/meetingService';
+import { Meeting } from '../types';
 
 const MeetingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const [currentMeeting, setCurrentMeeting] = useState<{
-    roomName: string;
-    displayName: string;
-  } | null>(null);
-  const [showInviteModal, setShowInviteModal] = useState(false);
+  const { user, isGoogleConnected } = useAuth();
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Check for room parameter in URL
   useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const roomFromUrl = urlParams.get('room');
-    if (roomFromUrl && !currentMeeting) {
-      // Auto-open join modal if room is in URL
-      // This will be handled by MeetingControls component
+    if (isGoogleConnected) {
+      fetchMeetings();
+    } else {
+      setLoading(false);
     }
-  }, [location.search, currentMeeting]);
+  }, [isGoogleConnected]);
+
+  const fetchMeetings = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await meetingService.listMeetings();
+      if (response.success) {
+        setMeetings(response.meetings);
+      }
+    } catch (error) {
+      console.error('Failed to fetch meetings:', error);
+      setError('Failed to load meetings. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchMeetings();
+    setRefreshing(false);
+  };
 
   const handleBack = () => {
     navigate('/dashboard');
   };
 
-  const handleStartMeeting = (roomName: string, displayName: string) => {
-    setCurrentMeeting({ roomName, displayName });
-    // Update URL to include room parameter
-    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
-    window.history.replaceState({}, '', newUrl);
+  const handleCreateMeeting = (meeting: Meeting) => {
+    setMeetings(prev => [meeting, ...prev]);
+    setShowCreateModal(false);
   };
 
-  const handleJoinMeeting = (roomName: string, displayName: string) => {
-    setCurrentMeeting({ roomName, displayName });
-    // Update URL to include room parameter
-    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(roomName)}`;
-    window.history.replaceState({}, '', newUrl);
+  const handleJoinMeeting = (url: string) => {
+    window.open(url, '_blank');
   };
 
-  const handleLeaveMeeting = () => {
-    setCurrentMeeting(null);
-    // Remove room parameter from URL
-    window.history.replaceState({}, '', window.location.pathname);
+  const handleCopyLink = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const copyMeetingLink = async () => {
-    if (currentMeeting) {
-      const meetingLink = `${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`;
-      try {
-        await navigator.clipboard.writeText(meetingLink);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (error) {
-        console.error('Failed to copy meeting link:', error);
+  const handleDeleteMeeting = async (eventId: string) => {
+    if (!confirm('Are you sure you want to cancel this meeting?')) return;
+    
+    try {
+      const response = await meetingService.deleteMeeting(eventId);
+      if (response.success) {
+        setMeetings(prev => prev.filter(meeting => meeting.id !== eventId));
       }
+    } catch (error) {
+      console.error('Failed to delete meeting:', error);
+      setError('Failed to cancel meeting. Please try again.');
     }
   };
 
-  const shareViaEmail = () => {
-    if (!currentMeeting) return;
-    
-    const subject = encodeURIComponent(`Join my video meeting: ${currentMeeting.roomName}`);
-    const body = encodeURIComponent(`Hi! 
-
-I'd like to invite you to join my video meeting.
-
-Meeting Room: ${currentMeeting.roomName}
-Meeting Link: ${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}
-
-To join:
-1. Click the link above or go to ${window.location.origin}/meetings
-2. Click "Join Meeting"
-3. Enter the room name: ${currentMeeting.roomName}
-4. Enter your name and join!
-
-See you there!`);
-    
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-  };
-
-  // If in a meeting, show the meeting interface with invite options
-  if (currentMeeting) {
-    return (
-      <div className="min-h-screen bg-primary">
-        {/* Meeting Header with Invite Button */}
-        <div className="absolute top-4 right-4 z-50">
-          <Button
-            onClick={() => setShowInviteModal(true)}
-            variant="secondary"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <Share2 className="w-4 h-4" />
-            <span>Invite Others</span>
-          </Button>
-        </div>
-
-        <VideoMeeting
-          roomName={currentMeeting.roomName}
-          displayName={currentMeeting.displayName}
-          onLeave={handleLeaveMeeting}
-        />
-
-        {/* Invite Modal */}
-        {showInviteModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="w-full max-w-md"
-            >
-              <GlassCard className="p-8" goldBorder>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold gradient-gold-silver">Invite Others</h2>
-                  <button
-                    onClick={() => setShowInviteModal(false)}
-                    className="text-secondary hover:text-primary"
-                  >
-                    ×
-                  </button>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-primary mb-2">
-                      Room Name
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={currentMeeting.roomName}
-                        readOnly
-                        className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10"
-                      />
-                      <Button
-                        onClick={() => navigator.clipboard.writeText(currentMeeting.roomName)}
-                        variant="ghost"
-                        size="sm"
-                        className="px-3"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-primary mb-2">
-                      Meeting Link
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={`${window.location.origin}/meetings?room=${encodeURIComponent(currentMeeting.roomName)}`}
-                        readOnly
-                        className="flex-1 glass-panel rounded-lg px-4 py-3 text-primary bg-gray-500/10 text-sm"
-                      />
-                      <Button
-                        onClick={copyMeetingLink}
-                        variant="ghost"
-                        size="sm"
-                        className="px-3"
-                      >
-                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Button
-                      onClick={shareViaEmail}
-                      variant="secondary"
-                      className="w-full justify-start"
-                    >
-                      <Share2 className="w-4 h-4 mr-2" />
-                      Share via Email
-                    </Button>
-                  </div>
-
-                  <div className="text-xs text-secondary">
-                    Share the room name or link with others so they can join your meeting.
-                  </div>
-                </div>
-              </GlassCard>
-            </motion.div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Show meeting lobby/controls
   return (
     <div className="min-h-screen bg-primary">
       {/* Header */}
@@ -220,7 +105,7 @@ See you there!`);
                   Video Meetings
                 </h1>
                 <p className="text-xs text-secondary">
-                  Powered by Daily.co + AI Assistant
+                  Powered by Google Meet
                 </p>
               </div>
             </div>
@@ -233,164 +118,136 @@ See you there!`);
       </header>
 
       {/* Main Content */}
-      <main className="section-spacing container-padding">
+      <main className="container-padding py-8">
         <div className="max-w-7xl mx-auto">
-          {/* Hero Section */}
-          <div className="text-center mb-16">
-            <motion.h1
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="text-4xl md:text-5xl font-bold gradient-gold-silver mb-6"
-            >
-              Smart Video Meetings
-            </motion.h1>
-            <motion.p
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-              className="text-lg text-secondary max-w-2xl mx-auto mb-8"
-            >
-              Professional video conferencing with AI-powered transcription, note-taking, and meeting summaries. 
-              Built with Daily.co for superior performance and reliability.
-            </motion.p>
+          {!isGoogleConnected ? (
+            <GlassCard className="p-8 text-center" goldBorder>
+              <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
+              <h2 className="text-2xl font-bold text-primary mb-4">Connect Google to Use Meetings</h2>
+              <p className="text-secondary mb-6 max-w-2xl mx-auto">
+                You need to connect your Google account to create and join Google Meet meetings. 
+                Please go to the Dashboard and click "Connect Google" to enable this feature.
+              </p>
+              <Button
+                onClick={() => navigate('/dashboard')}
+                variant="premium"
+              >
+                Go to Dashboard
+              </Button>
+            </GlassCard>
+          ) : (
+            <>
+              {/* Meetings Header */}
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-2xl font-bold gradient-gold-silver">Your Meetings</h2>
+                <div className="flex items-center space-x-3">
+                  <Button
+                    onClick={handleRefresh}
+                    variant="ghost"
+                    size="sm"
+                    className="p-2"
+                    disabled={refreshing}
+                  >
+                    <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+                  </Button>
+                  <Button
+                    onClick={() => setShowCreateModal(true)}
+                    variant="premium"
+                    className="flex items-center space-x-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>New Meeting</span>
+                  </Button>
+                </div>
+              </div>
 
-            {/* Features Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-4xl mx-auto mb-12">
-              {[
-                { icon: Video, title: 'HD Video', desc: 'Crystal clear video calls' },
-                { icon: Bot, title: 'AI Assistant', desc: 'Smart transcription & notes' },
-                { icon: Users, title: 'Multi-party', desc: 'Unlimited participants' },
-                { icon: Shield, title: 'Secure', desc: 'End-to-end encryption' },
-              ].map((feature, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ y: 30, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.2 + index * 0.1 }}
-                >
+              {/* Meetings List */}
+              {loading ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full"></div>
+                </div>
+              ) : error ? (
+                <GlassCard className="p-8 text-center">
+                  <p className="text-red-400 mb-4">{error}</p>
+                  <Button onClick={handleRefresh} variant="secondary">Try Again</Button>
+                </GlassCard>
+              ) : meetings.length === 0 ? (
+                <GlassCard className="p-8 text-center">
+                  <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
+                  <h3 className="text-xl font-bold text-primary mb-4">No Meetings Found</h3>
+                  <p className="text-secondary mb-6">
+                    You don't have any upcoming Google Meet meetings. Create a new meeting to get started.
+                  </p>
+                  <Button
+                    onClick={() => setShowCreateModal(true)}
+                    variant="premium"
+                    className="flex items-center space-x-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create Meeting</span>
+                  </Button>
+                </GlassCard>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {meetings.map(meeting => (
+                    <MeetingCard
+                      key={meeting.id}
+                      meeting={meeting}
+                      onJoin={handleJoinMeeting}
+                      onCopyLink={handleCopyLink}
+                      onDelete={handleDeleteMeeting}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Features Section */}
+              <div className="mt-16">
+                <h2 className="text-2xl font-bold gradient-gold-silver mb-8 text-center">Google Meet Features</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <GlassCard className="p-6 text-center" hover>
-                    <feature.icon className="w-8 h-8 gold-text mx-auto mb-3" />
-                    <h3 className="font-bold text-primary mb-1">{feature.title}</h3>
-                    <p className="text-xs text-secondary">{feature.desc}</p>
-                  </GlassCard>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          {/* Meeting Controls */}
-          <MeetingControls
-            onStartMeeting={handleStartMeeting}
-            onJoinMeeting={handleJoinMeeting}
-          />
-
-          {/* AI Features Section */}
-          <div className="mt-20">
-            <div className="text-center mb-12">
-              <motion.h2
-                initial={{ y: 30, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="text-3xl font-bold gradient-gold-silver mb-4"
-              >
-                AI-Powered Meeting Features
-              </motion.h2>
-              <motion.p
-                initial={{ y: 30, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.1 }}
-                className="text-secondary max-w-2xl mx-auto"
-              >
-                Turn on the AI assistant during your meeting to unlock powerful productivity features
-              </motion.p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-              {[
-                {
-                  icon: Mic,
-                  title: 'Live Transcription',
-                  description: 'Real-time speech-to-text conversion with speaker identification',
-                  color: 'from-blue-500 to-cyan-500'
-                },
-                {
-                  icon: Bot,
-                  title: 'Smart Notes',
-                  description: 'AI automatically extracts key points, action items, and decisions',
-                  color: 'from-purple-500 to-pink-500'
-                },
-                {
-                  icon: Zap,
-                  title: 'Meeting Summary',
-                  description: 'Generate comprehensive summaries with next steps and follow-ups',
-                  color: 'from-green-500 to-emerald-500'
-                },
-              ].map((feature, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ y: 50, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.3 + index * 0.1 }}
-                >
-                  <GlassCard className="p-8 h-full" hover>
-                    <div className={`w-12 h-12 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mb-6`}>
-                      <feature.icon className="w-6 h-6 text-white" />
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center mx-auto mb-4">
+                      <Video className="w-6 h-6 text-white" />
                     </div>
-                    <h3 className="text-xl font-bold text-primary mb-4">{feature.title}</h3>
-                    <p className="text-secondary text-sm leading-relaxed">{feature.description}</p>
+                    <h3 className="text-lg font-bold text-primary mb-2">HD Video Conferencing</h3>
+                    <p className="text-secondary text-sm">
+                      Crystal clear video and audio for professional meetings with up to 100 participants.
+                    </p>
                   </GlassCard>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          {/* How It Works */}
-          <div className="mt-20">
-            <div className="text-center mb-12">
-              <motion.h2
-                initial={{ y: 30, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="text-3xl font-bold gradient-gold-silver mb-4"
-              >
-                How It Works
-              </motion.h2>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-              {[
-                {
-                  step: '1',
-                  title: 'Start or Join',
-                  description: 'Create a new meeting or join with a room name'
-                },
-                {
-                  step: '2',
-                  title: 'Invite Others',
-                  description: 'Share the room name or meeting link with participants'
-                },
-                {
-                  step: '3',
-                  title: 'Enable AI',
-                  description: 'Turn on the AI assistant for transcription and smart features'
-                }
-              ].map((step, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ y: 30, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ delay: 0.4 + index * 0.1 }}
-                  className="text-center"
-                >
-                  <div className="w-12 h-12 rounded-full bg-gradient-gold-silver flex items-center justify-center mx-auto mb-4">
-                    <span className="text-white font-bold">{step.step}</span>
-                  </div>
-                  <h3 className="font-bold text-primary mb-2">{step.title}</h3>
-                  <p className="text-secondary text-sm">{step.description}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
+                  
+                  <GlassCard className="p-6 text-center" hover>
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center mx-auto mb-4">
+                      <Calendar className="w-6 h-6 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-primary mb-2">Calendar Integration</h3>
+                    <p className="text-secondary text-sm">
+                      Seamlessly integrated with Google Calendar for easy scheduling and reminders.
+                    </p>
+                  </GlassCard>
+                  
+                  <GlassCard className="p-6 text-center" hover>
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-4">
+                      <Shield className="w-6 h-6 text-white" />
+                    </div>
+                    <h3 className="text-lg font-bold text-primary mb-2">Secure Meetings</h3>
+                    <p className="text-secondary text-sm">
+                      Enterprise-grade security with encryption and advanced meeting controls.
+                    </p>
+                  </GlassCard>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </main>
+
+      {/* Create Meeting Modal */}
+      {showCreateModal && (
+        <CreateMeetingModal
+          onClose={() => setShowCreateModal(false)}
+          onMeetingCreated={handleCreateMeeting}
+        />
+      )}
     </div>
   );
 };

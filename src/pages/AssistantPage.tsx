@@ -35,21 +35,13 @@ interface GmailEmail {
   unsubscribeUrl?: string; // Unsubscribe link for promotional/marketing emails
 }
 
-interface GmailStatus {
-  connected: boolean;
-  email?: string;
-  unreadCount?: number;
-}
-
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, loading } = useAuth();
+  const { user, loading, isGoogleConnected } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [gmailStatus, setGmailStatus] = useState<GmailStatus>({ connected: false });
-  const [isCheckingGmail, setIsCheckingGmail] = useState(true);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [showEmailActions, setShowEmailActions] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -60,87 +52,8 @@ const AssistantPage: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('gmail_connected') === 'true') {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: '✅ Gmail connected successfully with enhanced security! Your tokens are encrypted and session-specific. You can now ask me to show your emails, search them, or help manage your inbox.',
-        timestamp: new Date()
-      }]);
-      window.history.replaceState({}, '', location.pathname);
-    }
-
-    checkGmailStatus();
-  }, [user, location]);
-
-  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const checkGmailStatus = async () => {
-    if (!user) return;
-    
-    setIsCheckingGmail(true);
-    try {
-      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/status?userId=${user.id}`, {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setGmailStatus(data);
-      }
-    } catch (error) {
-      console.error('Error checking Gmail status:', error);
-    } finally {
-      setIsCheckingGmail(false);
-    }
-  };
-
-  const connectGmail = async () => {
-    if (!user) return;
-    
-    try {
-      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/auth-url?userId=${user.id}`, {
-        credentials: 'include'
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          window.location.href = data.authUrl;
-        }
-      }
-    } catch (error) {
-      console.error('Error getting Gmail auth URL:', error);
-    }
-  };
-
-  const disconnectGmail = async () => {
-    if (!user) return;
-    
-    try {
-      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ userId: user.id })
-      });
-      
-      if (response.ok) {
-        setGmailStatus({ connected: false });
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: '📧 Gmail disconnected successfully. All encrypted tokens have been securely removed.',
-          timestamp: new Date()
-        }]);
-      }
-    } catch (error) {
-      console.error('Error disconnecting Gmail:', error);
-    }
-  };
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
@@ -159,17 +72,20 @@ const AssistantPage: React.FC = () => {
     try {
       const agentResponse = await fetch(`${VITE_AI_API_URL}/api/chat/agent-process`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
         credentials: 'include',
         body: JSON.stringify({
           message: userMessage.content,
           userId: user?.id,
-          context: { gmailConnected: gmailStatus.connected }
+          context: { gmailConnected: isGoogleConnected }
         })
       });
 
       if (!agentResponse.ok) {
-        throw new Error('Failed to process message');
+        throw new Error(`Failed to process message: ${agentResponse.status} ${agentResponse.statusText}`);
       }
 
       const agentData = await agentResponse.json();
@@ -244,7 +160,10 @@ const AssistantPage: React.FC = () => {
     try {
       const response = await fetch(`${VITE_AI_API_URL}/api/gmail/delete-emails`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
         credentials: 'include',
         body: JSON.stringify({
           userId: user.id,
@@ -301,7 +220,10 @@ const AssistantPage: React.FC = () => {
       
       try {
         const response = await fetch(`${VITE_AI_API_URL}/api/gmail/email/${email.id}?userId=${user?.id}`, {
-          credentials: 'include'
+          credentials: 'include',
+          headers: {
+            'Origin': window.location.origin
+          }
         });
         
         if (response.ok) {
@@ -667,7 +589,7 @@ const AssistantPage: React.FC = () => {
                 <Shield className="w-5 h-5 text-green-400" />
                 <div>
                   <p className="text-green-400 font-medium text-sm">Enhanced Security Active</p>
-                  <p className="text-green-300 text-xs">All sensitive data is encrypted. Gmail tokens are session-specific and automatically expire.</p>
+                  <p className="text-green-300 text-xs">All sensitive data is encrypted. Google tokens are session-specific and automatically expire.</p>
                 </div>
               </div>
               <button
@@ -705,34 +627,14 @@ const AssistantPage: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-3">
-              {/* Gmail Status */}
+              {/* Google Connection Status */}
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${
-                  isCheckingGmail ? 'bg-yellow-500 animate-pulse' : 
-                  gmailStatus.connected ? 'bg-green-500' : 'bg-gray-500'
+                  isGoogleConnected ? 'bg-green-500' : 'bg-gray-500'
                 }`} />
                 <span className="text-sm text-secondary">
-                  Gmail {gmailStatus.connected ? 'Connected' : 'Disconnected'}
+                  Google {isGoogleConnected ? 'Connected' : 'Disconnected'}
                 </span>
-                {gmailStatus.connected ? (
-                  <Button
-                    onClick={disconnectGmail}
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs"
-                  >
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={connectGmail}
-                    variant="secondary"
-                    size="sm"
-                    className="text-xs"
-                  >
-                    Connect Gmail
-                  </Button>
-                )}
               </div>
               
               <ThemeToggle />
@@ -750,8 +652,8 @@ const AssistantPage: React.FC = () => {
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
               <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your Secure AI Assistant</h3>
               <p className="text-secondary mb-6 max-w-2xl mx-auto">
-                I can help you with Gmail management, workspace tasks, calendar events, meetings, document generation, games, and general questions. 
-                {!gmailStatus.connected && ' Connect your Gmail to unlock email management features.'}
+                I can help you with workspace tasks, calendar events, meetings, document generation, games, and general questions. 
+                {!isGoogleConnected && ' Connect your Google account from the Dashboard to unlock Gmail and Google Meet features.'}
               </p>
               
               {/* Security Features */}
@@ -771,13 +673,13 @@ const AssistantPage: React.FC = () => {
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
                 {[
-                  { icon: Mail, text: 'Show my unread emails', disabled: !gmailStatus.connected },
+                  { icon: Mail, text: 'Show my unread emails', disabled: !isGoogleConnected },
                   { icon: CheckSquare, text: 'Create a task for tomorrow', disabled: false },
                   { icon: Calendar, text: 'Schedule a meeting for 2pm', disabled: false },
-                  { icon: Video, text: 'Create a meeting room', disabled: false },
+                  { icon: Video, text: 'Create a meeting room', disabled: !isGoogleConnected },
                   { icon: FileText, text: 'Generate a project proposal', disabled: false },
                   { icon: Gamepad2, text: 'Start a riddle game', disabled: false },
-                  { icon: Search, text: 'Search emails about "project"', disabled: !gmailStatus.connected },
+                  { icon: Search, text: 'Search emails about "project"', disabled: !isGoogleConnected },
                   { icon: MessageSquare, text: 'What is quantum computing?', disabled: false },
                 ].map((action, index) => (
                   <button
@@ -836,22 +738,22 @@ const AssistantPage: React.FC = () => {
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask me anything: manage emails, create tasks, schedule meetings, generate documents, play games, or general questions..."
+                placeholder="Ask me anything: create tasks, schedule meetings, generate documents, play games, or general questions..."
                 className="w-full glass-panel rounded-xl px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none min-h-[50px] max-h-32"
                 rows={1}
               />
               <div className="flex items-center justify-between mt-2">
                 <div className="text-xs text-secondary">
-                  {gmailStatus.connected ? (
+                  {isGoogleConnected ? (
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
                       <Shield className="w-3 h-3 text-green-500" />
-                      <span>All features available - Gmail connected securely</span>
+                      <span>All features available - Google connected securely</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">
                       <AlertCircle className="w-3 h-3 text-yellow-500" />
-                      <span>Connect Gmail for email management features</span>
+                      <span>Connect Google from Dashboard for email and meeting features</span>
                     </span>
                   )}
                 </div>

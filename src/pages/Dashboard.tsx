@@ -1,9 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare } from 'lucide-react';
+import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare, Google } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
+import Button from '../components/ui/Button';
 
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
 const VITE_API_URL = import.meta.env.VITE_API_URL;
@@ -14,13 +15,43 @@ const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, signOut, loading } = useAuth();
+  const { user, signOut, loading, isGoogleConnected, connectGoogle, disconnectGoogle } = useAuth();
+  const [googleConnecting, setGoogleConnecting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/');
     }
+
+    // Check for Google connection status in URL params
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('google_connected') === 'true') {
+      // Clear the URL parameter
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (urlParams.get('google_error') === 'true') {
+      // Clear the URL parameter
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, [user, loading, navigate]);
+
+  const handleGoogleConnect = async () => {
+    try {
+      setGoogleConnecting(true);
+      await connectGoogle();
+    } catch (error) {
+      console.error('Failed to connect Google:', error);
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
+  const handleGoogleDisconnect = async () => {
+    try {
+      await disconnectGoogle();
+    } catch (error) {
+      console.error('Failed to disconnect Google:', error);
+    }
+  };
 
   const features = [
     {
@@ -103,6 +134,30 @@ const Dashboard: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Google Connection Status */}
+              {isGoogleConnected ? (
+                <Button
+                  onClick={handleGoogleDisconnect}
+                  variant="secondary"
+                  size="sm"
+                  className="flex items-center space-x-2"
+                >
+                  <Google className="w-4 h-4" />
+                  <span>Disconnect Google</span>
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleGoogleConnect}
+                  variant="secondary"
+                  size="sm"
+                  className="flex items-center space-x-2"
+                  disabled={googleConnecting}
+                >
+                  <Google className="w-4 h-4" />
+                  <span>{googleConnecting ? 'Connecting...' : 'Connect Google'}</span>
+                </Button>
+              )}
+              
               <ThemeToggle />
               
               <button
@@ -159,6 +214,47 @@ const Dashboard: React.FC = () => {
                 </div>
               </GlassCard>
             ))}
+          </div>
+
+          {/* Google Connection Card */}
+          <div className="max-w-6xl mx-auto mb-16">
+            <GlassCard className="p-8" hover>
+              <div className="flex flex-col md:flex-row items-center justify-between">
+                <div className="flex items-center space-x-4 mb-4 md:mb-0">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-green-500 flex items-center justify-center">
+                    <Google className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-primary">Google Integration</h3>
+                    <p className="text-secondary">
+                      {isGoogleConnected 
+                        ? 'Your Google account is connected. You can use Gmail and Google Meet features.' 
+                        : 'Connect your Google account to use Gmail and Google Meet features.'}
+                    </p>
+                  </div>
+                </div>
+                
+                {isGoogleConnected ? (
+                  <Button
+                    onClick={handleGoogleDisconnect}
+                    variant="secondary"
+                    className="flex items-center space-x-2"
+                  >
+                    <span>Disconnect Google</span>
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleGoogleConnect}
+                    variant="premium"
+                    className="flex items-center space-x-2"
+                    disabled={googleConnecting}
+                  >
+                    <Google className="w-4 h-4" />
+                    <span>{googleConnecting ? 'Connecting...' : 'Connect Google'}</span>
+                  </Button>
+                )}
+              </div>
+            </GlassCard>
           </div>
         </div>
       </main>

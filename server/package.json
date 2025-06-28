@@ -16,6 +16,7 @@
     "@daily-co/daily-js": "^0.56.0",
     "@google/generative-ai": "^0.2.1",
     "@supabase/supabase-js": "^2.50.1",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",

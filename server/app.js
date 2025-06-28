@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const app = express();
@@ -53,6 +54,7 @@ app.options('*', cors(corsOptions));
 // Additional middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
 
 // Add security headers
 app.use((req, res, next) => {
@@ -93,6 +95,10 @@ const GAME_CONFIGS = {
     custom_greeting: "Think of any person, place, or thing - I'll try to read your mind! I have 20 yes-or-no questions to figure out what you're thinking. Let's see if I can guess it!"
   }
 };
+
+// Import Google API routes
+const googleApiRoutes = require('./google-api');
+app.use('/api/google', googleApiRoutes);
 
 // Generic conversation creation endpoint
 const createConversation = async (gameType, userId) => {
