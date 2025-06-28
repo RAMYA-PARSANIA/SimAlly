@@ -159,6 +159,194 @@ router.post('/disconnect', (req, res) => {
   res.json({ success: true, message: 'Google account disconnected' });
 });
 
+// Create a Google Meet meeting
+router.post('/meetings/create', async (req, res) => {
+  const sessionId = req.cookies.google_session_id;
+  const { title, description, startTime, duration } = req.body;
+  
+  if (!sessionId || !tokenStore.has(sessionId)) {
+    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+  }
+  
+  try {
+    const tokens = tokenStore.get(sessionId);
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials(tokens);
+    
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
+    
+    // Calculate end time
+    const start = new Date(startTime);
+    const end = new Date(start.getTime() + (duration || 60) * 60000);
+    
+    // Create event with Google Meet conference
+    const event = {
+      summary: title || 'Google Meet Meeting',
+      description: description || '',
+      start: {
+        dateTime: start.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      },
+      end: {
+        dateTime: end.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      },
+      conferenceData: {
+        createRequest: {
+          requestId: crypto.randomBytes(16).toString('hex'),
+          conferenceSolutionKey: {
+            type: 'hangoutsMeet'
+          }
+        }
+      }
+    };
+    
+    const response = await calendar.events.insert({
+      calendarId: 'primary',
+      conferenceDataVersion: 1,
+      resource: event
+    });
+    
+    // Format the response
+    const meeting = {
+      id: response.data.id,
+      meetingId: response.data.conferenceData?.conferenceId,
+      url: response.data.conferenceData?.entryPoints?.[0]?.uri || '',
+      title: response.data.summary,
+      description: response.data.description,
+      startTime: response.data.start.dateTime,
+      endTime: response.data.end.dateTime,
+      status: response.data.status,
+      attendees: response.data.attendees || []
+    };
+    
+    res.json({ success: true, meeting });
+  } catch (error) {
+    console.error('Error creating meeting:', error);
+    res.status(500).json({ success: false, error: 'Failed to create meeting' });
+  }
+});
+
+// List Google Meet meetings
+router.get('/meetings', async (req, res) => {
+  const sessionId = req.cookies.google_session_id;
+  
+  if (!sessionId || !tokenStore.has(sessionId)) {
+    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+  }
+  
+  try {
+    const tokens = tokenStore.get(sessionId);
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials(tokens);
+    
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
+    
+    // Get events from now to 30 days in the future
+    const now = new Date();
+    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: now.toISOString(),
+      timeMax: thirtyDaysLater.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime'
+    });
+    
+    // Filter for events with Google Meet conferences
+    const meetings = response.data.items
+      .filter(event => event.conferenceData?.conferenceSolution?.key?.type === 'hangoutsMeet')
+      .map(event => ({
+        id: event.id,
+        meetingId: event.conferenceData?.conferenceId,
+        url: event.conferenceData?.entryPoints?.[0]?.uri || '',
+        title: event.summary,
+        description: event.description,
+        startTime: event.start.dateTime,
+        endTime: event.end.dateTime,
+        status: event.status,
+        attendees: event.attendees || []
+      }));
+    
+    res.json({ success: true, meetings });
+  } catch (error) {
+    console.error('Error listing meetings:', error);
+    res.status(500).json({ success: false, error: 'Failed to list meetings' });
+  }
+});
+
+// Get a specific meeting
+router.get('/meetings/:eventId', async (req, res) => {
+  const sessionId = req.cookies.google_session_id;
+  const { eventId } = req.params;
+  
+  if (!sessionId || !tokenStore.has(sessionId)) {
+    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+  }
+  
+  try {
+    const tokens = tokenStore.get(sessionId);
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials(tokens);
+    
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
+    
+    const response = await calendar.events.get({
+      calendarId: 'primary',
+      eventId
+    });
+    
+    const event = response.data;
+    
+    // Format the response
+    const meeting = {
+      id: event.id,
+      meetingId: event.conferenceData?.conferenceId,
+      url: event.conferenceData?.entryPoints?.[0]?.uri || '',
+      title: event.summary,
+      description: event.description,
+      startTime: event.start.dateTime,
+      endTime: event.end.dateTime,
+      status: event.status,
+      attendees: event.attendees || []
+    };
+    
+    res.json({ success: true, meeting });
+  } catch (error) {
+    console.error('Error getting meeting:', error);
+    res.status(500).json({ success: false, error: 'Failed to get meeting' });
+  }
+});
+
+// Delete a meeting
+router.delete('/meetings/:eventId', async (req, res) => {
+  const sessionId = req.cookies.google_session_id;
+  const { eventId } = req.params;
+  
+  if (!sessionId || !tokenStore.has(sessionId)) {
+    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+  }
+  
+  try {
+    const tokens = tokenStore.get(sessionId);
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials(tokens);
+    
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
+    
+    await calendar.events.delete({
+      calendarId: 'primary',
+      eventId
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting meeting:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete meeting' });
+  }
+});
+
 // Gmail API endpoints
 router.get('/gmail/messages', async (req, res) => {
   const sessionId = req.cookies.google_session_id;
@@ -360,194 +548,6 @@ router.post('/gmail/delete-emails', async (req, res) => {
   } catch (error) {
     console.error('Error deleting emails:', error);
     res.status(500).json({ success: false, error: 'Failed to delete emails' });
-  }
-});
-
-// Create a Google Meet meeting
-router.post('/meetings/create', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { title, description, startTime, duration } = req.body;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    // Calculate end time
-    const start = new Date(startTime);
-    const end = new Date(start.getTime() + (duration || 60) * 60000);
-    
-    // Create event with Google Meet conference
-    const event = {
-      summary: title || 'Google Meet Meeting',
-      description: description || '',
-      start: {
-        dateTime: start.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      },
-      end: {
-        dateTime: end.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      },
-      conferenceData: {
-        createRequest: {
-          requestId: crypto.randomBytes(16).toString('hex'),
-          conferenceSolutionKey: {
-            type: 'hangoutsMeet'
-          }
-        }
-      }
-    };
-    
-    const response = await calendar.events.insert({
-      calendarId: 'primary',
-      conferenceDataVersion: 1,
-      resource: event
-    });
-    
-    // Format the response
-    const meeting = {
-      id: response.data.id,
-      meetingId: response.data.conferenceData?.conferenceId,
-      url: response.data.conferenceData?.entryPoints?.[0]?.uri || '',
-      title: response.data.summary,
-      description: response.data.description,
-      startTime: response.data.start.dateTime,
-      endTime: response.data.end.dateTime,
-      status: response.data.status,
-      attendees: response.data.attendees || []
-    };
-    
-    res.json({ success: true, meeting });
-  } catch (error) {
-    console.error('Error creating meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to create meeting' });
-  }
-});
-
-// List Google Meet meetings
-router.get('/meetings', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    // Get events from now to 30 days in the future
-    const now = new Date();
-    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: now.toISOString(),
-      timeMax: thirtyDaysLater.toISOString(),
-      singleEvents: true,
-      orderBy: 'startTime'
-    });
-    
-    // Filter for events with Google Meet conferences
-    const meetings = response.data.items
-      .filter(event => event.conferenceData?.conferenceSolution?.key?.type === 'hangoutsMeet')
-      .map(event => ({
-        id: event.id,
-        meetingId: event.conferenceData?.conferenceId,
-        url: event.conferenceData?.entryPoints?.[0]?.uri || '',
-        title: event.summary,
-        description: event.description,
-        startTime: event.start.dateTime,
-        endTime: event.end.dateTime,
-        status: event.status,
-        attendees: event.attendees || []
-      }));
-    
-    res.json({ success: true, meetings });
-  } catch (error) {
-    console.error('Error listing meetings:', error);
-    res.status(500).json({ success: false, error: 'Failed to list meetings' });
-  }
-});
-
-// Get a specific meeting
-router.get('/meetings/:eventId', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { eventId } = req.params;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    const response = await calendar.events.get({
-      calendarId: 'primary',
-      eventId
-    });
-    
-    const event = response.data;
-    
-    // Format the response
-    const meeting = {
-      id: event.id,
-      meetingId: event.conferenceData?.conferenceId,
-      url: event.conferenceData?.entryPoints?.[0]?.uri || '',
-      title: event.summary,
-      description: event.description,
-      startTime: event.start.dateTime,
-      endTime: event.end.dateTime,
-      status: event.status,
-      attendees: event.attendees || []
-    };
-    
-    res.json({ success: true, meeting });
-  } catch (error) {
-    console.error('Error getting meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to get meeting' });
-  }
-});
-
-// Delete a meeting
-router.delete('/meetings/:eventId', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { eventId } = req.params;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    await calendar.events.delete({
-      calendarId: 'primary',
-      eventId
-    });
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete meeting' });
   }
 });
 
