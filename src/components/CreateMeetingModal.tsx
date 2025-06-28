@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { X, Calendar, Clock, FileText } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { X, Calendar, Clock, FileText, Users } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import { meetingService } from '../services/meetingService';
 import { Meeting } from '../types';
+import GlassCard from './ui/GlassCard';
+import Button from './ui/Button';
 
 interface CreateMeetingModalProps {
   onClose: () => void;
@@ -10,33 +12,44 @@ interface CreateMeetingModalProps {
 }
 
 const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeetingCreated }) => {
-  const { sessionId } = useAuth();
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    startTime: new Date().toISOString().slice(0, 16),
-    duration: 60
+    startTime: new Date(Date.now() + 30 * 60000).toISOString().slice(0, 16), // 30 minutes from now
+    duration: 60,
+    attendees: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionId) return;
+    if (!user) return;
+    
+    setError(null);
+    setIsLoading(true);
 
     try {
-      setIsLoading(true);
-      const response = await meetingService.createMeeting(sessionId, {
-        title: formData.title || 'Google Meet Meeting',
+      // Parse attendees from comma-separated string
+      const attendeesList = formData.attendees
+        ? formData.attendees.split(',').map(email => email.trim()).filter(email => email)
+        : [];
+
+      const response = await meetingService.createMeeting(user.id, {
+        title: formData.title || 'New Meeting',
         description: formData.description,
         startTime: new Date(formData.startTime).toISOString(),
-        duration: formData.duration
+        duration: formData.duration,
+        attendees: attendeesList
       });
 
       if (response.success) {
         onMeetingCreated(response.meeting);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create meeting:', error);
+      setError(error.message || 'Failed to create meeting. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -51,87 +64,81 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeet
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">Create New Meeting</h2>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <GlassCard className="w-full max-w-md" goldBorder>
+        <div className="flex items-center justify-between p-6 border-b silver-border">
+          <h2 className="text-xl font-bold gradient-gold-silver">Create New Meeting</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-secondary hover:text-primary p-2 rounded-lg glass-panel glass-panel-hover"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           {/* Title */}
           <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-primary mb-2">
               Meeting Title
             </label>
             <div className="relative">
-              <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <FileText className="absolute left-3 top-3 w-5 h-5 text-secondary" />
               <input
                 type="text"
-                id="title"
                 name="title"
                 value={formData.title}
                 onChange={handleInputChange}
-                placeholder="Enter meeting title (optional)"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                placeholder="Enter meeting title"
+                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
               />
             </div>
           </div>
 
           {/* Description */}
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-              Description
+            <label className="block text-sm font-medium text-primary mb-2">
+              Description (Optional)
             </label>
             <textarea
-              id="description"
               name="description"
               value={formData.description}
               onChange={handleInputChange}
-              placeholder="Add meeting description (optional)"
+              placeholder="Add meeting description"
               rows={3}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
+              className="w-full px-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none"
             />
           </div>
 
           {/* Start Time */}
           <div>
-            <label htmlFor="startTime" className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-primary mb-2">
               Start Time
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Calendar className="absolute left-3 top-3 w-5 h-5 text-secondary" />
               <input
                 type="datetime-local"
-                id="startTime"
                 name="startTime"
                 value={formData.startTime}
                 onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
               />
             </div>
           </div>
 
           {/* Duration */}
           <div>
-            <label htmlFor="duration" className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-primary mb-2">
               Duration
             </label>
             <div className="relative">
-              <Clock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Clock className="absolute left-3 top-3 w-5 h-5 text-secondary" />
               <select
-                id="duration"
                 name="duration"
                 value={formData.duration}
                 onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none bg-white"
+                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500 appearance-none"
               >
                 <option value={30}>30 minutes</option>
                 <option value={60}>1 hour</option>
@@ -142,29 +149,59 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({ onClose, onMeet
             </div>
           </div>
 
+          {/* Attendees */}
+          <div>
+            <label className="block text-sm font-medium text-primary mb-2">
+              Attendees (Optional)
+            </label>
+            <div className="relative">
+              <Users className="absolute left-3 top-3 w-5 h-5 text-secondary" />
+              <input
+                type="text"
+                name="attendees"
+                value={formData.attendees}
+                onChange={handleInputChange}
+                placeholder="Enter email addresses, separated by commas"
+                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              />
+            </div>
+            <p className="text-xs text-secondary mt-1">
+              Invitations will be sent to all attendees
+            </p>
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
           {/* Actions */}
-          <div className="flex space-x-3 pt-4">
-            <button
+          <div className="flex space-x-4 pt-4">
+            <Button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+              variant="secondary"
+              className="flex-1"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              variant="premium"
+              className="flex-1"
               disabled={isLoading}
-              className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {isLoading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" />
               ) : (
                 'Create Meeting'
               )}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
+      </GlassCard>
     </div>
   );
 };

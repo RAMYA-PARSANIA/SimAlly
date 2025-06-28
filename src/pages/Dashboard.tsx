@@ -71,6 +71,15 @@ const Dashboard: React.FC = () => {
       color: 'from-blue-500 to-cyan-500',
     },
     {
+      id: 'meetings',
+      icon: Video,
+      title: 'Video Meetings',
+      description: 'Schedule and join Google Meet video conferences directly from the platform.',
+      route: '/meetings',
+      color: 'from-cyan-500 to-teal-500',
+      requiresGoogle: true,
+    },
+    {
       id: 'game-mode',
       icon: Gamepad2,
       title: 'Interactive Games',
@@ -80,7 +89,11 @@ const Dashboard: React.FC = () => {
     },
   ];
 
-  const handleFeatureClick = (route: string) => {
+  const handleFeatureClick = (route: string, requiresGoogle: boolean = false) => {
+    if (requiresGoogle && !isGoogleConnected) {
+      alert('Please connect your Google account first to use this feature.');
+      return;
+    }
     navigate(route);
   };
 
@@ -177,14 +190,16 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}
-                className="p-8 cursor-pointer group"
+                className={`p-8 cursor-pointer group ${
+                  feature.requiresGoogle && !isGoogleConnected ? 'opacity-70' : ''
+                }`}
                 hover
                 goldBorder
-                onClick={() => handleFeatureClick(feature.route)}
+                onClick={() => handleFeatureClick(feature.route, feature.requiresGoogle)}
               >
                 <div className="text-center">
                   <div className={`w-16 h-16 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mx-auto mb-6`}>
@@ -203,6 +218,12 @@ const Dashboard: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
+                  
+                  {feature.requiresGoogle && !isGoogleConnected && (
+                    <div className="mt-4 text-xs text-yellow-500 bg-yellow-500/10 p-2 rounded-lg">
+                      Requires Google connection
+                    </div>
+                  )}
                 </div>
               </GlassCard>
             ))}
@@ -220,8 +241,8 @@ const Dashboard: React.FC = () => {
                     <h3 className="text-xl font-bold text-primary">Google Integration</h3>
                     <p className="text-secondary">
                       {isGoogleConnected 
-                        ? 'Your Google account is connected. You can use Gmail features.' 
-                        : 'Connect your Google account to use Gmail features.'}
+                        ? 'Your Google account is connected. You can use Gmail and Google Meet features.' 
+                        : 'Connect your Google account to use Gmail and Google Meet features.'}
                     </p>
                   </div>
                 </div>
