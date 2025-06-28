@@ -28,9 +28,7 @@ const corsOptions = {
       'https://simally.vercel.app',
       VITE_WORKSPACE_API_URL,
       FRONTEND_URL,
-      VITE_APP_URL,
-      'http://localhost:5173',
-      'http://localhost:4173'
+      VITE_APP_URL
     ].filter(Boolean); // Remove any undefined values
     
     if (allowedOrigins.indexOf(origin) !== -1) {
