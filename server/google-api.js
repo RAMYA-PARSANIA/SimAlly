@@ -12,7 +12,7 @@ const router = express.Router();
 // Google OAuth configuration
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/google/callback';
+const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/auth/gmail/callback';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Scopes for Google APIs - expanded for more access
@@ -26,7 +26,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly'
 ];
 
-// Store tokens temporarily (in production, use a database)
+// Store tokens temporarily (in memory)
 const tokenStore = new Map();
 
 // Create OAuth client
@@ -163,7 +163,7 @@ router.post('/meetings/create', async (req, res) => {
     const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
     
     // Calculate end time
-    const start = new Date(startTime);
+    const start = new Date(startTime || new Date(Date.now() + 30 * 60000));
     const end = new Date(start.getTime() + (duration || 60) * 60000);
     
     // Create event with Google Meet conference
