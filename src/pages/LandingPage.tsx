@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut, Video, MessageSquare, CheckSquare, Calendar, Mail, Brain, Mic, FileText } from 'lucide-react';
+import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut, MessageSquare, CheckSquare, Calendar, Mail, Brain, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthModal from '../components/AuthModal';
@@ -35,13 +35,6 @@ const LandingPage: React.FC = () => {
       description: 'Your intelligent co-pilot for daily productivity with Gmail management, document generation, and smart insights for professional workflows.',
       color: 'from-blue-500 to-cyan-500',
       highlights: ['Gmail Integration', 'Document Generation', 'Smart Insights', 'Productivity Tools']
-    },
-    {
-      icon: Video,
-      title: 'Video Meetings',
-      description: 'Host smart video conferences with live transcription, AI-powered note-taking, automatic summaries, and seamless collaboration.',
-      color: 'from-cyan-500 to-green-500',
-      highlights: ['Live Transcription', 'AI Notes', 'Meeting Summaries', 'HD Video Quality']
     },
     {
       icon: Gamepad2,
@@ -174,16 +167,13 @@ const LandingPage: React.FC = () => {
               The Future of AI Productivity
             </h1>
             
-            
-            
             <p className="text-lg gold-text font-medium mb-6">
               Transform your workflow with AI that understands, assists, and elevates every interaction.
             </p>
             
             <p className="text-base text-secondary max-w-3xl mx-auto mb-12 leading-relaxed">
-              SimAlly combines advanced AI assistance, collaborative workspaces, intelligent video meetings, 
-              and engaging interactive experiences into one seamless platform. From managing your Gmail and 
-              generating documents to hosting AI-transcribed meetings and playing mind-enhancing games, 
+              SimAlly combines advanced AI assistance, collaborative workspaces, and engaging interactive experiences 
+              into one seamless platform. From managing your Gmail and generating documents to playing mind-enhancing games, 
               SimAlly is your complete digital companion for professional and personal growth.
             </p>
 
@@ -207,7 +197,7 @@ const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold gradient-gold-silver mb-6">
-              Four Powerful Modes, Infinite Possibilities
+              Three Powerful Modes, Infinite Possibilities
             </h2>
             <p className="text-lg text-secondary max-w-3xl mx-auto">
               Each mode is meticulously designed to excel in specific domains, providing you with 
@@ -215,7 +205,7 @@ const LandingPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
             {mainFeatures.map((feature, index) => (
               <GlassCard key={index} className="p-8 h-full" hover goldBorder>
                 <div className="flex flex-col h-full">
@@ -284,7 +274,7 @@ const LandingPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 max-w-5xl mx-auto">
             {[
               { icon: Users, label: 'Active Users', value: '10,000+', color: 'gold-text' },
-              { icon: Mic, label: 'Meeting Minutes Transcribed', value: '500K+', color: 'silver-text' },
+              { icon: Brain, label: 'AI Interactions', value: '500K+', color: 'silver-text' },
               { icon: Shield, label: 'Data Security', value: '100%', color: 'gold-text' },
               { icon: Zap, label: 'AI Response Time', value: '<1s', color: 'silver-text' },
             ].map((stat, index) => (

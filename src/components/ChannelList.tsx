@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Hash, Lock, Plus, Users, Search, MessageCircle, Video, Calendar, MoreVertical, FileText, UserPlus, LogOut, Key, Trash2 } from 'lucide-react';
+import { Hash, Lock, Plus, Users, Search, MessageCircle, Calendar, MoreVertical, FileText, UserPlus, LogOut, Key, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -154,9 +154,6 @@ const ChannelList: React.FC<ChannelListProps> = ({
       case 'summarize':
         onSummarizeChannel(channel.id);
         break;
-      case 'meeting':
-        onStartMeeting(channel.name);
-        break;
       case 'delete':
         if (canDeleteChannel(channel) && confirm(`Are you sure you want to delete #${channel.name}?`)) {
           onDeleteChannel(channel.id);
@@ -247,13 +244,6 @@ const ChannelList: React.FC<ChannelListProps> = ({
               <FileText className="w-3 h-3" />
               <span>Summarize</span>
             </button>
-            <button
-              onClick={() => handleChannelAction('meeting', channel)}
-              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
-            >
-              <Video className="w-3 h-3" />
-              <span>Start Meeting</span>
-            </button>
             {channel.name !== 'general' && (
               <button
                 onClick={() => handleChannelAction('leave', channel)}
@@ -284,15 +274,6 @@ const ChannelList: React.FC<ChannelListProps> = ({
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-primary">Channels</h2>
           <div className="flex items-center space-x-2">
-            <Button
-              onClick={onJoinMeeting}
-              variant="ghost"
-              size="sm"
-              className="p-2"
-              title="Join Meeting"
-            >
-              <Video className="w-4 h-4" />
-            </Button>
             <Button
               onClick={() => setShowCreateModal(true)}
               variant="ghost"

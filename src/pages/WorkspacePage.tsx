@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, Video, UserPlus, BarChart3, Clock, Target, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -12,8 +12,6 @@ import CalendarPanel from '../components/CalendarPanel';
 import ProjectPanel from '../components/ProjectPanel';
 import AnalyticsPanel from '../components/AnalyticsPanel';
 import TimeTrackingPanel from '../components/TimeTrackingPanel';
-import MeetingControls from '../components/MeetingControls';
-import VideoMeeting from '../components/VideoMeeting';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 
@@ -24,17 +22,8 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time' | 'meeting'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time'>('chat');
   const [loading, setLoading] = useState(true);
-  const [currentMeeting, setCurrentMeeting] = useState<{
-    roomName: string;
-    displayName: string;
-  } | null>(null);
-  const [showJoinMeetingModal, setShowJoinMeetingModal] = useState(false);
-  const [joinMeetingData, setJoinMeetingData] = useState({
-    roomName: '',
-    displayName: user?.full_name || ''
-  });
 
   useEffect(() => {
     if (user) {
@@ -495,35 +484,6 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
-  const handleStartMeeting = (channelName: string) => {
-    const roomName = `${channelName}-${Date.now()}`;
-    setCurrentMeeting({
-      roomName,
-      displayName: user?.full_name || 'User'
-    });
-    setActivePanel('meeting');
-  };
-
-  const handleJoinMeeting = () => {
-    setShowJoinMeetingModal(true);
-  };
-
-  const handleJoinMeetingSubmit = () => {
-    if (!joinMeetingData.roomName.trim() || !joinMeetingData.displayName.trim()) return;
-    
-    setCurrentMeeting({
-      roomName: joinMeetingData.roomName.trim(),
-      displayName: joinMeetingData.displayName.trim()
-    });
-    setActivePanel('meeting');
-    setShowJoinMeetingModal(false);
-  };
-
-  const handleLeaveMeeting = () => {
-    setCurrentMeeting(null);
-    setActivePanel('chat');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -630,17 +590,6 @@ const WorkspacePage: React.FC = () => {
                 >
                   <BarChart3 className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => setActivePanel('meeting')}
-                  className={`p-2 rounded-md transition-all ${
-                    activePanel === 'meeting' 
-                      ? 'bg-gradient-gold-silver text-white' 
-                      : 'text-secondary hover:text-primary'
-                  }`}
-                  title="Meetings"
-                >
-                  <Video className="w-4 h-4" />
-                </button>
               </div>
               
               <ThemeToggle />
@@ -662,8 +611,8 @@ const WorkspacePage: React.FC = () => {
             onLeaveChannel={handleLeaveChannel}
             onDeleteChannel={handleDeleteChannel}
             onSummarizeChannel={handleSummarizeChannel}
-            onStartMeeting={handleStartMeeting}
-            onJoinMeeting={handleJoinMeeting}
+            onStartMeeting={() => {}}
+            onJoinMeeting={() => {}}
           />
         </div>
 
@@ -760,121 +709,9 @@ const WorkspacePage: React.FC = () => {
                 <AnalyticsPanel />
               </motion.div>
             )}
-
-            {activePanel === 'meeting' && (
-              <motion.div 
-                key="meeting-panel"
-                className="flex-1 flex flex-col"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                {currentMeeting ? (
-                  <VideoMeeting
-                    roomName={currentMeeting.roomName}
-                    displayName={currentMeeting.displayName}
-                    onLeave={handleLeaveMeeting}
-                  />
-                ) : (
-                  <div className="flex-1 flex items-center justify-center p-8">
-                    <div className="max-w-2xl mx-auto text-center">
-                      <Video className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
-                      <h3 className="text-2xl font-bold text-primary mb-4">Video Meetings</h3>
-                      <p className="text-secondary mb-8">
-                        Start or join a video meeting with your team members
-                      </p>
-                      <div className="flex justify-center space-x-4">
-                        <Button
-                          onClick={() => handleStartMeeting('workspace')}
-                          variant="premium"
-                          className="flex items-center space-x-2"
-                        >
-                          <Video className="w-4 h-4" />
-                          <span>Start Meeting</span>
-                        </Button>
-                        <Button
-                          onClick={handleJoinMeeting}
-                          variant="secondary"
-                          className="flex items-center space-x-2"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          <span>Join Meeting</span>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            )}
           </AnimatePresence>
         </div>
       </div>
-
-      {/* Join Meeting Modal */}
-      {showJoinMeetingModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="w-full max-w-md"
-          >
-            <GlassCard className="p-8" goldBorder>
-              <h2 className="text-2xl font-bold gradient-gold-silver mb-6">Join Meeting</h2>
-              
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-primary mb-2">
-                    Your Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={joinMeetingData.displayName}
-                    onChange={(e) => setJoinMeetingData(prev => ({ ...prev, displayName: e.target.value }))}
-                    placeholder="Enter your name"
-                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-primary mb-2">
-                    Meeting Room Name
-                  </label>
-                  <input
-                    type="text"
-                    value={joinMeetingData.roomName}
-                    onChange={(e) => setJoinMeetingData(prev => ({ ...prev, roomName: e.target.value }))}
-                    placeholder="Enter room name to join"
-                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                  />
-                  <p className="text-xs text-secondary mt-1">
-                    Ask the meeting host for the room name
-                  </p>
-                </div>
-
-                <div className="flex space-x-4">
-                  <Button
-                    onClick={() => setShowJoinMeetingModal(false)}
-                    variant="secondary"
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleJoinMeetingSubmit}
-                    variant="premium"
-                    className="flex-1"
-                    disabled={!joinMeetingData.displayName.trim() || !joinMeetingData.roomName.trim()}
-                  >
-                    Join Meeting
-                  </Button>
-                </div>
-              </div>
-            </GlassCard>
-          </motion.div>
-        </div>
-      )}
     </div>
   );
 };
