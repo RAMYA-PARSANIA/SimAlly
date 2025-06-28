@@ -142,13 +142,13 @@ router.get('/callback', async (req, res) => {
 router.get('/status', (req, res) => {
   // Try to get session ID from multiple sources
   const cookieSessionId = req.cookies.google_session_id;
-  const querySessionId = req.query.userId;
+  const queryUserId = req.query.userId;
   
   // Use userId as primary identifier if provided
-  const sessionId = querySessionId || cookieSessionId;
+  const sessionId = queryUserId || cookieSessionId;
   
   console.log(`[${Date.now()}] Checking Google connection status for session ID: ${sessionId}`);
-  console.log(`[${Date.now()}] Cookie session ID: ${cookieSessionId}, Query userId: ${querySessionId}`);
+  console.log(`[${Date.now()}] Cookie session ID: ${cookieSessionId}, Query userId: ${queryUserId}`);
 
   if (!sessionId || !tokenStore.has(sessionId)) {
     console.log(`[${Date.now()}] No session ID or tokens found for session ID: ${sessionId}`);

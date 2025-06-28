@@ -45,19 +45,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const checkGoogleConnectionStatus = async () => {
+    if (!authService.getCurrentUser()) return;
+    
     try {
-      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/google/status`, {
-        withCredentials: true
+      const userId = authService.getCurrentUser()?.id;
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/google/status?userId=${userId}`, {
+        credentials: 'include',
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       
-      if (response.data.success) {
-        setIsGoogleConnected(response.data.connected);
-        if (response.data.token) {
-          setGoogleToken(response.data.token);
+      if (response.ok) {
+        const data = await response.json();
+        setIsGoogleConnected(data.connected);
+        if (data.token) {
+          setGoogleToken(data.token);
         }
+      } else {
+        console.warn(`Google status check failed: ${response.status} ${response.statusText}`);
+        setIsGoogleConnected(false);
       }
     } catch (error) {
-      console.error('Failed to check Google connection status:', error);
+      console.error('Error checking Google connection status:', error);
       setIsGoogleConnected(false);
     }
   };
@@ -76,14 +86,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const connectGoogle = async () => {
     try {
-      const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/google/auth-url`, {
-        withCredentials: true
+      const userId = authService.getCurrentUser()?.id;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/google/auth-url?userId=${userId}`, {
+        credentials: 'include',
+        headers: {
+          'Origin': window.location.origin
+        }
       });
       
-      if (response.data.success) {
-        window.location.href = response.data.authUrl;
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          window.location.href = data.authUrl;
+        } else {
+          throw new Error(data.error || 'Failed to get Google auth URL');
+        }
       } else {
-        throw new Error(response.data.error || 'Failed to get Google auth URL');
+        throw new Error(`Failed to get Google auth URL: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('Failed to connect Google:', error);
@@ -93,15 +116,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const disconnectGoogle = async () => {
     try {
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/google/disconnect`, {}, {
-        withCredentials: true
+      const userId = authService.getCurrentUser()?.id;
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+      
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/google/disconnect`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
+        credentials: 'include',
+        body: JSON.stringify({ userId })
       });
       
-      if (response.data.success) {
-        setIsGoogleConnected(false);
-        setGoogleToken(null);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setIsGoogleConnected(false);
+          setGoogleToken(null);
+        } else {
+          throw new Error(data.error || 'Failed to disconnect Google');
+        }
       } else {
-        throw new Error(response.data.error || 'Failed to disconnect Google');
+        throw new Error(`Failed to disconnect Google: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('Failed to disconnect Google:', error);
