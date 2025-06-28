@@ -35,6 +35,12 @@ interface GmailEmail {
   unsubscribeUrl?: string; // Unsubscribe link for promotional/marketing emails
 }
 
+interface GmailStatus {
+  connected: boolean;
+  email?: string;
+  unreadCount?: number;
+}
+
 const AssistantPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();

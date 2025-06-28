@@ -10,28 +10,28 @@ export const meetingService = {
     startTime?: string;
     duration?: number;
   }): Promise<{ success: boolean; meeting: Meeting }> {
-    const response = await axios.post(`${API_BASE_URL}/api/meetings/create`, meetingData, {
+    const response = await axios.post(`${API_BASE_URL}/api/google/meetings/create`, meetingData, {
       withCredentials: true
     });
     return response.data;
   },
 
   async getMeeting(eventId: string): Promise<{ success: boolean; meeting: Meeting }> {
-    const response = await axios.get(`${API_BASE_URL}/api/meetings/${eventId}`, {
+    const response = await axios.get(`${API_BASE_URL}/api/google/meetings/${eventId}`, {
       withCredentials: true
     });
     return response.data;
   },
 
   async listMeetings(): Promise<{ success: boolean; meetings: Meeting[] }> {
-    const response = await axios.get(`${API_BASE_URL}/api/meetings`, {
+    const response = await axios.get(`${API_BASE_URL}/api/google/meetings`, {
       withCredentials: true
     });
     return response.data;
   },
 
   async deleteMeeting(eventId: string): Promise<{ success: boolean }> {
-    const response = await axios.delete(`${API_BASE_URL}/api/meetings/${eventId}`, {
+    const response = await axios.delete(`${API_BASE_URL}/api/google/meetings/${eventId}`, {
       withCredentials: true
     });
     return response.data;

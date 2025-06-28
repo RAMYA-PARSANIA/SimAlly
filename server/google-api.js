@@ -26,7 +26,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly'
 ];
 
-// Store tokens temporarily (in production, use a database)
+// Store tokens temporarily in memory (in production, use a database)
 const tokenStore = new Map();
 
 // Create OAuth client
