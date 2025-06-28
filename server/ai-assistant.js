@@ -52,12 +52,10 @@ const corsOptions = {
       'https://simally.vercel.app',
       VITE_WORKSPACE_API_URL,
       FRONTEND_URL,
-      VITE_APP_URL,
-      'http://localhost:5173',
-      'http://localhost:4173'
+      VITE_APP_URL
     ].filter(Boolean); // Remove any undefined values
     
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
@@ -176,6 +174,32 @@ function setupOAuthClientFromCookies(req) {
   
   console.log('OAuth client configured with tokens from cookies');
   return clientForRequest;
+}
+
+// Helper function to get tokens from tokenStore using userId
+function getTokensForUser(userId) {
+  // Try to get tokens directly with userId
+  let tokens = tokenStore.get(userId);
+  
+  // If not found, try to find tokens where the state matches userId
+  if (!tokens) {
+    console.log(`[${Date.now()}] Tokens not found directly for userId: ${userId}, searching all tokens...`);
+    
+    // Iterate through all entries in tokenStore
+    for (const [key, value] of tokenStore.entries()) {
+      // Check if this entry has a state that matches our userId
+      if (value.state === userId) {
+        console.log(`[${Date.now()}] Found tokens with matching state for userId: ${userId}`);
+        tokens = value;
+        
+        // Also store these tokens directly with userId for future lookups
+        tokenStore.set(userId, value);
+        break;
+      }
+    }
+  }
+  
+  return tokens;
 }
 
 // Complete endpoint mapping for our webapp with ALL available functions
@@ -602,7 +626,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
 
-    console.log(`Processing message: "${message}" for user: ${userId}`);
+    console.log(`[${Date.now()}] Processing message: "${message}" for user: ${userId}`);
 
     // Create comprehensive prompt with all endpoints
     const endpointsList = Object.entries(WEBAPP_ENDPOINTS)
@@ -668,7 +692,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
     const result = await model.generateContent(systemPrompt);
     const aiResponse = result.response.text();
 
-    console.log('AI Response:', aiResponse);
+    console.log(`[${Date.now()}] AI Response:`, aiResponse);
 
     // Parse AI response
     let parsedResponse;
@@ -858,34 +882,30 @@ async function executeEndpointFunction(endpoint, parameters, userId, req = null)
 
 // Implementation functions for all endpoints
 
-// Gmail Functions - Updated to use cookies and tokenStore
+// Gmail Functions - Updated to use cookies and direct userId lookup
 async function executeGmailStatus(userId, req) {
   try {
-    console.log(`Checking Gmail status for userId: ${userId}`);
+    if (!req) {
+      return { success: true, connected: false, error: 'Request context required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
-    if (!tokens && req) {
+    // If not found in tokenStore, try cookies
+    if (!tokens) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
     if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
       return { success: true, connected: false };
     }
     
     // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
+    oauth2Client.setCredentials(tokens);
     
     // Get Gmail profile to verify connection
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const profile = await gmail.users.getProfile({ userId: 'me' });
     
     // Get unread count
@@ -940,11 +960,40 @@ async function executeGmailConnect(userId) {
 
 async function executeGmailDisconnect(userId, req) {
   try {
-    // Remove tokens from tokenStore
+    if (!req) {
+      return { success: false, error: 'Request context required' };
+    }
+    
+    // Delete tokens from tokenStore using userId
     if (tokenStore.has(userId)) {
       tokenStore.delete(userId);
-      console.log(`Deleted tokens for userId: ${userId}`);
     }
+    
+    // Also try to find and delete any tokens where state matches userId
+    for (const [key, value] of tokenStore.entries()) {
+      if (value.state === userId) {
+        tokenStore.delete(key);
+      }
+    }
+    
+    // Clear OAuth cookies
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    };
+    
+    // Clear all OAuth-related cookies
+    const cookiesToClear = [
+      'google_oauth_tokens',
+      'google_access_token', 
+      'google_refresh_token',
+      'google_token_expiry'
+    ];
+    
+    // Note: We can't directly clear cookies in this function since we don't have res
+    // This would need to be handled in the endpoint that calls this function
     
     return { success: true, message: 'Gmail disconnected successfully' };
   } catch (error) {
@@ -952,113 +1001,118 @@ async function executeGmailDisconnect(userId, req) {
   }
 }
 
+// Enhanced Gmail Get Emails function with improved token retrieval
 async function executeGmailGetEmails(userId, query = '', maxResults = 10, req) {
   try {
-    console.log(`Getting emails for userId: ${userId}, query: ${query}`);
+    if (!userId) {
+      console.error('No userId provided');
+      return { success: false, error: 'No userId provided' };
+    }
+
+    console.log(`[${Date.now()}] Getting emails for userId: ${userId}, query: ${query}`);
+
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
-    
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
-    
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
-      return { success: false, error: 'Not authenticated with Google' };
+
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
+      return { success: false, error: 'No valid OAuth tokens found' };
     }
-    
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
-    
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-    
+
+    if (!tokens.access_token) {
+      console.error(`[${Date.now()}] Tokens for userId ${userId} are missing access_token`);
+      return { success: false, error: 'No valid OAuth tokens found' };
+    }
+
+    oauth2Client.setCredentials(tokens);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const response = await gmail.users.messages.list({
       userId: 'me',
-      maxResults: parseInt(maxResults),
-      q: query
+      q: query,
+      maxResults: parseInt(maxResults)
     });
-    
-    const messages = [];
-    
-    // Get details for each message
-    for (const message of response.data.messages || []) {
-      const details = await gmail.users.messages.get({
-        userId: 'me',
-        id: message.id,
-        format: 'metadata',
-        metadataHeaders: ['Subject', 'From', 'Date']
-      });
-      
-      const headers = details.data.payload.headers;
-      const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
-      const from = headers.find(h => h.name === 'From')?.value || '';
-      const date = headers.find(h => h.name === 'Date')?.value || '';
-      
-      messages.push({
-        id: message.id,
-        threadId: message.threadId,
-        subject,
-        from,
-        date,
-        snippet: details.data.snippet,
-        isUnread: details.data.labelIds?.includes('UNREAD') || false
-      });
+
+    const messages = response.data.messages || [];
+    const emails = [];
+
+    for (const message of messages) {
+      try {
+        const details = await gmail.users.messages.get({
+          userId: 'me',
+          id: message.id,
+          format: 'metadata',
+          metadataHeaders: ['Subject', 'From', 'Date']
+        });
+        
+        const headers = details.data.payload.headers;
+        const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
+        const from = headers.find(h => h.name === 'From')?.value || '';
+        const date = headers.find(h => h.name === 'Date')?.value || '';
+        
+        emails.push({
+          id: message.id,
+          threadId: message.threadId,
+          subject,
+          from,
+          date,
+          snippet: details.data.snippet,
+          isUnread: details.data.labelIds?.includes('UNREAD') || false
+        });
+      } catch (error) {
+        console.error(`Error fetching details for message ${message.id}:`, error);
+      }
     }
-    
-    return { success: true, emails: messages };
+
+    return { success: true, emails };
   } catch (error) {
-    console.error('Error getting emails:', error);
+    console.error('Error in executeGmailGetEmails:', error);
     return { success: false, error: error.message };
   }
 }
 
 async function executeGmailUnread(userId, maxResults = 20, req) {
-  return await executeGmailGetEmails(userId, 'is:unread', maxResults, req);
+  return executeGmailGetEmails(userId, 'is:unread', maxResults, req);
 }
 
 async function executeGmailSearch(userId, query, maxResults = 10, req) {
-  return await executeGmailGetEmails(userId, query, maxResults, req);
+  return executeGmailGetEmails(userId, query, maxResults, req);
 }
 
 async function executeGmailSearchSender(userId, sender, maxResults = 10, req) {
   const query = `from:${sender}`;
-  return await executeGmailGetEmails(userId, query, maxResults, req);
+  return executeGmailGetEmails(userId, query, maxResults, req);
 }
 
 async function executeGmailGetEmail(userId, emailId, req) {
   try {
-    console.log(`Getting email content for userId: ${userId}, emailId: ${emailId}`);
+    if (!userId || !emailId) {
+      return { success: false, error: 'User ID and Email ID are required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
       return { success: false, error: 'Not authenticated with Google' };
     }
     
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
+    // Set up OAuth client
+    oauth2Client.setCredentials(tokens);
     
     // Get email
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     const response = await gmail.users.messages.get({
       userId: 'me',
       id: emailId,
@@ -1161,31 +1215,28 @@ async function executeGmailGetEmail(userId, emailId, req) {
 
 async function executeGmailDeleteEmails(userId, messageIds, req) {
   try {
-    console.log(`Deleting emails for userId: ${userId}, messageIds: ${messageIds}`);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
       return { success: false, error: 'Not authenticated with Google' };
     }
     
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
+    // Set up OAuth client
+    oauth2Client.setCredentials(tokens);
     
     // Delete emails
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     let deleted = 0;
     let failed = 0;
@@ -1212,30 +1263,27 @@ async function executeGmailDeleteEmails(userId, messageIds, req) {
 
 async function executeGmailSummarize(userId, messageIds, req) {
   try {
-    console.log(`Summarizing emails for userId: ${userId}, messageIds: ${messageIds}`);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
       return { success: false, error: 'Not authenticated with Google' };
     }
     
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
+    // Set up OAuth client
+    oauth2Client.setCredentials(tokens);
     
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1280,30 +1328,27 @@ async function executeGmailSummarize(userId, messageIds, req) {
 
 async function executeGmailExtractTasks(userId, messageIds, req) {
   try {
-    console.log(`Extracting tasks from emails for userId: ${userId}, messageIds: ${messageIds}`);
+    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return { success: false, error: 'User ID and message IDs are required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
       return { success: false, error: 'Not authenticated with Google' };
     }
     
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
+    // Set up OAuth client
+    oauth2Client.setCredentials(tokens);
     
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     const emails = [];
     for (const messageId of messageIds) {
@@ -1440,30 +1485,27 @@ async function executeGmailExtractTasks(userId, messageIds, req) {
 
 async function executeGmailPromotions(userId, maxResults = 20, req) {
   try {
-    console.log(`Getting promotional emails for userId: ${userId}`);
+    if (!userId) {
+      return { success: false, error: 'User ID is required' };
+    }
     
-    // First try to get tokens from tokenStore using userId
-    let tokens = tokenStore.get(userId);
+    // First try to get tokens from tokenStore using userId directly
+    let tokens = getTokensForUser(userId);
     
-    // If not found in tokenStore, try to get from cookies
+    // If not found in tokenStore, try cookies
     if (!tokens && req) {
       tokens = getOAuthTokensFromCookies(req);
     }
     
-    if (!tokens || !tokens.access_token) {
-      console.log(`No tokens found for userId: ${userId}`);
+    if (!tokens) {
+      console.error(`[${Date.now()}] No tokens found for userId: ${userId}`);
       return { success: false, error: 'Not authenticated with Google' };
     }
-    
-    // Set up OAuth client with tokens
-    const oAuth2Client = new OAuth2Client(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      process.env.GMAIL_REDIRECT_URI
-    );
-    oAuth2Client.setCredentials(tokens);
 
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    // Set up OAuth client
+    oauth2Client.setCredentials(tokens);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     // Use Gmail's category:promotions search
     const response = await gmail.users.messages.list({
       userId: 'me',

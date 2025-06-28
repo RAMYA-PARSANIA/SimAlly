@@ -120,6 +120,12 @@ router.get('/callback', async (req, res) => {
     // Store tokens with session ID
     console.log(`[${Date.now()}] Storing tokens for session ID: ${sessionId}`);
     tokenStore.set(sessionId, tokens);
+    
+    // If sessionId is a UUID (userId), also store with that key for direct access
+    if (sessionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      console.log(`[${Date.now()}] Also storing tokens with userId: ${sessionId}`);
+      tokenStore.set(sessionId, tokens);
+    }
 
     // Also set the cookie again to ensure it's consistent
     res.cookie('google_session_id', sessionId, {
@@ -150,12 +156,25 @@ router.get('/status', (req, res) => {
   console.log(`[${Date.now()}] Checking Google connection status for session ID: ${sessionId}`);
   console.log(`[${Date.now()}] Cookie session ID: ${cookieSessionId}, Query userId: ${queryUserId}`);
 
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    console.log(`[${Date.now()}] No session ID or tokens found for session ID: ${sessionId}`);
+  if (!sessionId) {
+    console.log(`[${Date.now()}] No session ID found`);
+    return res.json({ success: true, connected: false });
+  }
+  
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.json({ success: true, connected: false });
   }
 
-  const tokens = tokenStore.get(sessionId);
   console.log(`[${Date.now()}] Tokens retrieved for session ID: ${sessionId}`, tokens);
 
   // Check if token is expired
@@ -165,6 +184,7 @@ router.get('/status', (req, res) => {
   if (isExpired && !tokens.refresh_token) {
     console.log(`[${Date.now()}] Token expired and no refresh token available for session ID: ${sessionId}`);
     tokenStore.delete(sessionId);
+    if (queryUserId) tokenStore.delete(queryUserId);
     return res.json({ success: true, connected: false });
   }
 
@@ -188,8 +208,15 @@ router.post('/disconnect', (req, res) => {
   
   console.log(`[${Date.now()}] Disconnecting Google for session ID: ${sessionId}`);
   
-  if (sessionId && tokenStore.has(sessionId)) {
+  if (sessionId) {
     tokenStore.delete(sessionId);
+    
+    // If bodyUserId is provided, also delete that key
+    if (bodyUserId && bodyUserId !== sessionId) {
+      console.log(`[${Date.now()}] Also deleting tokens for userId: ${bodyUserId}`);
+      tokenStore.delete(bodyUserId);
+    }
+    
     res.clearCookie('google_session_id');
     console.log(`[${Date.now()}] Deleted tokens for session ID: ${sessionId}`);
   } else {
@@ -212,17 +239,27 @@ router.get('/gmail/messages', async (req, res) => {
   
   console.log(`[${Date.now()}] Fetching Gmail messages for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    
+    console.log(`[${Date.now()}] Getting emails for userId: ${sessionId}, query: ${query}`);
     
     const response = await gmail.users.messages.list({
       userId: 'me',
@@ -277,13 +314,21 @@ router.get('/gmail/email/:emailId', async (req, res) => {
   
   console.log(`[${Date.now()}] Fetching email content for session ID: ${sessionId}, email ID: ${emailId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
@@ -387,7 +432,16 @@ router.post('/gmail/delete-emails', async (req, res) => {
   
   console.log(`[${Date.now()}] Deleting emails for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && bodyUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${bodyUserId}`);
+    tokens = tokenStore.get(bodyUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
@@ -397,7 +451,6 @@ router.post('/gmail/delete-emails', async (req, res) => {
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
@@ -441,13 +494,21 @@ router.get('/user-profile', async (req, res) => {
   
   console.log(`[${Date.now()}] Fetching user profile for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
@@ -484,13 +545,21 @@ router.get('/drive/files', async (req, res) => {
   
   console.log(`[${Date.now()}] Fetching Drive files for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
@@ -523,14 +592,21 @@ router.post('/refresh-token', async (req, res) => {
   
   console.log(`[${Date.now()}] Refreshing token for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && bodyUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${bodyUserId}`);
+    tokens = tokenStore.get(bodyUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
-    
     if (!tokens.refresh_token) {
       return res.status(400).json({ success: false, error: 'No refresh token available' });
     }
@@ -540,8 +616,11 @@ router.post('/refresh-token', async (req, res) => {
     
     const { credentials } = await oAuth2Client.refreshAccessToken();
     
-    // Update stored tokens
+    // Update stored tokens for both sessionId and userId
     tokenStore.set(sessionId, credentials);
+    if (bodyUserId && bodyUserId !== sessionId) {
+      tokenStore.set(bodyUserId, credentials);
+    }
     
     res.json({
       success: true,
@@ -565,13 +644,21 @@ router.get('/gmail/unread', async (req, res) => {
   
   console.log(`[${Date.now()}] Fetching unread emails for session ID: ${sessionId}`);
   
-  if (!sessionId || !tokenStore.has(sessionId)) {
+  // Check both the sessionId and userId keys in tokenStore
+  let tokens = tokenStore.get(sessionId);
+  
+  // If tokens not found with sessionId, try with userId
+  if (!tokens && queryUserId) {
+    console.log(`[${Date.now()}] Tokens not found with sessionId, trying userId: ${queryUserId}`);
+    tokens = tokenStore.get(queryUserId);
+  }
+  
+  if (!tokens) {
     console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
   try {
-    const tokens = tokenStore.get(sessionId);
     const oAuth2Client = createOAuthClient();
     oAuth2Client.setCredentials(tokens);
     
