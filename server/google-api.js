@@ -12,7 +12,7 @@ const router = express.Router();
 // Google OAuth configuration
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:8000/api/google/callback';
+const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/google/callback';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Scopes for Google APIs
