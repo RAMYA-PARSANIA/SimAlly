@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
+const { tokenStore } = require('./google-api');
 require('dotenv').config();
 
 const app = express();
@@ -853,51 +854,6 @@ async function executeEndpointFunction(endpoint, parameters, userId, req = null)
   }
 }
 
-// Gmail auth URL endpoint
-app.get('/api/gmail/auth-url', (req, res) => {
-  try {
-    const { userId } = req.query;
-    
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
-    
-    // Define expanded scopes for more access
-    const scopes = [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/drive.readonly'
-    ];
-    
-    // Use userId directly as state instead of JSON to avoid parsing issues
-    const state = userId;
-    
-    const authUrl = oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: scopes,
-      state,
-      prompt: 'consent'
-    });
-    
-    res.json({
-      success: true,
-      authUrl
-    });
-  } catch (error) {
-    console.error('Error generating auth URL:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to generate auth URL'
-    });
-  }
-});
 
 
 // Implementation functions for all endpoints
@@ -1005,23 +961,27 @@ async function executeGmailDisconnect(userId, req) {
 }
 
 // Enhanced Gmail Get Emails function with logging
-async function executeGmailGetEmails(sessionId, query = '', maxResults = 10) {
+async function executeGmailGetEmails(sessionId, query = '', maxResults = 10, req) {
   try {
     if (!sessionId) {
       console.error('No session ID provided');
       return { success: false, error: 'No session ID provided' };
     }
 
-    const tokens = tokenStore.get(sessionId);
+    // Retrieve tokens from tokenStore or cookies
+    let tokens = tokenStore.get(sessionId);
+    if (!tokens && req) {
+      tokens = getOAuthTokensFromCookies(req);
+    }
 
     if (!tokens) {
       console.error(`No tokens found for session ID: ${sessionId}`);
-      return { success: false, error: 'No valid OAuth tokens found in cookies' };
+      return { success: false, error: 'No valid OAuth tokens found' };
     }
 
     if (!tokens.access_token) {
       console.error(`Tokens for session ID ${sessionId} are missing access_token`);
-      return { success: false, error: 'No valid OAuth tokens found in cookies' };
+      return { success: false, error: 'No valid OAuth tokens found' };
     }
 
     oauth2Client.setCredentials(tokens);
@@ -1037,33 +997,14 @@ async function executeGmailGetEmails(sessionId, query = '', maxResults = 10) {
     const emails = [];
 
     for (const message of messages) {
-      const emailData = await gmail.users.messages.get({
-        userId: 'me',
-        id: message.id,
-        format: 'metadata',
-        metadataHeaders: ['From', 'Subject', 'Date']
-      });
-
-      const headers = emailData.data.payload.headers;
-      const from = headers.find(h => h.name === 'From')?.value || '';
-      const subject = headers.find(h => h.name === 'Subject')?.value || '';
-      const date = headers.find(h => h.name === 'Date')?.value || '';
-
-      emails.push({
-        id: message.id,
-        threadId: message.threadId,
-        from,
-        subject,
-        date,
-        snippet: emailData.data.snippet,
-        isUnread: emailData.data.labelIds.includes('UNREAD')
-      });
+      const email = await gmail.users.messages.get({ userId: 'me', id: message.id });
+      emails.push(email.data);
     }
 
     return { success: true, emails };
   } catch (error) {
-    console.error('Error getting emails:', error);
-    return { success: false, error: 'Failed to get emails' };
+    console.error('Error in executeGmailGetEmails:', error);
+    return { success: false, error: error.message };
   }
 }
 

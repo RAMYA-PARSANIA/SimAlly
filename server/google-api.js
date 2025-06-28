@@ -57,6 +57,9 @@ router.get('/auth-url', (req, res) => {
       sameSite: 'None' // Allows cross-site cookies
     });
     
+    console.log(`[${Date.now()}] Generated session ID: ${sessionId}`);
+    console.log(`[${Date.now()}] Session ID in cookie during /auth-url: ${sessionId}`);
+    
     const authUrl = oAuth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
@@ -102,9 +105,18 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
 
+    const sessionId = req.cookies.google_session_id;
+    console.log(`[${Date.now()}] Session ID in cookie during OAuth callback: ${sessionId}`);
+    if (!sessionId) {
+      console.error(`[${Date.now()}] No session ID found in cookies`);
+      return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
+    }
+
     // Store tokens with session ID
-    console.log(`[${Date.now()}] Storing tokens for state: ${state}`);
-    tokenStore.set(state, tokens);
+    console.log(`[${Date.now()}] Storing tokens for session ID: ${sessionId}`);
+    tokenStore.set(sessionId, tokens);
+    console.log(`[${Date.now()}] Tokens received for session ID: ${sessionId}`);
+    console.log(`[${Date.now()}] Session ID used for token storage during OAuth callback: ${sessionId}`);
 
     // Redirect back to frontend
     console.log(`[${Date.now()}] Redirecting to frontend with success`);
@@ -650,4 +662,4 @@ router.post('/refresh-token', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, tokenStore };

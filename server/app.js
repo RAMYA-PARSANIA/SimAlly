@@ -97,7 +97,7 @@ const GAME_CONFIGS = {
 };
 
 // Import Google API routes
-const googleApiRoutes = require('./google-api');
+const { router: googleApiRoutes } = require('./google-api');
 app.use('/api/google', googleApiRoutes);
 
 // Generic conversation creation endpoint
