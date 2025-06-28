@@ -47,19 +47,22 @@ const generateSessionId = () => {
 router.get('/auth-url', (req, res) => {
   try {
     const oAuth2Client = createOAuthClient();
-    const sessionId = generateSessionId();
+    
+    // Use userId as the session identifier if provided
+    const userId = req.query.userId || null;
+    const sessionId = userId || generateSessionId();
+    
+    console.log(`[${Date.now()}] Generated session ID: ${sessionId} (userId: ${userId || 'none'})`);
     
     // Store session ID in cookie
     res.cookie('google_session_id', sessionId, {
       httpOnly: true,
-      secure: true,
-      maxAge: 30 * 24 * 60 * 30 , // 21 mins
-      sameSite: 'None' // Allows cross-site cookies
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      sameSite: 'lax' // Changed from 'None' to 'lax' for better compatibility
     });
     
-    console.log(`[${Date.now()}] Generated session ID: ${sessionId}`);
-    console.log(`[${Date.now()}] Session ID in cookie during /auth-url: ${sessionId}`);
-    
+    // Also store in state parameter for OAuth flow
     const authUrl = oAuth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
@@ -77,7 +80,7 @@ router.get('/auth-url', (req, res) => {
 // OAuth callback
 router.get('/callback', async (req, res) => {
   const { code, state } = req.query;
-  console.log(`[${Date.now()}] Google OAuth callback triggered with code: ${code}, state: ${state}`);
+  console.log(`[${Date.now()}] Google OAuth callback triggered with code: ${code ? 'present' : 'missing'}, state: ${state || 'missing'}`);
 
   if (!code) {
     console.error(`[${Date.now()}] No code received in callback`);
@@ -105,18 +108,26 @@ router.get('/callback', async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
 
-    const sessionId = req.cookies.google_session_id;
-    console.log(`[${Date.now()}] Session ID in cookie during OAuth callback: ${sessionId}`);
+    // Use the state parameter as the session ID
+    // This ensures consistency between the auth request and callback
+    const sessionId = state;
+    
     if (!sessionId) {
-      console.error(`[${Date.now()}] No session ID found in cookies`);
+      console.error(`[${Date.now()}] No session ID found in state parameter`);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
     }
 
     // Store tokens with session ID
     console.log(`[${Date.now()}] Storing tokens for session ID: ${sessionId}`);
     tokenStore.set(sessionId, tokens);
-    console.log(`[${Date.now()}] Tokens received for session ID: ${sessionId}`);
-    console.log(`[${Date.now()}] Session ID used for token storage during OAuth callback: ${sessionId}`);
+
+    // Also set the cookie again to ensure it's consistent
+    res.cookie('google_session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      sameSite: 'lax'
+    });
 
     // Redirect back to frontend
     console.log(`[${Date.now()}] Redirecting to frontend with success`);
@@ -129,8 +140,15 @@ router.get('/callback', async (req, res) => {
 
 // Check connection status
 router.get('/status', (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const querySessionId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = querySessionId || cookieSessionId;
+  
   console.log(`[${Date.now()}] Checking Google connection status for session ID: ${sessionId}`);
+  console.log(`[${Date.now()}] Cookie session ID: ${cookieSessionId}, Query userId: ${querySessionId}`);
 
   if (!sessionId || !tokenStore.has(sessionId)) {
     console.log(`[${Date.now()}] No session ID or tokens found for session ID: ${sessionId}`);
@@ -161,210 +179,41 @@ router.get('/status', (req, res) => {
 
 // Disconnect Google
 router.post('/disconnect', (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const bodyUserId = req.body.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = bodyUserId || cookieSessionId;
+  
+  console.log(`[${Date.now()}] Disconnecting Google for session ID: ${sessionId}`);
   
   if (sessionId && tokenStore.has(sessionId)) {
     tokenStore.delete(sessionId);
     res.clearCookie('google_session_id');
+    console.log(`[${Date.now()}] Deleted tokens for session ID: ${sessionId}`);
+  } else {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
   }
   
   res.json({ success: true, message: 'Google account disconnected' });
 });
 
-// Create a Google Meet meeting
-router.post('/meetings/create', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { title, description, startTime, duration } = req.body;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    // Calculate end time
-    const start = new Date(startTime);
-    const end = new Date(start.getTime() + (duration || 60) * 60000);
-    
-    // Create event with Google Meet conference
-    const event = {
-      summary: title || 'Google Meet Meeting',
-      description: description || '',
-      start: {
-        dateTime: start.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      },
-      end: {
-        dateTime: end.toISOString(),
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-      },
-      conferenceData: {
-        createRequest: {
-          requestId: crypto.randomBytes(16).toString('hex'),
-          conferenceSolutionKey: {
-            type: 'hangoutsMeet'
-          }
-        }
-      }
-    };
-    
-    const response = await calendar.events.insert({
-      calendarId: 'primary',
-      conferenceDataVersion: 1,
-      resource: event
-    });
-    
-    // Format the response
-    const meeting = {
-      id: response.data.id,
-      meetingId: response.data.conferenceData?.conferenceId,
-      url: response.data.conferenceData?.entryPoints?.[0]?.uri || '',
-      title: response.data.summary,
-      description: response.data.description,
-      startTime: response.data.start.dateTime,
-      endTime: response.data.end.dateTime,
-      status: response.data.status,
-      attendees: response.data.attendees || []
-    };
-    
-    res.json({ success: true, meeting });
-  } catch (error) {
-    console.error('Error creating meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to create meeting' });
-  }
-});
-
-// List Google Meet meetings
-router.get('/meetings', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    // Get events from now to 30 days in the future
-    const now = new Date();
-    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: now.toISOString(),
-      timeMax: thirtyDaysLater.toISOString(),
-      singleEvents: true,
-      orderBy: 'startTime'
-    });
-    
-    // Filter for events with Google Meet conferences
-    const meetings = response.data.items
-      .filter(event => event.conferenceData?.conferenceSolution?.key?.type === 'hangoutsMeet')
-      .map(event => ({
-        id: event.id,
-        meetingId: event.conferenceData?.conferenceId,
-        url: event.conferenceData?.entryPoints?.[0]?.uri || '',
-        title: event.summary,
-        description: event.description,
-        startTime: event.start.dateTime,
-        endTime: event.end.dateTime,
-        status: event.status,
-        attendees: event.attendees || []
-      }));
-    
-    res.json({ success: true, meetings });
-  } catch (error) {
-    console.error('Error listing meetings:', error);
-    res.status(500).json({ success: false, error: 'Failed to list meetings' });
-  }
-});
-
-// Get a specific meeting
-router.get('/meetings/:eventId', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { eventId } = req.params;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    const response = await calendar.events.get({
-      calendarId: 'primary',
-      eventId
-    });
-    
-    const event = response.data;
-    
-    // Format the response
-    const meeting = {
-      id: event.id,
-      meetingId: event.conferenceData?.conferenceId,
-      url: event.conferenceData?.entryPoints?.[0]?.uri || '',
-      title: event.summary,
-      description: event.description,
-      startTime: event.start.dateTime,
-      endTime: event.end.dateTime,
-      status: event.status,
-      attendees: event.attendees || []
-    };
-    
-    res.json({ success: true, meeting });
-  } catch (error) {
-    console.error('Error getting meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to get meeting' });
-  }
-});
-
-// Delete a meeting
-router.delete('/meetings/:eventId', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
-  const { eventId } = req.params;
-  
-  if (!sessionId || !tokenStore.has(sessionId)) {
-    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
-  }
-  
-  try {
-    const tokens = tokenStore.get(sessionId);
-    const oAuth2Client = createOAuthClient();
-    oAuth2Client.setCredentials(tokens);
-    
-    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
-    
-    await calendar.events.delete({
-      calendarId: 'primary',
-      eventId
-    });
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting meeting:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete meeting' });
-  }
-});
-
 // Gmail API endpoints
 router.get('/gmail/messages', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const queryUserId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = queryUserId || cookieSessionId;
+  
   const { maxResults = 10, query = '' } = req.query;
   
+  console.log(`[${Date.now()}] Fetching Gmail messages for session ID: ${sessionId}`);
+  
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -417,10 +266,19 @@ router.get('/gmail/messages', async (req, res) => {
 
 // Get email content
 router.get('/gmail/email/:emailId', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const queryUserId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = queryUserId || cookieSessionId;
+  
   const { emailId } = req.params;
   
+  console.log(`[${Date.now()}] Fetching email content for session ID: ${sessionId}, email ID: ${emailId}`);
+  
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -518,10 +376,19 @@ router.get('/gmail/email/:emailId', async (req, res) => {
 
 // Delete emails
 router.post('/gmail/delete-emails', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const bodyUserId = req.body.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = bodyUserId || cookieSessionId;
+  
   const { messageIds } = req.body;
   
+  console.log(`[${Date.now()}] Deleting emails for session ID: ${sessionId}`);
+  
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -565,9 +432,17 @@ router.post('/gmail/delete-emails', async (req, res) => {
 
 // Get user profile
 router.get('/user-profile', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const queryUserId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = queryUserId || cookieSessionId;
+  
+  console.log(`[${Date.now()}] Fetching user profile for session ID: ${sessionId}`);
   
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -598,10 +473,19 @@ router.get('/user-profile', async (req, res) => {
 
 // Get drive files
 router.get('/drive/files', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const queryUserId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = queryUserId || cookieSessionId;
+  
   const { maxResults = 10, query = '' } = req.query;
   
+  console.log(`[${Date.now()}] Fetching Drive files for session ID: ${sessionId}`);
+  
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -630,9 +514,17 @@ router.get('/drive/files', async (req, res) => {
 
 // Refresh token if expired
 router.post('/refresh-token', async (req, res) => {
-  const sessionId = req.cookies.google_session_id;
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const bodyUserId = req.body.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = bodyUserId || cookieSessionId;
+  
+  console.log(`[${Date.now()}] Refreshing token for session ID: ${sessionId}`);
   
   if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
     return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
   }
   
@@ -659,6 +551,69 @@ router.post('/refresh-token', async (req, res) => {
   } catch (error) {
     console.error('Error refreshing token:', error);
     res.status(500).json({ success: false, error: 'Failed to refresh token' });
+  }
+});
+
+// Endpoint to get unread emails
+router.get('/gmail/unread', async (req, res) => {
+  // Try to get session ID from multiple sources
+  const cookieSessionId = req.cookies.google_session_id;
+  const queryUserId = req.query.userId;
+  
+  // Use userId as primary identifier if provided
+  const sessionId = queryUserId || cookieSessionId;
+  
+  console.log(`[${Date.now()}] Fetching unread emails for session ID: ${sessionId}`);
+  
+  if (!sessionId || !tokenStore.has(sessionId)) {
+    console.log(`[${Date.now()}] No tokens found for session ID: ${sessionId}`);
+    return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+  }
+  
+  try {
+    const tokens = tokenStore.get(sessionId);
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials(tokens);
+    
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    
+    const response = await gmail.users.messages.list({
+      userId: 'me',
+      maxResults: 20,
+      q: 'is:unread'
+    });
+    
+    const messages = [];
+    
+    // Get details for each message
+    for (const message of response.data.messages || []) {
+      const details = await gmail.users.messages.get({
+        userId: 'me',
+        id: message.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'Date']
+      });
+      
+      const headers = details.data.payload.headers;
+      const subject = headers.find(h => h.name === 'Subject')?.value || 'No Subject';
+      const from = headers.find(h => h.name === 'From')?.value || '';
+      const date = headers.find(h => h.name === 'Date')?.value || '';
+      
+      messages.push({
+        id: message.id,
+        threadId: message.threadId,
+        subject,
+        from,
+        date,
+        snippet: details.data.snippet,
+        isUnread: true
+      });
+    }
+    
+    res.json({ success: true, messages });
+  } catch (error) {
+    console.error('Error fetching unread emails:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch unread emails' });
   }
 });
 
