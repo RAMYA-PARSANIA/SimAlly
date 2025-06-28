@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare, Google } from 'lucide-react';
+import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare, ToggleLeft as Google } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
