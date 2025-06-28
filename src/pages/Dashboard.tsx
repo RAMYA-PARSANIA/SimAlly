@@ -71,14 +71,6 @@ const Dashboard: React.FC = () => {
       color: 'from-blue-500 to-cyan-500',
     },
     {
-      id: 'meetings',
-      icon: Video,
-      title: 'Video Meetings',
-      description: 'Create and join Google Meet sessions directly from SimAlly with integrated scheduling and recording.',
-      route: '/meetings',
-      color: 'from-blue-500 to-green-500',
-    },
-    {
       id: 'game-mode',
       icon: Gamepad2,
       title: 'Interactive Games',
@@ -185,7 +177,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}
@@ -228,8 +220,8 @@ const Dashboard: React.FC = () => {
                     <h3 className="text-xl font-bold text-primary">Google Integration</h3>
                     <p className="text-secondary">
                       {isGoogleConnected 
-                        ? 'Your Google account is connected. You can use Gmail and Google Meet features.' 
-                        : 'Connect your Google account to use Gmail and Google Meet features.'}
+                        ? 'Your Google account is connected. You can use Gmail features.' 
+                        : 'Connect your Google account to use Gmail features.'}
                     </p>
                   </div>
                 </div>
