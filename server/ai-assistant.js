@@ -598,11 +598,15 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
       };
     }
 
+    // Add logging to verify the endpoint key
+    console.log('Parsed endpoint:', parsedResponse.endpoint);
+
     // Handle the response based on type
     if (parsedResponse.type === 'endpoint_call') {
       const endpointConfig = WEBAPP_ENDPOINTS[parsedResponse.endpoint];
-      
+
       if (!endpointConfig) {
+        console.error('Invalid endpoint key:', parsedResponse.endpoint);
         return res.json({
           success: true,
           agent: {
@@ -615,7 +619,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
       // Execute the endpoint function directly
       try {
         const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId);
-        
+
         return res.json({
           success: true,
           agent: {
@@ -637,7 +641,6 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
           }
         });
       }
-
     } else {
       // General chat response
       res.json({
@@ -1447,7 +1450,7 @@ app.post('/api/gmail/extract-tasks-events', async (req, res) => {
     // Extract tasks and events using AI
     const emailText = emails.map(email => 
       `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.body}`
-    ).join('\n\n---\n\n');
+    ).join('\n\n');
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const prompt = `Extract tasks and calendar events from these emails. Return a JSON object with "tasks" and "events" arrays. Each task should have title, description, priority, due_date. Each event should have title, description, start_time, end_time:\n\n${emailText}`;
