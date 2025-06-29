@@ -474,7 +474,7 @@ const WorkspacePage: React.FC = () => {
           .insert({
             channel_id: channelId,
             sender_id: user.id,
-            content: `📊 **Channel Summary (Last 24h)**\n\n${data.summary}`,
+            content: `**Channel Summary (Last 24h)**\n\n${data.summary}`,
             type: 'ai_summary',
             metadata: { 
               summary: true,
