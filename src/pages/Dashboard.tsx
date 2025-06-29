@@ -230,45 +230,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Google Connection Card */}
-          <div className="max-w-6xl mx-auto mb-16">
-            <GlassCard className="p-8" hover>
-              <div className="flex flex-col md:flex-row items-center justify-between">
-                <div className="flex items-center space-x-4 mb-4 md:mb-0">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-green-500 flex items-center justify-center">
-                    <Google className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-primary">Google Integration</h3>
-                    <p className="text-secondary">
-                      {isGoogleConnected 
-                        ? 'Your Google account is connected. You can use Gmail and Google Meet features.' 
-                        : 'Connect your Google account to use Gmail and Google Meet features.'}
-                    </p>
-                  </div>
-                </div>
-                
-                {isGoogleConnected ? (
-                  <Button
-                    onClick={handleGoogleDisconnect}
-                    variant="secondary"
-                    className="flex items-center space-x-2"
-                  >
-                    <span>Disconnect Google</span>
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleGoogleConnect}
-                    variant="premium"
-                    className="flex items-center space-x-2"
-                    disabled={googleConnecting}
-                  >
-                    <Google className="w-4 h-4" />
-                    <span>{googleConnecting ? 'Connecting...' : 'Connect Google'}</span>
-                  </Button>
-                )}
-              </div>
-            </GlassCard>
-          </div>
+          
         </div>
       </main>
     </div>

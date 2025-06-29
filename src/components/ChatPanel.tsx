@@ -38,6 +38,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [editContent, setEditContent] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [showMessageMenu, setShowMessageMenu] = useState<string | null>(null);
+  const [showCopiedMessage, setShowCopiedMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -382,6 +383,14 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
+  const handleCopyMeetingLink = (url: string) => {
+    if (navigator.clipboard && url) {
+      navigator.clipboard.writeText(url);
+      setShowCopiedMessage(true);
+      setTimeout(() => setShowCopiedMessage(false), 2000);
+    }
+  };
+
   if (!channel) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -547,18 +556,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           </div>
                         )}
                         
-                        {/* Meeting Join Button for messages with meeting metadata */}
+                        {/* Meeting Link Copy Button for messages with meeting metadata */}
                         {message.metadata?.meeting && !message.content.includes('Join Meeting') && (
                           <div className="mt-2">
                             <Button
-                              onClick={() => window.open(message.metadata.meeting.url, '_blank')}
+                              onClick={() => handleCopyMeetingLink(message.metadata.meeting.url)}
                               variant="secondary"
                               size="sm"
                               className="flex items-center space-x-2"
                             >
                               <ExternalLink className="w-4 h-4" />
-                              <span>Join Meeting</span>
+                              <span>Meeting Link</span>
                             </Button>
+                            {showCopiedMessage && (
+                              <span className="ml-2 text-green-500 text-xs">Meeting Link Copied in Clipboard</span>
+                            )}
                           </div>
                         )}
                       </>
