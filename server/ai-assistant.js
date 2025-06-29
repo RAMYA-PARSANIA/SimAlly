@@ -358,24 +358,6 @@ const WEBAPP_ENDPOINTS = {
     implementation: 'executeGameEndConversation'
   },
 
-  // Document Generation
-  document_generate: {
-    endpoint: '/api/documents/generate',
-    method: 'POST',
-    description: 'Generate document with AI',
-    parameters: ['prompt', 'documentType?', 'format?'],
-    example: 'Generate project proposal document',
-    implementation: 'executeDocumentGenerate'
-  },
-  document_latex_to_pdf: {
-    endpoint: '/api/documents/latex-to-pdf',
-    method: 'POST',
-    description: 'Convert LaTeX to PDF',
-    parameters: ['latexContent', 'filename?'],
-    example: 'Convert LaTeX document to PDF',
-    implementation: 'executeDocumentLatexToPdf'
-  },
-  
   // Google Docs/Slides
   create_google_doc: {
     endpoint: '/api/google/docs/create-doc',
