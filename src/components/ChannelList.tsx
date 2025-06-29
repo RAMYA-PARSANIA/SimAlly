@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Hash, Lock, Plus, Users, Search, MessageCircle, Calendar, MoreVertical, FileText, UserPlus, LogOut, Key, Trash2 } from 'lucide-react';
+import { Hash, Lock, Plus, Users, Search, MessageCircle, Calendar, MoreVertical, FileText, UserPlus, LogOut, Key, Trash2, Video, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type Channel } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,8 +21,8 @@ interface ChannelListProps {
   onJoinChannel: (channelId: string, password?: string) => void;
   onLeaveChannel: (channelId: string) => void;
   onSummarizeChannel: (channelId: string) => void;
-  onStartMeeting: (channelName: string) => void;
-  onJoinMeeting: () => void;
+  onStartMeeting: (channelId: string, channelName: string) => void;
+  onJoinMeeting: (url: string) => void;
 }
 
 const ChannelList: React.FC<ChannelListProps> = ({
@@ -37,7 +37,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
   onStartMeeting,
   onJoinMeeting
 }) => {
-  const { user } = useAuth();
+  const { user, isGoogleConnected } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [selectedChannelForJoin, setSelectedChannelForJoin] = useState<Channel | null>(null);
@@ -154,6 +154,9 @@ const ChannelList: React.FC<ChannelListProps> = ({
       case 'summarize':
         onSummarizeChannel(channel.id);
         break;
+      case 'start-meeting':
+        onStartMeeting(channel.id, channel.name);
+        break;
       case 'delete':
         if (canDeleteChannel(channel) && confirm(`Are you sure you want to delete #${channel.name}?`)) {
           onDeleteChannel(channel.id);
@@ -237,13 +240,29 @@ const ChannelList: React.FC<ChannelListProps> = ({
               boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
             }}
           >
+            {/* Start Meeting Option */}
+            <button
+              onClick={() => handleChannelAction('start-meeting', channel)}
+              className={`w-full px-3 py-2 text-left text-sm flex items-center space-x-2 rounded-t-lg ${
+                isGoogleConnected 
+                  ? 'text-primary hover:bg-surface' 
+                  : 'text-gray-500 cursor-not-allowed opacity-50'
+              }`}
+              disabled={!isGoogleConnected}
+              title={!isGoogleConnected ? 'Connect Google account to start meetings' : 'Start a Google Meet'}
+            >
+              <Video className="w-3 h-3" />
+              <span>Start Meeting</span>
+            </button>
+            
             <button
               onClick={() => handleChannelAction('summarize', channel)}
-              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2 rounded-t-lg"
+              className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-surface flex items-center space-x-2"
             >
               <FileText className="w-3 h-3" />
               <span>Summarize</span>
             </button>
+            
             {channel.name !== 'general' && (
               <button
                 onClick={() => handleChannelAction('leave', channel)}
@@ -253,6 +272,7 @@ const ChannelList: React.FC<ChannelListProps> = ({
                 <span>Leave Channel</span>
               </button>
             )}
+            
             {canDeleteChannel(channel) && (
               <button
                 onClick={() => handleChannelAction('delete', channel)}
