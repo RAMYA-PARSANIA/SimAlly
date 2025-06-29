@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp, Video, Loader2, ExternalLink, FileText, Presentation } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, Clock, Target, TrendingUp, Video, Loader2, ExternalLink, FileText, Presentation } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -10,8 +10,6 @@ import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
 import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
-import ProjectPanel from '../components/ProjectPanel';
-import AnalyticsPanel from '../components/AnalyticsPanel';
 import TimeTrackingPanel from '../components/TimeTrackingPanel';
 import DocumentGenerationPanel from '../components/DocumentGenerationPanel';
 import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
@@ -31,7 +29,7 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time' | 'documents'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'time' | 'documents'>('chat');
   const [loading, setLoading] = useState(true);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [showMeetingModal, setShowMeetingModal] = useState(false);
@@ -648,17 +646,6 @@ const WorkspacePage: React.FC = () => {
                   <CheckSquare className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setActivePanel('projects')}
-                  className={`p-2 rounded-md transition-all ${
-                    activePanel === 'projects' 
-                      ? 'bg-gradient-gold-silver text-white' 
-                      : 'text-secondary hover:text-primary'
-                  }`}
-                  title="Projects"
-                >
-                  <Target className="w-4 h-4" />
-                </button>
-                <button
                   onClick={() => setActivePanel('calendar')}
                   className={`p-2 rounded-md transition-all ${
                     activePanel === 'calendar' 
@@ -690,17 +677,6 @@ const WorkspacePage: React.FC = () => {
                   title="Documents"
                 >
                   <FileText className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setActivePanel('analytics')}
-                  className={`p-2 rounded-md transition-all ${
-                    activePanel === 'analytics' 
-                      ? 'bg-gradient-gold-silver text-white' 
-                      : 'text-secondary hover:text-primary'
-                  }`}
-                  title="Analytics"
-                >
-                  <BarChart3 className="w-4 h-4" />
                 </button>
               </div>
               
@@ -775,21 +751,6 @@ const WorkspacePage: React.FC = () => {
               </motion.div>
             )}
             
-            {activePanel === 'projects' && (
-              <motion.div 
-                key="projects-panel"
-                className="flex-1 overflow-hidden"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ProjectPanel
-                  onProjectUpdate={() => {}}
-                />
-              </motion.div>
-            )}
-            
             {activePanel === 'calendar' && (
               <motion.div 
                 key="calendar-panel"
@@ -828,19 +789,6 @@ const WorkspacePage: React.FC = () => {
                 transition={{ duration: 0.2 }}
               >
                 <DocumentGenerationPanel />
-              </motion.div>
-            )}
-            
-            {activePanel === 'analytics' && (
-              <motion.div 
-                key="analytics-panel"
-                className="flex-1 overflow-hidden"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <AnalyticsPanel />
               </motion.div>
             )}
           </AnimatePresence>
