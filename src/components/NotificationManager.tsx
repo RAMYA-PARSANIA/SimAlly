@@ -47,11 +47,15 @@ const NotificationManager: React.FC = () => {
       const dayAfterTomorrow = new Date(tomorrow);
       dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
       
+      // Format dates as YYYY-MM-DD for comparison
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const dayAfterTomorrowStr = dayAfterTomorrow.toISOString().split('T')[0];
+      
       const { data: dueTasks, error: taskError } = await supabase
         .from('tasks')
         .select('*')
-        .gte('due_date', tomorrow.toISOString())
-        .lt('due_date', dayAfterTomorrow.toISOString())
+        .gte('due_date', tomorrowStr)
+        .lt('due_date', dayAfterTomorrowStr)
         .not('status', 'eq', 'completed')
         .not('status', 'eq', 'cancelled');
       

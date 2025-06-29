@@ -56,13 +56,22 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     if (!newTask.title.trim() || !user) return;
 
     try {
+      // Format the due date correctly if provided
+      let formattedDueDate = null;
+      if (newTask.due_date) {
+        // Ensure the due date is in YYYY-MM-DD format
+        formattedDueDate = new Date(newTask.due_date);
+        formattedDueDate.setHours(23, 59, 59, 999); // Set to end of day
+        formattedDueDate = formattedDueDate.toISOString();
+      }
+
       const { error } = await supabase
         .from('tasks')
         .insert({
           title: newTask.title,
           description: newTask.description || null,
           priority: newTask.priority,
-          due_date: newTask.due_date || null,
+          due_date: formattedDueDate,
           created_by: user.id
         });
 
@@ -83,13 +92,22 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
     if (!editingTask || !newTask.title.trim()) return;
 
     try {
+      // Format the due date correctly if provided
+      let formattedDueDate = null;
+      if (newTask.due_date) {
+        // Ensure the due date is in YYYY-MM-DD format
+        formattedDueDate = new Date(newTask.due_date);
+        formattedDueDate.setHours(23, 59, 59, 999); // Set to end of day
+        formattedDueDate = formattedDueDate.toISOString();
+      }
+
       const { error } = await supabase
         .from('tasks')
         .update({
           title: newTask.title,
           description: newTask.description || null,
           priority: newTask.priority,
-          due_date: newTask.due_date || null
+          due_date: formattedDueDate
         })
         .eq('id', editingTask.id);
 
@@ -137,12 +155,20 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
+    
+    // Format the due date for the input field (YYYY-MM-DD)
+    let formattedDueDate = '';
+    if (task.due_date) {
+      formattedDueDate = task.due_date.split('T')[0];
+    }
+    
     setNewTask({
       title: task.title,
       description: task.description || '',
       priority: task.priority,
-      due_date: task.due_date ? task.due_date.split('T')[0] : ''
+      due_date: formattedDueDate
     });
+    
     setShowCreateModal(true);
   };
 
