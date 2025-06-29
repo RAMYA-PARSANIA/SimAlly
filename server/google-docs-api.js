@@ -40,29 +40,56 @@ const createOAuthClient = () => {
 async function generateDocContent(prompt) {
   try {
     const result = await model.generateContent(`
-      Create content for a Google Doc based on this prompt: "${prompt}"
+      Create a professional, well-structured Google Doc based on this prompt: "${prompt}"
       
       Format your response as a JSON object with the following structure:
       {
-        "title": "Document Title",
+        "title": "Professional Document Title",
         "content": [
           {
-            "paragraph": {
-              "elements": [
-                {
-                  "textRun": {
-                    "content": "Text content here",
-                    "textStyle": {} // Optional styling
-                  }
-                }
-              ]
-            }
+            "type": "heading1",
+            "text": "Main Title",
+            "style": "TITLE"
           },
-          // More elements as needed (paragraphs, lists, tables, etc.)
+          {
+            "type": "heading2", 
+            "text": "Section Header",
+            "style": "HEADING_1"
+          },
+          {
+            "type": "paragraph",
+            "text": "Regular paragraph text content with proper structure and flow.",
+            "style": "NORMAL_TEXT"
+          },
+          {
+            "type": "bullet_list",
+            "items": [
+              "• First bullet point with meaningful content",
+              "• Second bullet point with detailed information",
+              "• Third bullet point with actionable insights"
+            ]
+          },
+          {
+            "type": "heading2",
+            "text": "Another Section",
+            "style": "HEADING_1"
+          },
+          {
+            "type": "paragraph",
+            "text": "More detailed content...",
+            "style": "NORMAL_TEXT"
+          }
         ]
       }
       
-      Follow Google Docs API structure. Include proper formatting, headings, and organization.
+      Requirements:
+      - Create a professional document with clear structure
+      - Include multiple sections with descriptive headings
+      - Use bullet points for lists and key information
+      - Ensure content is comprehensive and well-organized
+      - Make it look like a professional business document
+      - Include an introduction, main content sections, and conclusion if appropriate
+      
       Only respond with valid JSON - no markdown formatting or code blocks.
     `);
     
@@ -82,31 +109,68 @@ async function generateDocContent(prompt) {
 async function generateSlidesContent(prompt) {
   try {
     const result = await model.generateContent(`
-      Create content for a Google Slides presentation based on this prompt: "${prompt}"
+      Create a professional Google Slides presentation based on this prompt: "${prompt}"
       
       Format your response as a JSON object with the following structure:
       {
-        "title": "Presentation Title",
+        "title": "Professional Presentation Title",
         "slides": [
           {
-            "layout": "TITLE",
+            "layout": "TITLE_ONLY",
             "elements": {
-              "TITLE": "Slide Title",
-              "SUBTITLE": "Optional subtitle"
+              "TITLE": "Compelling Presentation Title"
             }
           },
           {
-            "layout": 'TITLE_AND_BODY',
+            "layout": "SECTION_HEADER",
             "elements": {
-              "TITLE": "Slide Title",
-              "BODY": "• Bullet point 1\\n• Bullet point 2\\n• Bullet point 3"
+              "TITLE": "Section 1: Introduction",
+              "SUBTITLE": "Setting the stage"
+            }
+          },
+          {
+            "layout": "TITLE_AND_BODY",
+            "elements": {
+              "TITLE": "Key Points",
+              "BODY": "• First major point with detailed explanation\\n• Second important concept with context\\n• Third critical insight with implications"
+            }
+          },
+          {
+            "layout": "TITLE_AND_TWO_COLUMNS",
+            "elements": {
+              "TITLE": "Comparison or Analysis",
+              "BODY": "Left column content:\\n• Point 1\\n• Point 2\\n\\nRight column content:\\n• Point A\\n• Point B"
+            }
+          },
+          {
+            "layout": "TITLE_AND_BODY",
+            "elements": {
+              "TITLE": "Next Steps",
+              "BODY": "• Actionable item 1\\n• Actionable item 2\\n• Timeline and milestones"
+            }
+          },
+          {
+            "layout": "SECTION_HEADER",
+            "elements": {
+              "TITLE": "Thank You",
+              "SUBTITLE": "Questions & Discussion"
             }
           }
         ]
       }
       
-      Use placeholder types (TITLE, BODY, SUBTITLE, etc.) as keys in the "elements" object.
-      Use appropriate slide layouts from the Google Slides API (e.g., TITLE, TITLE_AND_BODY, SECTION_HEADER, BLANK).
+      Requirements:
+      - Create 5-8 slides for a comprehensive presentation
+      - Start with a title slide
+      - Include section headers to organize content
+      - Use varied layouts (TITLE_ONLY, SECTION_HEADER, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS)
+      - Make content professional and engaging
+      - Include bullet points for clarity
+      - End with a conclusion or next steps slide
+      - Ensure content flows logically from slide to slide
+      
+      Available layouts: TITLE_ONLY, SECTION_HEADER, TITLE_AND_BODY, TITLE_AND_TWO_COLUMNS, BLANK
+      
       Only respond with valid JSON - no markdown formatting or code blocks.
     `);
     
@@ -168,21 +232,80 @@ router.post('/create-doc', async (req, res) => {
     
     // Prepare requests to update document content
     const requests = [];
+    let currentIndex = 1; // Start after the document title
     
-    // Process content elements
-    docContent.content.forEach(element => {
-      if (element.paragraph) {
-        const paragraph = {
+    // Process content elements with proper formatting
+    docContent.content.forEach((element, index) => {
+      if (element.type === 'heading1' || element.type === 'heading2') {
+        // Insert text first
+        requests.push({
           insertText: {
-            location: {
-              index: 1
-            },
-            text: element.paragraph.elements.map(el => el.textRun.content).join('') + '\n'
+            location: { index: currentIndex },
+            text: element.text + '\n'
           }
-        };
-        requests.push(paragraph);
+        });
+        
+        // Apply heading style
+        const style = element.type === 'heading1' ? 'TITLE' : 'HEADING_1';
+        requests.push({
+          updateParagraphStyle: {
+            range: {
+              startIndex: currentIndex,
+              endIndex: currentIndex + element.text.length
+            },
+            paragraphStyle: {
+              namedStyleType: style
+            },
+            fields: 'namedStyleType'
+          }
+        });
+        
+        currentIndex += element.text.length + 1;
+        
+      } else if (element.type === 'paragraph') {
+        // Insert regular paragraph
+        requests.push({
+          insertText: {
+            location: { index: currentIndex },
+            text: element.text + '\n\n'
+          }
+        });
+        
+        currentIndex += element.text.length + 2;
+        
+      } else if (element.type === 'bullet_list' && element.items) {
+        // Insert bullet list items
+        element.items.forEach(item => {
+          requests.push({
+            insertText: {
+              location: { index: currentIndex },
+              text: item + '\n'
+            }
+          });
+          
+          // Apply bullet list formatting
+          requests.push({
+            createParagraphBullets: {
+              range: {
+                startIndex: currentIndex,
+                endIndex: currentIndex + item.length
+              },
+              bulletPreset: 'BULLET_DISC_CIRCLE_SQUARE'
+            }
+          });
+          
+          currentIndex += item.length + 1;
+        });
+        
+        // Add extra line after list
+        requests.push({
+          insertText: {
+            location: { index: currentIndex },
+            text: '\n'
+          }
+        });
+        currentIndex += 1;
       }
-      // Add more element types as needed (lists, tables, etc.)
     });
     
     // Update the document with content
@@ -195,6 +318,9 @@ router.post('/create-doc', async (req, res) => {
       });
     }
     
+    // Apply professional styling to document
+    await applyDocumentStyling(docs, documentId);
+    
     // Get document metadata
     const docInfo = await docs.documents.get({
       documentId
@@ -205,6 +331,9 @@ router.post('/create-doc', async (req, res) => {
       fileId: documentId,
       fields: 'webViewLink'
     });
+    
+    // Apply professional styling to document
+    await applyDocumentStyling(docs, documentId);
     
     res.json({
       success: true,
@@ -385,6 +514,9 @@ router.post('/create-slides', async (req, res) => {
       });
     }
     
+    // Apply professional styling to presentation
+    await applyPresentationStyling(slides, presentationId);
+    
     // Get presentation URL
     const fileInfo = await drive.files.get({
       fileId: presentationId,
@@ -405,6 +537,121 @@ router.post('/create-slides', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to create presentation' });
   }
 });
+
+// Apply professional styling to presentation
+async function applyPresentationStyling(slides, presentationId) {
+  try {
+    const stylingRequests = [
+      // Set a professional color scheme
+      {
+        updatePageProperties: {
+          objectId: 'page',
+          pageProperties: {
+            colorScheme: {
+              colors: [
+                {
+                  type: 'THEME_COLOR_TYPE_DARK1',
+                  color: {
+                    rgbColor: {
+                      red: 0.2,
+                      green: 0.2,
+                      blue: 0.2
+                    }
+                  }
+                },
+                {
+                  type: 'THEME_COLOR_TYPE_LIGHT1',
+                  color: {
+                    rgbColor: {
+                      red: 1.0,
+                      green: 1.0,
+                      blue: 1.0
+                    }
+                  }
+                },
+                {
+                  type: 'THEME_COLOR_TYPE_ACCENT1',
+                  color: {
+                    rgbColor: {
+                      red: 0.26,
+                      green: 0.53,
+                      blue: 0.96
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          fields: 'colorScheme'
+        }
+      }
+    ];
+
+    if (stylingRequests.length > 0) {
+      await slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: {
+          requests: stylingRequests
+        }
+      });
+    }
+  } catch (error) {
+    console.log('Note: Could not apply advanced styling, but presentation was created successfully');
+  }
+}
+
+// Apply professional styling to document
+async function applyDocumentStyling(docs, documentId) {
+  try {
+    const stylingRequests = [
+      // Add a professional header/footer style
+      {
+        updateDocumentStyle: {
+          documentStyle: {
+            marginTop: {
+              magnitude: 72,
+              unit: 'PT'
+            },
+            marginBottom: {
+              magnitude: 72,
+              unit: 'PT'
+            },
+            marginLeft: {
+              magnitude: 72,
+              unit: 'PT'
+            },
+            marginRight: {
+              magnitude: 72,
+              unit: 'PT'
+            },
+            pageSize: {
+              height: {
+                magnitude: 792,
+                unit: 'PT'
+              },
+              width: {
+                magnitude: 612,
+                unit: 'PT'
+              }
+            }
+          },
+          fields: 'marginTop,marginBottom,marginLeft,marginRight,pageSize'
+        }
+      }
+    ];
+
+    if (stylingRequests.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId,
+        requestBody: {
+          requests: stylingRequests
+        }
+      });
+    }
+  } catch (error) {
+    console.log('Note: Could not apply advanced document styling, but document was created successfully');
+  }
+}
 
 // Get a list of user's documents
 router.get('/docs', async (req, res) => {
