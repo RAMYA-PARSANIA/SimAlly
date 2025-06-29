@@ -13,6 +13,7 @@ import CalendarPanel from '../components/CalendarPanel';
 import ProjectPanel from '../components/ProjectPanel';
 import AnalyticsPanel from '../components/AnalyticsPanel';
 import TimeTrackingPanel from '../components/TimeTrackingPanel';
+import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 
@@ -26,6 +27,8 @@ const WorkspacePage: React.FC = () => {
   const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time'>('chat');
   const [loading, setLoading] = useState(true);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
+  const [showMeetingModal, setShowMeetingModal] = useState(false);
+  const [selectedChannelForMeeting, setSelectedChannelForMeeting] = useState<{id: string, name: string} | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -486,19 +489,31 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
-  const handleStartMeeting = async (channelId: string, channelName: string) => {
+  const handleStartMeeting = (channelId: string, channelName: string) => {
+    if (!user || !isGoogleConnected) {
+      alert('You need to connect your Google account to start meetings.');
+      return;
+    }
+
+    // Show the meeting modal
+    setSelectedChannelForMeeting({id: channelId, name: channelName});
+    setShowMeetingModal(true);
+  };
+
+  const handleCreateMeeting = async (channelId: string, title: string, description: string) => {
     if (!user || !isGoogleConnected) {
       alert('You need to connect your Google account to start meetings.');
       return;
     }
 
     setIsCreatingMeeting(true);
+    setShowMeetingModal(false);
 
     try {
       // Create a meeting using Google Meet
       const response = await meetingService.createMeeting(user.id, {
-        title: `${channelName} Meeting`,
-        description: `Meeting for channel: ${channelName}`,
+        title: title,
+        description: description,
         startTime: new Date().toISOString(),
         duration: 60,
         channelId: channelId
@@ -536,6 +551,7 @@ const WorkspacePage: React.FC = () => {
       alert('Failed to create meeting. Please try again.');
     } finally {
       setIsCreatingMeeting(false);
+      setSelectedChannelForMeeting(null);
     }
   };
 
@@ -780,6 +796,19 @@ const WorkspacePage: React.FC = () => {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Meeting Modal */}
+      {showMeetingModal && selectedChannelForMeeting && (
+        <CreateChannelMeetingModal
+          channelId={selectedChannelForMeeting.id}
+          channelName={selectedChannelForMeeting.name}
+          onClose={() => {
+            setShowMeetingModal(false);
+            setSelectedChannelForMeeting(null);
+          }}
+          onCreateMeeting={handleCreateMeeting}
+        />
+      )}
     </div>
   );
 };
