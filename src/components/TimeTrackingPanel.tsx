@@ -31,7 +31,6 @@ const TimeTrackingPanel: React.FC = () => {
   const [billable, setBillable] = useState(true);
   const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'month'>('today');
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const [error, setError] = useState<string | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -52,7 +51,6 @@ const TimeTrackingPanel: React.FC = () => {
 
   const loadTimeEntries = async () => {
     if (!user) return;
-    setError(null);
 
     try {
       let query = supabase
@@ -82,14 +80,12 @@ const TimeTrackingPanel: React.FC = () => {
 
       if (error) {
         console.error('Error loading time entries:', error);
-        setError('Failed to load time entries');
         return;
       }
 
       setTimeEntries(data || []);
     } catch (error) {
       console.error('Error loading time entries:', error);
-      setError('Failed to load time entries');
     } finally {
       setLoading(false);
     }
@@ -97,7 +93,6 @@ const TimeTrackingPanel: React.FC = () => {
 
   const checkActiveTimer = async () => {
     if (!user) return;
-    setError(null);
 
     try {
       const { data, error } = await supabase
@@ -135,10 +130,9 @@ const TimeTrackingPanel: React.FC = () => {
 
   const startTimer = async () => {
     if (!user || !description.trim() || !taskName.trim()) return;
-    setError(null);
 
     try {
-      // Create the time entry with auth.uid() in RLS policy
+      // Create the time entry
       const { data, error } = await supabase
         .from('time_entries')
         .insert({
@@ -154,7 +148,6 @@ const TimeTrackingPanel: React.FC = () => {
 
       if (error) {
         console.error('Error starting timer:', error);
-        setError(`Failed to start timer: ${error.message}`);
         return;
       }
 
@@ -173,15 +166,13 @@ const TimeTrackingPanel: React.FC = () => {
       
       // Reload time entries
       loadTimeEntries();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error starting timer:', error);
-      setError(`Failed to start timer: ${error.message}`);
     }
   };
 
   const stopTimer = async () => {
     if (!activeTimer) return;
-    setError(null);
 
     try {
       const endTime = new Date();
@@ -194,12 +185,10 @@ const TimeTrackingPanel: React.FC = () => {
           end_time: endTime.toISOString(),
           duration_minutes: durationMinutes
         })
-        .eq('id', activeTimer.id)
-        .eq('user_id', user?.id); // Add user_id check for extra security
+        .eq('id', activeTimer.id);
 
       if (error) {
         console.error('Error stopping timer:', error);
-        setError(`Failed to stop timer: ${error.message}`);
         return;
       }
 
@@ -212,33 +201,28 @@ const TimeTrackingPanel: React.FC = () => {
       }
       
       loadTimeEntries();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error stopping timer:', error);
-      setError(`Failed to stop timer: ${error.message}`);
     }
   };
 
   const deleteTimeEntry = async (entryId: string) => {
     if (!confirm('Are you sure you want to delete this time entry?')) return;
-    setError(null);
 
     try {
       const { error } = await supabase
         .from('time_entries')
         .delete()
-        .eq('id', entryId)
-        .eq('user_id', user?.id); // Add user_id check for extra security
+        .eq('id', entryId);
 
       if (error) {
         console.error('Error deleting time entry:', error);
-        setError(`Failed to delete time entry: ${error.message}`);
         return;
       }
 
       loadTimeEntries();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error deleting time entry:', error);
-      setError(`Failed to delete time entry: ${error.message}`);
     }
   };
 
@@ -341,7 +325,6 @@ const TimeTrackingPanel: React.FC = () => {
               variant="premium"
               size="sm"
               className="flex items-center space-x-2"
-              disabled={!!activeTimer}
             >
               <Plus className="w-4 h-4" />
               <span>Start Timer</span>
@@ -392,13 +375,6 @@ const TimeTrackingPanel: React.FC = () => {
             </div>
           </GlassCard>
         </div>
-        
-        {/* Error message */}
-        {error && (
-          <div className="mt-4 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
       </div>
 
       {/* Active Timer */}
@@ -509,7 +485,6 @@ const TimeTrackingPanel: React.FC = () => {
               onClick={() => setShowCreateModal(true)}
               variant="secondary"
               size="sm"
-              disabled={!!activeTimer}
             >
               Start Timer
             </Button>
