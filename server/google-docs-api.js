@@ -212,12 +212,22 @@ router.post('/create-doc', async (req, res) => {
         id: documentId,
         title: docContent.title,
         url: fileInfo.data.webViewLink,
-        downloadUrl: `${process.env.BACKEND_URL || 'http://localhost:8000'}/api/google/docs/download-doc/${documentId}?userId=${userId}`
+        downloadUrl: `${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/docs/download-doc/${documentId}?userId=${userId}`
       }
     });
   } catch (error) {
     console.error('Error creating Google Doc:', error);
-    res.status(500).json({ success: false, error: 'Failed to create document' });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      errors: error.errors
+    });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to create document',
+      details: error.message 
+    });
   }
 });
 
@@ -361,7 +371,7 @@ router.post('/create-slides', async (req, res) => {
         id: presentationId,
         title: slidesContent.title,
         url: fileInfo.data.webViewLink,
-        downloadUrl: `${process.env.BACKEND_URL || 'http://localhost:8000'}/api/google/docs/download-slides/${presentationId}?userId=${userId}`
+        downloadUrl: `${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/docs/download-slides/${presentationId}?userId=${userId}`
       }
     });
   } catch (error) {

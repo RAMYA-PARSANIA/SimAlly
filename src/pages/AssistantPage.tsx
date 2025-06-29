@@ -449,28 +449,53 @@ const AssistantPage: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-green-400 flex items-center">
               <FileText className="w-4 h-4 mr-2" />
-              Generated Document
+              {data.document.title || 'Generated Document'}
             </h4>
-            <Button
-              onClick={() => {
-                const blob = new Blob([data.document.content], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'document.html';
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              variant="ghost"
-              size="sm"
-            >
-              <Download className="w-4 h-4" />
-            </Button>
+            {data.document.content && (
+              <Button
+                onClick={() => {
+                  const blob = new Blob([data.document.content], { type: 'text/html' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'document.html';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                variant="ghost"
+                size="sm"
+              >
+                <Download className="w-4 h-4" />
+              </Button>
+            )}
           </div>
-          <div 
-            className="prose prose-sm max-w-none text-secondary"
-            dangerouslySetInnerHTML={{ __html: data.document.content.substring(0, 500) + '...' }}
-          />
+          {data.document.content ? (
+            <div 
+              className="prose prose-sm max-w-none text-secondary"
+              dangerouslySetInnerHTML={{ __html: data.document.content.substring(0, 500) + '...' }}
+            />
+          ) : (
+            <div className="text-sm text-secondary">
+              Document created successfully. Check the message above for links to view and download.
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Presentation generation
+    if (data.presentation) {
+      return (
+        <div className="glass-panel p-4 rounded-lg bg-purple-500/10 border-purple-500/30">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-medium text-purple-400 flex items-center">
+              <FileText className="w-4 h-4 mr-2" />
+              {data.presentation.title || 'Generated Presentation'}
+            </h4>
+          </div>
+          <div className="text-sm text-secondary">
+            Presentation created successfully. Check the message above for links to view and download.
+          </div>
         </div>
       );
     }

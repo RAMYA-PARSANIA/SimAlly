@@ -1549,7 +1549,7 @@ async function executeCreateGoogleDoc(parameters) {
     }
     
     // Make API call to create Google Doc
-    const response = await fetch(`${VITE_API_URL}/api/google/docs/create-doc`, {
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/docs/create-doc`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1560,7 +1560,14 @@ async function executeCreateGoogleDoc(parameters) {
       })
     });
     
+    console.log('Google Docs API response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
+    console.log('Google Docs API response data:', data);
     
     if (data.success && data.document) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1584,7 +1591,20 @@ Your document has been created and saved to your Google Drive. You can view and 
     return data;
   } catch (error) {
     console.error('Error creating Google Doc:', error);
-    return { success: false, error: 'Failed to create Google Doc' };
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
+    return { 
+      success: false, 
+      error: 'Failed to create Google Doc',
+      details: error.message,
+      userMessage: `❌ **Error Creating Document**
+
+I encountered an error while trying to create your Google Doc: ${error.message}
+
+Please try again or check your Google account connection.`
+    };
   }
 }
 
@@ -1597,7 +1617,7 @@ async function executeCreateGoogleSlides(parameters) {
     }
     
     // Make API call to create Google Slides
-    const response = await fetch(`${VITE_API_URL}/api/google/docs/create-slides`, {
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/docs/create-slides`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1608,7 +1628,14 @@ async function executeCreateGoogleSlides(parameters) {
       })
     });
     
+    console.log('Google Slides API response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
     const data = await response.json();
+    console.log('Google Slides API response data:', data);
     
     if (data.success && data.presentation) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1632,7 +1659,20 @@ Your presentation has been created and saved to your Google Drive. You can view 
     return data;
   } catch (error) {
     console.error('Error creating Google Slides:', error);
-    return { success: false, error: 'Failed to create Google Slides' };
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
+    return { 
+      success: false, 
+      error: 'Failed to create Google Slides',
+      details: error.message,
+      userMessage: `❌ **Error Creating Presentation**
+
+I encountered an error while trying to create your Google Slides presentation: ${error.message}
+
+Please try again or check your Google account connection.`
+    };
   }
 }
 
