@@ -227,9 +227,9 @@ const AssistantPage: React.FC = () => {
       try {
         const response = await fetch(`${VITE_AI_API_URL}/api/gmail/email/${email.id}?userId=${user?.id}`, {
           credentials: 'include',
-          headers: {
-            'Origin': window.location.origin
-          }
+          // headers: {
+          //   'Origin': window.location.origin
+          // }
         });
         
         if (response.ok) {
@@ -800,7 +800,7 @@ const AssistantPage: React.FC = () => {
                     <div>
                       <h2 className="text-lg font-bold text-primary">Email Details</h2>
                       <p className="text-sm text-secondary">
-                        From: {selectedEmailForModal.from} • {formatEmailDate(selectedEmailForModal.date)}
+                        From: <span className="font-medium text-primary">{selectedEmailForModal.from}</span> • {formatEmailDate(selectedEmailForModal.date)}
                       </p>
                     </div>
                   </div>
@@ -816,11 +816,11 @@ const AssistantPage: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-6 bg-transparent dark:bg-[#18181b]">
                   {/* Subject */}
                   <div className="mb-6">
-                    <h3 className="text-xl font-bold text-primary mb-2">
+                    <h3 className="text-2xl font-bold text-primary mb-4">
                       {selectedEmailForModal.subject}
                     </h3>
                     <div className="flex items-center space-x-4 text-sm text-secondary">
-                      <span>From: {selectedEmailForModal.from}</span>
+                      <span>From: <span className="font-medium text-primary">{selectedEmailForModal.from}</span></span>
                       <span>Date: {formatEmailDate(selectedEmailForModal.date)}</span>
                       {selectedEmailForModal.isUnread && (
                         <span className="px-2 py-1 bg-yellow-500/20 text-yellow-500 rounded-full text-xs font-medium">
@@ -831,7 +831,7 @@ const AssistantPage: React.FC = () => {
                   </div>
 
                   {/* Email Body */}
-                  <div className="glass-panel p-4 rounded-lg max-h-[50vh] overflow-y-auto bg-white dark:bg-[#23232a]">
+                  <div className="glass-panel p-6 rounded-lg max-h-[50vh] overflow-y-auto bg-white dark:bg-[#23232a]">
                     {loadingEmailBody ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="w-6 h-6 animate-spin text-secondary mr-3" />
@@ -839,7 +839,7 @@ const AssistantPage: React.FC = () => {
                       </div>
                     ) : selectedEmailForModal.body ? (
                       <div 
-                        className="prose prose-sm max-w-none text-primary dark:text-gray-100 dark:prose-invert"
+                        className="prose prose-lg max-w-none text-primary dark:text-gray-100 dark:prose-invert"
                         dangerouslySetInnerHTML={{ __html: selectedEmailForModal.body }}
                       />
                     ) : (

@@ -1473,46 +1473,6 @@ async function executeGmailPromotions(userId, maxResults = 20) {
         if (match) unsubscribeUrl = match[1];
         else if (listUnsub.value.startsWith('http')) unsubscribeUrl = listUnsub.value;
       }
-      
-      // If no unsubscribe header, try to find one in the body
-      if (!unsubscribeUrl) {
-        // Function to extract body parts recursively
-        const extractBody = (part) => {
-          if (part.mimeType === 'text/html' && part.body && part.body.data) {
-            return Buffer.from(part.body.data, 'base64').toString('utf-8');
-          } else if (part.parts) {
-            for (const subPart of part.parts) {
-              const extractedBody = extractBody(subPart);
-              if (extractedBody) {
-                return extractedBody;
-              }
-            }
-          }
-          return null;
-        };
-        
-        let body = '';
-        if (emailData.data.payload.parts) {
-          for (const part of emailData.data.payload.parts) {
-            const extractedBody = extractBody(part);
-            if (extractedBody) {
-              body = extractedBody;
-              break;
-            }
-          }
-        } else if (emailData.data.payload.body && emailData.data.payload.body.data) {
-          body = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
-        }
-        
-        if (body) {
-          const unsubscribeRegex = /href=["'](https?:\/\/[^"']+unsubscribe[^"']+)["']/i;
-          const match = body.match(unsubscribeRegex);
-          if (match) {
-            unsubscribeUrl = match[1];
-          }
-        }
-      }
-      
       emails.push({
         id: message.id,
         from,
@@ -1523,7 +1483,6 @@ async function executeGmailPromotions(userId, maxResults = 20) {
         unsubscribeUrl
       });
     }
-    
     return { success: true, emails, totalCount: emails.length };
   } catch (error) {
     console.error('Error fetching promotional emails:', error);
