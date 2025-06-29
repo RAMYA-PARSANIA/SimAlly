@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare, ToggleLeft as Google } from 'lucide-react';
+import { Bot, Gamepad2, Video, LogOut, Settings, User, Users, MessageSquare, ToggleLeft as Google, Stethoscope, Scale } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
@@ -86,6 +86,14 @@ const Dashboard: React.FC = () => {
       description: 'Engaging mental exercises, problem-solving games, and intelligent entertainment for cognitive enhancement.',
       route: '/game-mode',
       color: 'from-green-500 to-yellow-500',
+    },
+    {
+      id: 'professional-services',
+      icon: Stethoscope,
+      title: 'Professional Services',
+      description: 'Access mental health support and legal advice through AI-powered video consultations.',
+      route: '/professional-services',
+      color: 'from-red-500 to-orange-500',
     },
   ];
 
@@ -190,7 +198,7 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto mb-16">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
             {features.map((feature) => (
               <GlassCard
                 key={feature.id}
@@ -228,13 +236,10 @@ const Dashboard: React.FC = () => {
               </GlassCard>
             ))}
           </div>
-
-          {/* Google Connection Card */}
-          
         </div>
       </main>
     </div>
   );
-};
+}
 
 export default Dashboard;

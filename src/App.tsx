@@ -8,6 +8,7 @@ import AssistantPage from './pages/AssistantPage';
 import GameModePage from './pages/GameModePage';
 import MeetingPage from './pages/MeetingPage';
 import WorkspacePage from './pages/WorkspacePage';
+import ProfessionalServicesPage from './pages/ProfessionalServicesPage';
 import ProtectedRoute from './components/ProtectedRoute';
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
 const VITE_API_URL = import.meta.env.VITE_API_URL;
@@ -47,6 +48,11 @@ function App() {
               <Route path="/workspace" element={
                 <ProtectedRoute>
                   <WorkspacePage />
+                </ProtectedRoute>
+              } />
+              <Route path="/professional-services" element={
+                <ProtectedRoute>
+                  <ProfessionalServicesPage />
                 </ProtectedRoute>
               } />
             </Routes>

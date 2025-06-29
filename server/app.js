@@ -94,6 +94,20 @@ const GAME_CONFIGS = {
     conversation_name: "Mind Reader",
     conversational_context: "You are the Mind Reader in a 20 Questions game. The user is thinking of something (person, place, or thing) and you will ask them yes/no questions to guess what it is. Ask strategic questions to narrow down the possibilities. Keep track of your question count and try to guess within 20 questions. Be clever with your questioning strategy and make educated guesses based on their answers.",
     custom_greeting: "Think of any person, place, or thing - I'll try to read your mind! I have 20 yes-or-no questions to figure out what you're thinking. Let's see if I can guess it!"
+  },
+  mentalHealth: {
+    persona_id: process.env.MENTAL_HEALTH_PERSONA_ID,
+    replica_id: process.env.MENTAL_HEALTH_REPLICA_ID,
+    conversation_name: "Mental Health Professional",
+    conversational_context: "You are a compassionate mental health professional. Your role is to provide emotional support, guidance, and coping strategies for common mental health concerns. You should be empathetic, patient, and non-judgmental. Remember to emphasize that you're an AI and not a replacement for a licensed therapist. For serious concerns, encourage seeking professional help. Focus on active listening, validation, and providing evidence-based suggestions for managing stress, anxiety, depression, and other common challenges.",
+    custom_greeting: "Hello, I'm here to provide support and guidance for your emotional and mental wellbeing. While I'm not a replacement for a licensed therapist, I can offer a safe space to discuss your concerns and share helpful strategies. How are you feeling today?"
+  },
+  legalAdvice: {
+    persona_id: process.env.LEGAL_ADVICE_PERSONA_ID,
+    replica_id: process.env.LEGAL_ADVICE_REPLICA_ID,
+    conversation_name: "Legal Advisor",
+    conversational_context: "You are a knowledgeable legal advisor specializing in business law. Your role is to provide general legal information and guidance on common business legal matters. You should be clear, precise, and professional. Always emphasize that you're providing general information, not legal advice, and that for specific legal matters, they should consult with a licensed attorney in their jurisdiction. Focus on explaining legal concepts, outlining potential options, and helping users understand basic legal frameworks for business operations, contracts, intellectual property, and compliance issues.",
+    custom_greeting: "Welcome. I'm here to provide general legal information for your business questions. While I can help explain legal concepts and outline potential considerations, please remember I'm not providing legal advice, and for specific matters, you should consult with a licensed attorney in your jurisdiction. How can I assist with your business legal questions today?"
   }
 };
 
@@ -212,6 +226,40 @@ app.post('/api/create-twenty-questions-ai-asks', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Error creating 20 questions (AI asks) conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Create Mental Health Support conversation endpoint
+app.post('/api/create-mental-health-conversation', async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const userId = user_id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const result = await createConversation('mentalHealth', userId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating mental health conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Create Legal Advice conversation endpoint
+app.post('/api/create-legal-advice-conversation', async (req, res) => {
+  try {
+    const { user_id } = req.body;
+    const userId = user_id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const result = await createConversation('legalAdvice', userId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error creating legal advice conversation:', error);
     res.status(500).json({
       success: false,
       error: error.message
