@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Clock, CheckSquare, Plus, Bell, X, Info, AlertCircle, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calendar, ChevronLeft, ChevronRight, Clock, CheckSquare, Plus, Bell, X, Info, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -62,7 +62,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
 
   const loadEvents = async () => {
     if (!user) return;
-    
+
     try {
       // Create start and end dates that cover the entire month
       const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
@@ -72,14 +72,14 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       startOfMonth.setHours(0, 0, 0, 0);
       endOfMonth.setHours(23, 59, 59, 999);
       
-      // Format for database query - use ISO strings for proper comparison
+      // Format for database query - use broader range to ensure we get all events
       const startDateStr = startOfMonth.toISOString();
       const endDateStr = endOfMonth.toISOString();
       
       console.log(`Loading events from ${startDateStr} to ${endDateStr}`);
       
       // Query events using date range that includes the full last day
-      const { data, error: taskError } = await supabase
+      const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
         .eq('user_id', user.id)
@@ -87,12 +87,13 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
         .lte('start_time', endDateStr)
         .order('start_time');
 
-      if (taskError) {
-        console.error('Error checking for due tasks:', taskError);
-      } else {
-        console.log(`Loaded ${data?.length || 0} events`);
-        setEvents(data || []);
+      if (error) {
+        console.error('Error loading events:', error);
+        return;
       }
+
+      console.log(`Loaded ${data?.length || 0} events`);
+      setEvents(data || []);
     } catch (error) {
       console.error('Error loading events:', error);
     }
@@ -220,6 +221,12 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     // Calculate end time (1 hour after start time)
     const endHour = String((defaultStartHour + 1) % 24).padStart(2, '0');
     
+    // Format the date part in YYYY-MM-DD format
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    const datePart = `${year}-${month}-${day}`;
+    
     setNewEvent({
       title: '',
       description: '',
@@ -280,7 +287,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   };
 
   const handleCreateEvent = async () => {
-    if (!inputMessage.title.trim() || !selectedDate || !user) {
+    if (!user || !newEvent.title || !selectedDate) {
       setError('Please fill in all required fields');
       return;
     }
@@ -377,7 +384,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   };
 
   const handleCreateReminder = async () => {
-    if (!newReminder.title.trim() || !selectedDate || !user) {
+    if (!user || !newReminder.title || !selectedDate) {
       setError('Please fill in all required fields');
       return;
     }
@@ -732,7 +739,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 </h4>
                 <div className="space-y-2">
                   {getEventsForDate(selectedDate).length > 0 ? (
-                    getEventsForDate(selectedDate).map((event) => (
+                    getEventsForDate(selectedDate).map(event => (
                       <GlassCard key={`event-detail-${event.id}`} className="p-3 group" hover>
                         <div className="flex items-start justify-between">
                           <div className="flex items-start space-x-3">
@@ -888,7 +895,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   </div>
                 </div>
               </div>
-
+              
               <div className="flex justify-end space-x-3 mt-6">
                 <Button
                   onClick={() => {
@@ -903,7 +910,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 <Button
                   onClick={handleCreateEvent}
                   variant="premium"
-                  disabled={loading || !newEvent.title.trim()}
+                  disabled={loading || !newEvent.title}
                 >
                   {loading ? (
                     <div className="flex items-center space-x-2">
@@ -1043,7 +1050,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 <Button
                   onClick={handleCreateReminder}
                   variant="premium"
-                  disabled={loading || !newReminder.title.trim()}
+                  disabled={loading || !newReminder.title}
                 >
                   {loading ? (
                     <div className="flex items-center space-x-2">
