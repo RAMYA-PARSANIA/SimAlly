@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp, Video, Loader2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp, Video, Loader2, ExternalLink, FileText, Presentation } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
@@ -13,6 +13,7 @@ import CalendarPanel from '../components/CalendarPanel';
 import ProjectPanel from '../components/ProjectPanel';
 import AnalyticsPanel from '../components/AnalyticsPanel';
 import TimeTrackingPanel from '../components/TimeTrackingPanel';
+import DocumentGenerationPanel from '../components/DocumentGenerationPanel';
 import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
@@ -30,7 +31,7 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time' | 'documents'>('chat');
   const [loading, setLoading] = useState(true);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [showMeetingModal, setShowMeetingModal] = useState(false);
@@ -680,6 +681,17 @@ const WorkspacePage: React.FC = () => {
                   <Clock className="w-4 h-4" />
                 </button>
                 <button
+                  onClick={() => setActivePanel('documents')}
+                  className={`p-2 rounded-md transition-all ${
+                    activePanel === 'documents' 
+                      ? 'bg-gradient-gold-silver text-white' 
+                      : 'text-secondary hover:text-primary'
+                  }`}
+                  title="Documents"
+                >
+                  <FileText className="w-4 h-4" />
+                </button>
+                <button
                   onClick={() => setActivePanel('analytics')}
                   className={`p-2 rounded-md transition-all ${
                     activePanel === 'analytics' 
@@ -803,6 +815,19 @@ const WorkspacePage: React.FC = () => {
                 transition={{ duration: 0.2 }}
               >
                 <TimeTrackingPanel />
+              </motion.div>
+            )}
+            
+            {activePanel === 'documents' && (
+              <motion.div 
+                key="documents-panel"
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <DocumentGenerationPanel />
               </motion.div>
             )}
             

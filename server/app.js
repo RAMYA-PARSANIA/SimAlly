@@ -101,6 +101,10 @@ const GAME_CONFIGS = {
 const { router: googleApiRoutes } = require('./google-api');
 app.use('/api/google', googleApiRoutes);
 
+// Import Google Docs/Slides API routes
+const { router: googleDocsRoutes } = require('./google-docs-api');
+app.use('/api/google/docs', googleDocsRoutes);
+
 // Generic conversation creation endpoint
 const createConversation = async (gameType, userId) => {
   const config = GAME_CONFIGS[gameType];
