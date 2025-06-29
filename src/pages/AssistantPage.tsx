@@ -618,28 +618,7 @@ const AssistantPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
-      {/* Security Notice */}
-      {securityNotice && (
-        <div className="glass-panel border-b silver-border bg-green-500/10 border-green-500/30">
-          <div className="max-w-7xl mx-auto container-padding">
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center space-x-3">
-                <Shield className="w-5 h-5 text-green-400" />
-                <div>
-                  <p className="text-green-400 font-medium text-sm">Enhanced Security Active</p>
-                  <p className="text-green-300 text-xs">All sensitive data is encrypted. Google tokens are session-specific and automatically expire.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSecurityNotice(false)}
-                className="text-green-400 hover:text-green-300"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* Header */}
       <header className="glass-panel border-0 border-b silver-border">
