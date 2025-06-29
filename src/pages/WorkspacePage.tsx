@@ -16,6 +16,12 @@ import TimeTrackingPanel from '../components/TimeTrackingPanel';
 import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
+const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
+const VITE_API_URL = import.meta.env.VITE_API_URL;
+const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
+const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
+const VITE_APP_URL = import.meta.env.VITE_APP_URL;
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
@@ -500,7 +506,7 @@ const WorkspacePage: React.FC = () => {
     setShowMeetingModal(true);
   };
 
-  const handleCreateMeeting = async (channelId: string, title: string, description: string) => {
+  const handleCreateMeeting = async (channelId: string, title: string, description: string, startTime: string, duration: number) => {
     if (!user || !isGoogleConnected) {
       alert('You need to connect your Google account to start meetings.');
       return;
@@ -514,14 +520,28 @@ const WorkspacePage: React.FC = () => {
       const response = await meetingService.createMeeting(user.id, {
         title: title,
         description: description,
-        startTime: new Date().toISOString(),
-        duration: 60,
+        startTime: startTime,
+        duration: duration,
         channelId: channelId
       });
 
       if (response.success) {
         const meeting = response.meeting;
-        const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const startTimeFormatted = new Date(meeting.startTime).toLocaleString([], {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        
+        const endTimeFormatted = new Date(meeting.endTime).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
         
         // Post a message in the channel with the meeting link
         await supabase
@@ -529,14 +549,19 @@ const WorkspacePage: React.FC = () => {
           .insert({
             channel_id: channelId,
             sender_id: user.id,
-            content: `${user.full_name} started a meeting\nStart Time: ${currentTime}\nMeeting Link: ${meeting.url}`,
+            content: `📅 ${user.full_name} started a meeting: "${meeting.title}"\nStart Time: ${startTimeFormatted}\nEnd Time: ${endTimeFormatted}\nDuration: ${duration} minutes\nParticipants: 0 (currently)`,
             type: 'text',
             metadata: { 
               meeting: {
                 id: meeting.id,
                 url: meeting.url,
                 title: meeting.title,
-                startTime: meeting.startTime
+                startTime: meeting.startTime,
+                endTime: meeting.endTime,
+                duration: duration,
+                organizer: user.full_name,
+                status: 'active',
+                participants: []
               }
             }
           });

@@ -180,6 +180,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       case 'system':
         return 'bg-gray-500/10 border-gray-500/30';
       default:
+        if (message.metadata?.meeting) {
+          return 'bg-green-500/10 border-green-500/30';
+        }
         return message.sender_id === user?.id 
           ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/30'
           : 'border-gold-border';
