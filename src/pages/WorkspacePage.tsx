@@ -10,7 +10,6 @@ import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
 import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
-import TimeTrackingPanel from '../components/TimeTrackingPanel';
 import DocumentGenerationPanel from '../components/DocumentGenerationPanel';
 import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
 import GlassCard from '../components/ui/GlassCard';
@@ -29,7 +28,7 @@ const WorkspacePage: React.FC = () => {
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'time' | 'documents'>('chat');
+  const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'documents'>('chat');
   const [loading, setLoading] = useState(true);
   const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
   const [showMeetingModal, setShowMeetingModal] = useState(false);
@@ -657,17 +656,6 @@ const WorkspacePage: React.FC = () => {
                   <Calendar className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => setActivePanel('time')}
-                  className={`p-2 rounded-md transition-all ${
-                    activePanel === 'time' 
-                      ? 'bg-gradient-gold-silver text-white' 
-                      : 'text-secondary hover:text-primary'
-                  }`}
-                  title="Time Tracking"
-                >
-                  <Clock className="w-4 h-4" />
-                </button>
-                <button
                   onClick={() => setActivePanel('documents')}
                   className={`p-2 rounded-md transition-all ${
                     activePanel === 'documents' 
@@ -763,19 +751,6 @@ const WorkspacePage: React.FC = () => {
                 <CalendarPanel
                   tasks={tasks}
                 />
-              </motion.div>
-            )}
-            
-            {activePanel === 'time' && (
-              <motion.div 
-                key="time-panel"
-                className="flex-1 overflow-hidden"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <TimeTrackingPanel />
               </motion.div>
             )}
             
