@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, Clock, Target, TrendingUp, Video, Loader2, ExternalLink, FileText, Presentation, LayoutKanban } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, Clock, Target, TrendingUp, Video, Loader2, ExternalLink, FileText, Presentation, Kanban as LayoutKanban } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
