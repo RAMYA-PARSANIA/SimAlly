@@ -550,7 +550,7 @@ const WorkspacePage: React.FC = () => {
           .insert({
             channel_id: channelId,
             sender_id: user.id,
-            content: `📅 ${user.full_name} started a meeting: "${meeting.title}"\nStart Time: ${startTimeFormatted}\nEnd Time: ${endTimeFormatted}\nDuration: ${duration} minutes\nParticipants: 0 (currently)`,
+            content: ` ${user.full_name} started a meeting: "${meeting.title}"\nStart Time: ${startTimeFormatted}\nEnd Time: ${endTimeFormatted}\nDuration: ${duration} minutes\n`,
             type: 'text',
             metadata: { 
               meeting: {
