@@ -51,6 +51,7 @@ const NotificationManager: React.FC = () => {
       const tomorrowStr = tomorrow.toISOString().split('T')[0];
       const dayAfterTomorrowStr = dayAfterTomorrow.toISOString().split('T')[0];
       
+      // Get tasks due tomorrow
       const { data: dueTasks, error: taskError } = await supabase
         .from('tasks')
         .select('*')
@@ -61,7 +62,7 @@ const NotificationManager: React.FC = () => {
       
       if (taskError) {
         console.error('Error checking for due tasks:', taskError);
-      } else if (dueTasks) {
+      } else if (dueTasks && dueTasks.length > 0) {
         // Create notifications for tasks due tomorrow
         const taskNotifications = dueTasks
           .filter(task => !notifiedItems.has(`task-${task.id}-tomorrow`))
@@ -79,50 +80,97 @@ const NotificationManager: React.FC = () => {
           newNotifiedItems.add(`task-${task.id}-tomorrow`);
         });
         
-        // Check for reminders due within the next hour
-        const now = new Date();
-        const oneHourLater = new Date(now);
-        oneHourLater.setHours(oneHourLater.getHours() + 1);
-        
-        const { data: upcomingReminders, error: reminderError } = await supabase
-          .from('calendar_events')
-          .select('*')
-          .eq('is_reminder', true)
-          .eq('user_id', user.id)
-          .gte('start_time', now.toISOString())
-          .lt('start_time', oneHourLater.toISOString());
-        
-        if (reminderError) {
-          console.error('Error checking for upcoming reminders:', reminderError);
-        } else if (upcomingReminders) {
-          // Create notifications for upcoming reminders
-          const reminderNotifications = upcomingReminders
-            .filter(reminder => !notifiedItems.has(`reminder-${reminder.id}`))
-            .map(reminder => {
-              const reminderTime = new Date(reminder.start_time);
-              const minutesUntil = Math.round((reminderTime.getTime() - now.getTime()) / 60000);
-              
-              return {
-                id: `reminder-${reminder.id}-${Date.now()}`,
-                title: 'Upcoming Reminder',
-                message: minutesUntil <= 5 
-                  ? `"${reminder.title}" is happening now!` 
-                  : `"${reminder.title}" is coming up in ${minutesUntil} minutes`,
-                type: 'reminder' as const,
-                itemId: reminder.id
-              };
-            });
-          
-          // Add to notified items
-          upcomingReminders.forEach(reminder => {
-            newNotifiedItems.add(`reminder-${reminder.id}`);
+        if (taskNotifications.length > 0) {
+          setNotifications(prev => [...prev, ...taskNotifications]);
+          setNotifiedItems(newNotifiedItems);
+        }
+      }
+      
+      // Check for reminders due within the next hour
+      const now = new Date();
+      const oneHourLater = new Date(now);
+      oneHourLater.setHours(oneHourLater.getHours() + 1);
+      
+      const { data: upcomingReminders, error: reminderError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('is_reminder', true)
+        .eq('user_id', user.id)
+        .gte('start_time', now.toISOString())
+        .lt('start_time', oneHourLater.toISOString());
+      
+      if (reminderError) {
+        console.error('Error checking for upcoming reminders:', reminderError);
+      } else if (upcomingReminders && upcomingReminders.length > 0) {
+        // Create notifications for upcoming reminders
+        const reminderNotifications = upcomingReminders
+          .filter(reminder => !notifiedItems.has(`reminder-${reminder.id}`))
+          .map(reminder => {
+            const reminderTime = new Date(reminder.start_time);
+            const minutesUntil = Math.round((reminderTime.getTime() - now.getTime()) / 60000);
+            
+            return {
+              id: `reminder-${reminder.id}-${Date.now()}`,
+              title: 'Upcoming Reminder',
+              message: minutesUntil <= 5 
+                ? `"${reminder.title}" is happening now!` 
+                : `"${reminder.title}" is coming up in ${minutesUntil} minutes`,
+              type: 'reminder' as const,
+              itemId: reminder.id
+            };
           });
-          
-          // Update notifications
-          if (taskNotifications.length > 0 || reminderNotifications.length > 0) {
-            setNotifications(prev => [...prev, ...taskNotifications, ...reminderNotifications]);
-            setNotifiedItems(newNotifiedItems);
-          }
+        
+        // Add to notified items
+        const newNotifiedItems = new Set(notifiedItems);
+        upcomingReminders.forEach(reminder => {
+          newNotifiedItems.add(`reminder-${reminder.id}`);
+        });
+        
+        if (reminderNotifications.length > 0) {
+          setNotifications(prev => [...prev, ...reminderNotifications]);
+          setNotifiedItems(newNotifiedItems);
+        }
+      }
+      
+      // Check for events starting within the next hour
+      const { data: upcomingEvents, error: eventError } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('is_reminder', false)
+        .eq('user_id', user.id)
+        .gte('start_time', now.toISOString())
+        .lt('start_time', oneHourLater.toISOString());
+      
+      if (eventError) {
+        console.error('Error checking for upcoming events:', eventError);
+      } else if (upcomingEvents && upcomingEvents.length > 0) {
+        // Create notifications for upcoming events
+        const eventNotifications = upcomingEvents
+          .filter(event => !notifiedItems.has(`event-${event.id}`))
+          .map(event => {
+            const eventTime = new Date(event.start_time);
+            const minutesUntil = Math.round((eventTime.getTime() - now.getTime()) / 60000);
+            
+            return {
+              id: `event-${event.id}-${Date.now()}`,
+              title: 'Upcoming Event',
+              message: minutesUntil <= 5 
+                ? `"${event.title}" is starting now!` 
+                : `"${event.title}" is starting in ${minutesUntil} minutes`,
+              type: 'event' as const,
+              itemId: event.id
+            };
+          });
+        
+        // Add to notified items
+        const newNotifiedItems = new Set(notifiedItems);
+        upcomingEvents.forEach(event => {
+          newNotifiedItems.add(`event-${event.id}`);
+        });
+        
+        if (eventNotifications.length > 0) {
+          setNotifications(prev => [...prev, ...eventNotifications]);
+          setNotifiedItems(newNotifiedItems);
         }
       }
     } catch (error) {
