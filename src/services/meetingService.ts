@@ -5,11 +5,12 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const meetingService = {
   async createMeeting(userId: string, meetingData: {
-    title: string;
+    title?: string;
     description?: string;
-    startTime: string;
-    duration: number;
+    startTime?: string;
+    duration?: number;
     attendees?: string[];
+    channelId?: string;
   }): Promise<{ success: boolean; meeting: Meeting }> {
     try {
       const response = await axios.post(`${API_URL}/api/google/meetings/create`, {

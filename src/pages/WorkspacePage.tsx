@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Hash, Users, Plus, Settings, Calendar, CheckSquare, MessageSquare, Upload, Paperclip, UserPlus, BarChart3, Clock, Target, TrendingUp, Video, Loader2, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase, workspaceAPI, type Channel, type Message, type Task } from '../lib/supabase';
+import { meetingService } from '../services/meetingService';
 import ThemeToggle from '../components/ThemeToggle';
 import ChatPanel from '../components/ChatPanel';
 import ChannelList from '../components/ChannelList';
@@ -17,13 +18,14 @@ import Button from '../components/ui/Button';
 
 const WorkspacePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isGoogleConnected } = useAuth();
   const [channels, setChannels] = useState<(Channel & { is_member?: boolean })[]>([]);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activePanel, setActivePanel] = useState<'chat' | 'tasks' | 'calendar' | 'projects' | 'analytics' | 'time'>('chat');
   const [loading, setLoading] = useState(true);
+  const [isCreatingMeeting, setIsCreatingMeeting] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -484,6 +486,63 @@ const WorkspacePage: React.FC = () => {
     }
   };
 
+  const handleStartMeeting = async (channelId: string, channelName: string) => {
+    if (!user || !isGoogleConnected) {
+      alert('You need to connect your Google account to start meetings.');
+      return;
+    }
+
+    setIsCreatingMeeting(true);
+
+    try {
+      // Create a meeting using Google Meet
+      const response = await meetingService.createMeeting(user.id, {
+        title: `${channelName} Meeting`,
+        description: `Meeting for channel: ${channelName}`,
+        startTime: new Date().toISOString(),
+        duration: 60,
+        channelId: channelId
+      });
+
+      if (response.success) {
+        const meeting = response.meeting;
+        const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Post a message in the channel with the meeting link
+        await supabase
+          .from('messages')
+          .insert({
+            channel_id: channelId,
+            sender_id: user.id,
+            content: `${user.full_name} started a meeting\nStart Time: ${currentTime}\nMeeting Link: ${meeting.url}`,
+            type: 'text',
+            metadata: { 
+              meeting: {
+                id: meeting.id,
+                url: meeting.url,
+                title: meeting.title,
+                startTime: meeting.startTime
+              }
+            }
+          });
+
+        // Reload messages if this is the active channel
+        if (activeChannel?.id === channelId) {
+          loadMessages(channelId);
+        }
+      }
+    } catch (error) {
+      console.error('Error creating meeting:', error);
+      alert('Failed to create meeting. Please try again.');
+    } finally {
+      setIsCreatingMeeting(false);
+    }
+  };
+
+  const handleJoinMeeting = (url: string) => {
+    window.open(url, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-primary flex items-center justify-center">
@@ -611,13 +670,22 @@ const WorkspacePage: React.FC = () => {
             onLeaveChannel={handleLeaveChannel}
             onDeleteChannel={handleDeleteChannel}
             onSummarizeChannel={handleSummarizeChannel}
-            onStartMeeting={() => {}}
-            onJoinMeeting={() => {}}
+            onStartMeeting={handleStartMeeting}
+            onJoinMeeting={handleJoinMeeting}
           />
         </div>
 
         {/* Main Panel - Dynamic content with fixed positioning */}
         <div className="flex-1 flex flex-col h-full">
+          {isCreatingMeeting && (
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+              <div className="glass-panel rounded-lg p-6 text-center">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-500 mx-auto mb-4" />
+                <p className="text-primary font-medium">Creating meeting...</p>
+              </div>
+            </div>
+          )}
+          
           <AnimatePresence mode="wait">
             {activePanel === 'chat' && (
               <motion.div 

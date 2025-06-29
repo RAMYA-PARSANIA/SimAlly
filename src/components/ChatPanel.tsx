@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin, Image, FileText, Download, Play, Pause, Volume2, VolumeX, Check, X } from 'lucide-react';
+import { Send, Bot, User, Hash, AtSign, Smile, Paperclip, MoreVertical, Reply, Edit, Trash2, Pin, Image, FileText, Download, Play, Pause, Volume2, VolumeX, Check, X, ExternalLink, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
@@ -186,7 +186,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   };
 
-  const renderMessageContent = (content: string, messageType?: string) => {
+  const renderMessageContent = (content: string, messageType?: string, metadata?: any) => {
     // For AI summary messages, use ReactMarkdown
     if (messageType === 'ai_summary') {
       return (
@@ -207,6 +207,31 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           >
             {content}
           </ReactMarkdown>
+        </div>
+      );
+    }
+    
+    // For meeting messages, render with meeting info
+    if (metadata?.meeting) {
+      const meeting = metadata.meeting;
+      const parts = content.split('\n');
+      
+      return (
+        <div className="space-y-2">
+          {parts.map((part: string, index: number) => (
+            <p key={index} className="text-primary">{part}</p>
+          ))}
+          <div className="mt-4">
+            <Button
+              onClick={() => window.open(meeting.url, '_blank')}
+              variant="premium"
+              size="sm"
+              className="flex items-center space-x-2"
+            >
+              <Video className="w-4 h-4" />
+              <span>Join Meeting</span>
+            </Button>
+          </div>
         </div>
       );
     }
@@ -491,7 +516,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       <>
                         {message.content && message.content !== '[Media]' && (
                           <div className={`text-primary max-w-full ${message.type !== 'ai_summary' ? 'whitespace-pre-wrap' : 'overflow-hidden'}`}>
-                            {renderMessageContent(message.content, message.type)}
+                            {renderMessageContent(message.content, message.type, message.metadata)}
                           </div>
                         )}
 
@@ -506,6 +531,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                             <p className="text-green-400 text-xs font-medium">
                               ✓ Task created successfully
                             </p>
+                          </div>
+                        )}
+                        
+                        {/* Meeting Join Button for messages with meeting metadata */}
+                        {message.metadata?.meeting && !message.content.includes('Join Meeting') && (
+                          <div className="mt-2">
+                            <Button
+                              onClick={() => window.open(message.metadata.meeting.url, '_blank')}
+                              variant="secondary"
+                              size="sm"
+                              className="flex items-center space-x-2"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              <span>Join Meeting</span>
+                            </Button>
                           </div>
                         )}
                       </>
