@@ -660,13 +660,16 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
       try {
         const result = await executeEndpointFunction(parsedResponse.endpoint, parsedResponse.parameters, userId, req);
         
+        // Use userMessage if available, otherwise use the original response
+        const responseMessage = result?.userMessage || parsedResponse.response;
+        
         return res.json({
           success: true,
           agent: {
             intent: 'endpoint_call',
             endpoint: parsedResponse.endpoint,
             parameters: parsedResponse.parameters,
-            response: parsedResponse.response,
+            response: responseMessage,
             result: result,
             config: endpointConfig
           }
@@ -1558,6 +1561,26 @@ async function executeCreateGoogleDoc(parameters) {
     });
     
     const data = await response.json();
+    
+    if (data.success && data.document) {
+      // Format a user-friendly response with actual HTML links for clickability
+      const userMessage = `✅ **Document Created Successfully!**
+
+📄 **${data.document.title}**
+
+🔗 **View/Edit Online:** <a href="${data.document.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Docs</a>
+
+💾 **Download:** <a href="${data.document.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as Word (.docx)</a>
+
+Your document has been created and saved to your Google Drive. You can view and edit it online, or download it as a Word document to use offline.`;
+      
+      return {
+        success: true,
+        userMessage,
+        document: data.document
+      };
+    }
+    
     return data;
   } catch (error) {
     console.error('Error creating Google Doc:', error);
@@ -1586,6 +1609,26 @@ async function executeCreateGoogleSlides(parameters) {
     });
     
     const data = await response.json();
+    
+    if (data.success && data.presentation) {
+      // Format a user-friendly response with actual HTML links for clickability
+      const userMessage = `✅ **Presentation Created Successfully!**
+
+📊 **${data.presentation.title}**
+
+🔗 **View/Edit Online:** <a href="${data.presentation.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Slides</a>
+
+💾 **Download:** <a href="${data.presentation.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as PowerPoint (.pptx)</a>
+
+Your presentation has been created and saved to your Google Drive. You can view and edit it online, or download it as a PowerPoint file to use offline.`;
+      
+      return {
+        success: true,
+        userMessage,
+        presentation: data.presentation
+      };
+    }
+    
     return data;
   } catch (error) {
     console.error('Error creating Google Slides:', error);

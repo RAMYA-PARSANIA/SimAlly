@@ -240,6 +240,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       );
     }
     
+    // Check if content contains HTML links (from AI assistant)
+    if (content.includes('<a href')) {
+      return (
+        <div 
+          className="break-words"
+          dangerouslySetInnerHTML={{ __html: content }}
+        />
+      );
+    }
+    
     // For regular messages, render mentions with highlighting
     const parts = content.split(/(@\w+)/g);
     return parts.map((part, index) => {
