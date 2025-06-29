@@ -2216,6 +2216,10 @@ function cleanupInactiveSessions() {
   }
 }
 
+// Mount the Google API router
+const { router: googleApiRouter } = require('./google-api');
+app.use('/api', googleApiRouter);
+
 // Run session cleanup every 15 minutes
 setInterval(cleanupInactiveSessions, 15 * 60 * 1000);
 
