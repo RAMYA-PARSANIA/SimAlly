@@ -22,16 +22,15 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   
-  // Get current time rounded to nearest 15 minutes for default start time
-  const roundedDate = new Date();
-  roundedDate.setMinutes(Math.ceil(roundedDate.getMinutes() / 15) * 15);
-  roundedDate.setSeconds(0);
-  roundedDate.setMilliseconds(0);
-  
+  // Get current time for default start time (no rounding)
+  const now = new Date();
+  now.setSeconds(0);
+  now.setMilliseconds(0);
+
   const [formData, setFormData] = useState({
-    title: `${channelName} Meeting`,
-    description: `Meeting for channel: ${channelName}`,
-    startTime: format(roundedDate, "yyyy-MM-dd'T'HH:mm"),
+    title: '',
+    description: '',
+    startTime: format(now, "yyyy-MM-dd'T'HH:mm"),
     durationHours: 1,
     durationMinutes: 0
   });
@@ -101,7 +100,7 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <GlassCard className="w-full max-w-md" goldBorder>
+      <GlassCard className="w-full max-w-md max-h-[90vh] overflow-y-auto" goldBorder>
         <div className="flex items-center justify-between p-6 border-b silver-border">
           <h2 className="text-xl font-bold gradient-gold-silver">Start Channel Meeting</h2>
           <button
@@ -125,7 +124,7 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
                 name="title"
                 value={formData.title}
                 onChange={handleInputChange}
-                placeholder="Enter meeting title"
+                placeholder="Enter Meeting Title"
                 className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                 required
               />
@@ -141,7 +140,7 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
               name="description"
               value={formData.description}
               onChange={handleInputChange}
-              placeholder="Add meeting description"
+              placeholder="Enter Meeting Description"
               rows={3}
               className="w-full px-4 py-3 glass-panel rounded-lg text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none"
             />
@@ -153,14 +152,15 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
               Start Time <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-3 w-5 h-5 text-secondary" />
+              
               <input
                 type="datetime-local"
                 name="startTime"
                 value={formData.startTime}
                 onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                className="w-full pl-10 pr-4 py-3 glass-panel rounded-lg text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500 "
                 required
+                min={format(now, "yyyy-MM-dd'T'HH:mm")}
               />
             </div>
             <div className="flex items-center mt-1 text-xs text-secondary">
@@ -205,10 +205,7 @@ const CreateChannelMeetingModal: React.FC<CreateChannelMeetingModalProps> = ({
 
           {/* Meeting Preview */}
           <div className="glass-panel rounded-lg p-4 bg-blue-500/10 border-blue-500/30">
-            <h3 className="text-sm font-medium text-blue-400 mb-2 flex items-center">
-              <Info className="w-4 h-4 mr-2" />
-              Meeting Preview
-            </h3>
+            
             <div className="space-y-2 text-sm text-secondary">
               <div className="flex items-center space-x-2">
                 <Users className="w-4 h-4 text-blue-400" />
