@@ -12,6 +12,7 @@ import TaskPanel from '../components/TaskPanel';
 import CalendarPanel from '../components/CalendarPanel';
 import DocumentGenerationPanel from '../components/DocumentGenerationPanel';
 import CreateChannelMeetingModal from '../components/CreateChannelMeetingModal';
+import NotificationManager from '../components/NotificationManager';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
@@ -782,6 +783,9 @@ const WorkspacePage: React.FC = () => {
           onCreateMeeting={handleCreateMeeting}
         />
       )}
+
+      {/* Notification Manager */}
+      <NotificationManager />
     </div>
   );
 };
