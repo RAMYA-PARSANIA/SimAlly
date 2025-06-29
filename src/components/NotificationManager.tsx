@@ -47,9 +47,9 @@ const NotificationManager: React.FC = () => {
       const dayAfterTomorrow = new Date(tomorrow);
       dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
       
-      // Format dates as YYYY-MM-DD for comparison
-      const tomorrowStr = tomorrow.toISOString().split('T')[0];
-      const dayAfterTomorrowStr = dayAfterTomorrow.toISOString().split('T')[0];
+      // Format dates as ISO strings for comparison
+      const tomorrowStr = tomorrow.toISOString();
+      const dayAfterTomorrowStr = dayAfterTomorrow.toISOString();
       
       // Get tasks due tomorrow
       const { data: dueTasks, error: taskError } = await supabase
@@ -91,13 +91,16 @@ const NotificationManager: React.FC = () => {
       const oneHourLater = new Date(now);
       oneHourLater.setHours(oneHourLater.getHours() + 1);
       
+      const nowIso = now.toISOString();
+      const oneHourLaterIso = oneHourLater.toISOString();
+      
       const { data: upcomingReminders, error: reminderError } = await supabase
         .from('calendar_events')
         .select('*')
         .eq('is_reminder', true)
         .eq('user_id', user.id)
-        .gte('start_time', now.toISOString())
-        .lt('start_time', oneHourLater.toISOString());
+        .gte('start_time', nowIso)
+        .lt('start_time', oneHourLaterIso);
       
       if (reminderError) {
         console.error('Error checking for upcoming reminders:', reminderError);
@@ -138,8 +141,8 @@ const NotificationManager: React.FC = () => {
         .select('*')
         .eq('is_reminder', false)
         .eq('user_id', user.id)
-        .gte('start_time', now.toISOString())
-        .lt('start_time', oneHourLater.toISOString());
+        .gte('start_time', nowIso)
+        .lt('start_time', oneHourLaterIso);
       
       if (eventError) {
         console.error('Error checking for upcoming events:', eventError);

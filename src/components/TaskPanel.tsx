@@ -60,9 +60,9 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
       let formattedDueDate = null;
       if (newTask.due_date) {
         // Ensure the due date is in YYYY-MM-DD format
-        formattedDueDate = new Date(newTask.due_date);
-        formattedDueDate.setHours(23, 59, 59, 999); // Set to end of day
-        formattedDueDate = formattedDueDate.toISOString();
+        const dueDate = new Date(newTask.due_date);
+        dueDate.setHours(23, 59, 59, 999); // Set to end of day
+        formattedDueDate = dueDate.toISOString();
       }
 
       const { error } = await supabase
@@ -96,9 +96,9 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
       let formattedDueDate = null;
       if (newTask.due_date) {
         // Ensure the due date is in YYYY-MM-DD format
-        formattedDueDate = new Date(newTask.due_date);
-        formattedDueDate.setHours(23, 59, 59, 999); // Set to end of day
-        formattedDueDate = formattedDueDate.toISOString();
+        const dueDate = new Date(newTask.due_date);
+        dueDate.setHours(23, 59, 59, 999); // Set to end of day
+        formattedDueDate = dueDate.toISOString();
       }
 
       const { error } = await supabase
@@ -528,6 +528,7 @@ const TaskPanel: React.FC<TaskPanelProps> = ({ tasks, onTaskUpdate }) => {
                         value={newTask.due_date}
                         onChange={(e) => setNewTask(prev => ({ ...prev, due_date: e.target.value }))}
                         className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                        min={new Date().toISOString().split('T')[0]} // Prevent past dates
                       />
                     </div>
                   </div>

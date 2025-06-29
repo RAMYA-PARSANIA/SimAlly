@@ -73,8 +73,8 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       endOfMonth.setHours(23, 59, 59, 999);
       
       // Format for database query - use broader range to ensure we get all events
-      const startDateStr = startOfMonth.toISOString().split('T')[0];
-      const endDateStr = endOfMonth.toISOString().split('T')[0];
+      const startDateStr = startOfMonth.toISOString();
+      const endDateStr = endOfMonth.toISOString();
       
       console.log(`Loading events from ${startDateStr} to ${endDateStr}`);
       
@@ -84,7 +84,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
         .select('*')
         .eq('user_id', user.id)
         .gte('start_time', startDateStr)
-        .lte('start_time', endDateStr + 'T23:59:59.999Z')
+        .lte('start_time', endDateStr)
         .order('start_time');
 
       if (error) {
@@ -126,22 +126,15 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     if (!date) return [];
     
     // Create a date string in YYYY-MM-DD format for comparison
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const localDateString = `${year}-${month}-${day}`;
+    const dateStr = date.toISOString().split('T')[0];
     
     return tasks.filter(task => {
       if (!task.due_date) return false;
       
-      // Extract date part from due_date using Date object for better reliability
-      const taskDate = new Date(task.due_date);
-      const taskYear = taskDate.getFullYear();
-      const taskMonth = String(taskDate.getMonth() + 1).padStart(2, '0');
-      const taskDay = String(taskDate.getDate()).padStart(2, '0');
-      const taskDateString = `${taskYear}-${taskMonth}-${taskDay}`;
+      // Extract date part from due_date
+      const taskDateStr = task.due_date.split('T')[0];
       
-      return taskDateString === localDateString;
+      return taskDateStr === dateStr;
     });
   };
 
@@ -149,20 +142,13 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     if (!date) return [];
     
     // Create a date string in YYYY-MM-DD format for comparison
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const localDateString = `${year}-${month}-${day}`;
+    const dateStr = date.toISOString().split('T')[0];
     
     return events.filter(event => {
-      // Extract date part from start_time (YYYY-MM-DD)
-      const eventDate = new Date(event.start_time);
-      const eventYear = eventDate.getFullYear();
-      const eventMonth = String(eventDate.getMonth() + 1).padStart(2, '0');
-      const eventDay = String(eventDate.getDate()).padStart(2, '0');
-      const eventDateString = `${eventYear}-${eventMonth}-${eventDay}`;
+      // Extract date part from start_time
+      const eventDateStr = event.start_time.split('T')[0];
       
-      return eventDateString === localDateString;
+      return eventDateStr === dateStr;
     });
   };
 
@@ -181,6 +167,12 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   const isToday = (date: Date) => {
     const today = new Date();
     return date.toDateString() === today.toDateString();
+  };
+
+  const isPastDate = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return date < today;
   };
 
   const formatMonthYear = (date: Date) => {
@@ -205,12 +197,29 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   const handleAddEvent = () => {
     if (!selectedDate) return;
     
-    // Set default times for the new event
-    const defaultStartTime = new Date(selectedDate);
-    defaultStartTime.setHours(9, 0, 0, 0);
+    // Check if selected date is in the past
+    if (isPastDate(selectedDate)) {
+      setError("Cannot create events in the past");
+      return;
+    }
     
-    const defaultEndTime = new Date(selectedDate);
-    defaultEndTime.setHours(10, 0, 0, 0);
+    // Set default times for the new event
+    const now = new Date();
+    let defaultStartHour = now.getHours();
+    let defaultStartMinute = Math.ceil(now.getMinutes() / 15) * 15;
+    
+    // Adjust if we've rolled over to the next hour
+    if (defaultStartMinute >= 60) {
+      defaultStartHour = (defaultStartHour + 1) % 24;
+      defaultStartMinute = 0;
+    }
+    
+    // Format hours and minutes with leading zeros
+    const startHour = String(defaultStartHour).padStart(2, '0');
+    const startMinute = String(defaultStartMinute).padStart(2, '0');
+    
+    // Calculate end time (1 hour after start time)
+    const endHour = String((defaultStartHour + 1) % 24).padStart(2, '0');
     
     // Format the date part in YYYY-MM-DD format
     const year = selectedDate.getFullYear();
@@ -221,29 +230,59 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     setNewEvent({
       title: '',
       description: '',
-      startTime: `${datePart}T09:00`,
-      endTime: `${datePart}T10:00`,
+      startTime: `${startHour}:${startMinute}`,
+      endTime: `${endHour}:${startMinute}`,
     });
     
+    setError(null);
     setShowAddEventModal(true);
   };
 
   const handleAddReminder = () => {
     if (!selectedDate) return;
     
-    // Format the date part in YYYY-MM-DD format
-    const year = selectedDate.getFullYear();
-    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-    const day = String(selectedDate.getDate()).padStart(2, '0');
-    const datePart = `${year}-${month}-${day}`;
+    // Check if selected date is in the past
+    if (isPastDate(selectedDate)) {
+      setError("Cannot create reminders in the past");
+      return;
+    }
+    
+    // Set default times for the new reminder
+    const now = new Date();
+    let defaultStartHour = now.getHours();
+    let defaultStartMinute = Math.ceil(now.getMinutes() / 15) * 15;
+    
+    // Adjust if we've rolled over to the next hour
+    if (defaultStartMinute >= 60) {
+      defaultStartHour = (defaultStartHour + 1) % 24;
+      defaultStartMinute = 0;
+    }
+    
+    // Format hours and minutes with leading zeros
+    const startHour = String(defaultStartHour).padStart(2, '0');
+    const startMinute = String(defaultStartMinute).padStart(2, '0');
+    
+    // Calculate end time (30 minutes after start time)
+    let endHour = defaultStartHour;
+    let endMinute = defaultStartMinute + 30;
+    
+    // Adjust if we've rolled over to the next hour
+    if (endMinute >= 60) {
+      endHour = (endHour + 1) % 24;
+      endMinute = endMinute - 60;
+    }
+    
+    const formattedEndHour = String(endHour).padStart(2, '0');
+    const formattedEndMinute = String(endMinute).padStart(2, '0');
     
     setNewReminder({
       title: '',
       description: '',
-      startTime: `${datePart}T09:00`,
-      endTime: `${datePart}T09:30`,
+      startTime: `${startHour}:${startMinute}`,
+      endTime: `${formattedEndHour}:${formattedEndMinute}`,
     });
     
+    setError(null);
     setShowAddReminderModal(true);
   };
 
@@ -264,12 +303,43 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       const datePart = `${year}-${month}-${day}`;
       
       // Get time parts from inputs
-      const startTimePart = newEvent.startTime.split('T')[1] || '09:00';
-      const endTimePart = newEvent.endTime.split('T')[1] || '10:00';
+      const startTimeParts = newEvent.startTime.split(':');
+      const endTimeParts = newEvent.endTime.split(':');
+      
+      if (startTimeParts.length !== 2 || endTimeParts.length !== 2) {
+        throw new Error('Invalid time format');
+      }
       
       // Create proper datetime objects with timezone
-      const startDateTime = new Date(`${datePart}T${startTimePart}:00`);
-      const endDateTime = new Date(`${datePart}T${endTimePart}:00`);
+      const startDateTime = new Date(
+        year, 
+        selectedDate.getMonth(), 
+        selectedDate.getDate(), 
+        parseInt(startTimeParts[0]), 
+        parseInt(startTimeParts[1])
+      );
+      
+      const endDateTime = new Date(
+        year, 
+        selectedDate.getMonth(), 
+        selectedDate.getDate(), 
+        parseInt(endTimeParts[0]), 
+        parseInt(endTimeParts[1])
+      );
+      
+      // Validate times
+      const now = new Date();
+      if (startDateTime < now) {
+        setError('Start time cannot be in the past');
+        setLoading(false);
+        return;
+      }
+      
+      if (endDateTime <= startDateTime) {
+        setError('End time must be after start time');
+        setLoading(false);
+        return;
+      }
       
       // Convert to ISO string for database storage
       const startTimeIso = startDateTime.toISOString();
@@ -330,12 +400,43 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       const datePart = `${year}-${month}-${day}`;
       
       // Get time parts from inputs
-      const startTimePart = newReminder.startTime.split('T')[1] || '09:00';
-      const endTimePart = newReminder.endTime.split('T')[1] || '09:30';
+      const startTimeParts = newReminder.startTime.split(':');
+      const endTimeParts = newReminder.endTime.split(':');
+      
+      if (startTimeParts.length !== 2 || endTimeParts.length !== 2) {
+        throw new Error('Invalid time format');
+      }
       
       // Create proper datetime objects with timezone
-      const startDateTime = new Date(`${datePart}T${startTimePart}:00`);
-      const endDateTime = new Date(`${datePart}T${endTimePart}:00`);
+      const startDateTime = new Date(
+        year, 
+        selectedDate.getMonth(), 
+        selectedDate.getDate(), 
+        parseInt(startTimeParts[0]), 
+        parseInt(startTimeParts[1])
+      );
+      
+      const endDateTime = new Date(
+        year, 
+        selectedDate.getMonth(), 
+        selectedDate.getDate(), 
+        parseInt(endTimeParts[0]), 
+        parseInt(endTimeParts[1])
+      );
+      
+      // Validate times
+      const now = new Date();
+      if (startDateTime < now) {
+        setError('Reminder time cannot be in the past');
+        setLoading(false);
+        return;
+      }
+      
+      if (endDateTime <= startDateTime) {
+        setError('End time must be after start time');
+        setLoading(false);
+        return;
+      }
       
       // Convert to ISO string for database storage
       const startTimeIso = startDateTime.toISOString();
@@ -469,13 +570,14 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
             const dayTasks = getTasksForDate(date);
             const dayEvents = getEventsForDate(date);
             const isCurrentDay = isToday(date);
+            const isPast = isPastDate(date);
 
             return (
               <motion.div
                 key={`day-${date.getTime()}`}
                 className={`p-2 min-h-[120px] glass-panel rounded-lg border transition-all hover:border-gold-border cursor-pointer ${
                   isCurrentDay ? 'border-gold-border bg-gradient-gold-silver/10' : ''
-                }`}
+                } ${isPast ? 'opacity-70' : ''}`}
                 whileHover={{ scale: 1.02 }}
                 onClick={() => handleDateClick(date)}
               >
@@ -551,12 +653,24 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   })}
                 </h3>
                 <button
-                  onClick={() => setShowDateModal(false)}
+                  onClick={() => {
+                    setShowDateModal(false);
+                    setError(null);
+                  }}
                   className="text-secondary hover:text-primary"
                 >
                   ×
                 </button>
               </div>
+              
+              {error && (
+                <div className="mb-4 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
+                  <p className="text-red-400 text-sm flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    {error}
+                  </p>
+                </div>
+              )}
               
               <div className="flex justify-end mb-4 space-x-2">
                 <Button
@@ -679,7 +793,10 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
               
               <div className="flex justify-end mt-6">
                 <Button
-                  onClick={() => setShowDateModal(false)}
+                  onClick={() => {
+                    setShowDateModal(false);
+                    setError(null);
+                  }}
                   variant="secondary"
                 >
                   Close
@@ -706,7 +823,10 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   Add Event
                 </h3>
                 <button
-                  onClick={() => setShowAddEventModal(false)}
+                  onClick={() => {
+                    setShowAddEventModal(false);
+                    setError(null);
+                  }}
                   className="text-secondary hover:text-primary"
                 >
                   ×
@@ -756,18 +876,8 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                     </label>
                     <input
                       type="time"
-                      value={newEvent.startTime.split('T')[1] || '09:00'}
-                      onChange={(e) => {
-                        if (selectedDate) {
-                          // Format the date part in YYYY-MM-DD format
-                          const year = selectedDate.getFullYear();
-                          const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                          const day = String(selectedDate.getDate()).padStart(2, '0');
-                          const datePart = `${year}-${month}-${day}`;
-                          
-                          setNewEvent({...newEvent, startTime: `${datePart}T${e.target.value}`});
-                        }
-                      }}
+                      value={newEvent.startTime}
+                      onChange={(e) => setNewEvent({...newEvent, startTime: e.target.value})}
                       className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                     />
                   </div>
@@ -778,18 +888,8 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                     </label>
                     <input
                       type="time"
-                      value={newEvent.endTime.split('T')[1] || '10:00'}
-                      onChange={(e) => {
-                        if (selectedDate) {
-                          // Format the date part in YYYY-MM-DD format
-                          const year = selectedDate.getFullYear();
-                          const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                          const day = String(selectedDate.getDate()).padStart(2, '0');
-                          const datePart = `${year}-${month}-${day}`;
-                          
-                          setNewEvent({...newEvent, endTime: `${datePart}T${e.target.value}`});
-                        }
-                      }}
+                      value={newEvent.endTime}
+                      onChange={(e) => setNewEvent({...newEvent, endTime: e.target.value})}
                       className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                     />
                   </div>
@@ -798,7 +898,10 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
               
               <div className="flex justify-end space-x-3 mt-6">
                 <Button
-                  onClick={() => setShowAddEventModal(false)}
+                  onClick={() => {
+                    setShowAddEventModal(false);
+                    setError(null);
+                  }}
                   variant="secondary"
                   disabled={loading}
                 >
@@ -840,7 +943,10 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   Add Reminder
                 </h3>
                 <button
-                  onClick={() => setShowAddReminderModal(false)}
+                  onClick={() => {
+                    setShowAddReminderModal(false);
+                    setError(null);
+                  }}
                   className="text-secondary hover:text-primary"
                 >
                   ×
@@ -890,37 +996,40 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                     </label>
                     <input
                       type="time"
-                      value={newReminder.startTime.split('T')[1] || '09:00'}
+                      value={newReminder.startTime}
                       onChange={(e) => {
-                        if (selectedDate) {
-                          // Format the date part in YYYY-MM-DD format
-                          const year = selectedDate.getFullYear();
-                          const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-                          const day = String(selectedDate.getDate()).padStart(2, '0');
-                          const datePart = `${year}-${month}-${day}`;
-                          
-                          const newStartTime = `${datePart}T${e.target.value}`;
-                          
-                          // Also update end time to be 30 minutes after start time
-                          const [hours, minutes] = e.target.value.split(':').map(Number);
-                          let newMinutes = minutes + 30;
-                          let newHours = hours;
-                          
-                          if (newMinutes >= 60) {
-                            newMinutes -= 60;
-                            newHours = (newHours + 1) % 24;
-                          }
-                          
-                          const endTimePart = `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
-                          const newEndTime = `${datePart}T${endTimePart}`;
-                          
-                          setNewReminder({
-                            ...newReminder, 
-                            startTime: newStartTime,
-                            endTime: newEndTime
-                          });
+                        const newStartTime = e.target.value;
+                        
+                        // Also update end time to be 30 minutes after start time
+                        const [hours, minutes] = newStartTime.split(':').map(Number);
+                        let newMinutes = minutes + 30;
+                        let newHours = hours;
+                        
+                        if (newMinutes >= 60) {
+                          newMinutes -= 60;
+                          newHours = (newHours + 1) % 24;
                         }
+                        
+                        const endTimePart = `${String(newHours).padStart(2, '0')}:${String(newMinutes).padStart(2, '0')}`;
+                        
+                        setNewReminder({
+                          ...newReminder, 
+                          startTime: newStartTime,
+                          endTime: endTimePart
+                        });
                       }}
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      End Time <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={newReminder.endTime}
+                      onChange={(e) => setNewReminder({...newReminder, endTime: e.target.value})}
                       className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                     />
                   </div>
@@ -929,7 +1038,10 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
               
               <div className="flex justify-end space-x-3 mt-6">
                 <Button
-                  onClick={() => setShowAddReminderModal(false)}
+                  onClick={() => {
+                    setShowAddReminderModal(false);
+                    setError(null);
+                  }}
                   variant="secondary"
                   disabled={loading}
                 >
