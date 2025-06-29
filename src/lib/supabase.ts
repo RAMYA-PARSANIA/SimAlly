@@ -90,6 +90,7 @@ export interface CalendarEvent {
   user_id: string;
   task_id?: string;
   created_at: string;
+  is_reminder?: boolean;
 }
 
 export interface Project {

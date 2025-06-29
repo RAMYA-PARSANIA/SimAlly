@@ -64,15 +64,27 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     if (!user) return;
 
     try {
+      // Create start and end dates that cover the entire month
       const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
       const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-
+      
+      // Set proper boundaries to ensure we capture all events
+      startOfMonth.setHours(0, 0, 0, 0);
+      endOfMonth.setHours(23, 59, 59, 999);
+      
+      // Format for database query - use broader range to ensure we get all events
+      const startDateStr = startOfMonth.toISOString().split('T')[0];
+      const endDateStr = endOfMonth.toISOString().split('T')[0];
+      
+      console.log(`Loading events from ${startDateStr} to ${endDateStr}`);
+      
+      // Query events using date range that includes the full last day
       const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
         .eq('user_id', user.id)
-        .gte('start_time', startOfMonth.toISOString())
-        .lte('start_time', endOfMonth.toISOString())
+        .gte('start_time', startDateStr)
+        .lte('start_time', endDateStr + 'T23:59:59.999Z')
         .order('start_time');
 
       if (error) {
@@ -80,6 +92,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
         return;
       }
 
+      console.log(`Loaded ${data?.length || 0} events`);
       setEvents(data || []);
     } catch (error) {
       console.error('Error loading events:', error);
@@ -121,8 +134,13 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     return tasks.filter(task => {
       if (!task.due_date) return false;
       
-      // Extract date part from due_date (YYYY-MM-DD)
-      const taskDateString = task.due_date.split('T')[0];
+      // Extract date part from due_date using Date object for better reliability
+      const taskDate = new Date(task.due_date);
+      const taskYear = taskDate.getFullYear();
+      const taskMonth = String(taskDate.getMonth() + 1).padStart(2, '0');
+      const taskDay = String(taskDate.getDate()).padStart(2, '0');
+      const taskDateString = `${taskYear}-${taskMonth}-${taskDay}`;
+      
       return taskDateString === localDateString;
     });
   };
@@ -138,7 +156,12 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     
     return events.filter(event => {
       // Extract date part from start_time (YYYY-MM-DD)
-      const eventDateString = event.start_time.split('T')[0];
+      const eventDate = new Date(event.start_time);
+      const eventYear = eventDate.getFullYear();
+      const eventMonth = String(eventDate.getMonth() + 1).padStart(2, '0');
+      const eventDay = String(eventDate.getDate()).padStart(2, '0');
+      const eventDateString = `${eventYear}-${eventMonth}-${eventDay}`;
+      
       return eventDateString === localDateString;
     });
   };
@@ -244,9 +267,13 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       const startTimePart = newEvent.startTime.split('T')[1] || '09:00';
       const endTimePart = newEvent.endTime.split('T')[1] || '10:00';
       
-      // Combine date and time
-      const startTimeIso = `${datePart}T${startTimePart}:00`;
-      const endTimeIso = `${datePart}T${endTimePart}:00`;
+      // Create proper datetime objects with timezone
+      const startDateTime = new Date(`${datePart}T${startTimePart}:00`);
+      const endDateTime = new Date(`${datePart}T${endTimePart}:00`);
+      
+      // Convert to ISO string for database storage
+      const startTimeIso = startDateTime.toISOString();
+      const endTimeIso = endDateTime.toISOString();
       
       const { data, error } = await supabase
         .from('calendar_events')
@@ -306,9 +333,13 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       const startTimePart = newReminder.startTime.split('T')[1] || '09:00';
       const endTimePart = newReminder.endTime.split('T')[1] || '09:30';
       
-      // Combine date and time
-      const startTimeIso = `${datePart}T${startTimePart}:00`;
-      const endTimeIso = `${datePart}T${endTimePart}:00`;
+      // Create proper datetime objects with timezone
+      const startDateTime = new Date(`${datePart}T${startTimePart}:00`);
+      const endDateTime = new Date(`${datePart}T${endTimePart}:00`);
+      
+      // Convert to ISO string for database storage
+      const startTimeIso = startDateTime.toISOString();
+      const endTimeIso = endDateTime.toISOString();
       
       const { data, error } = await supabase
         .from('calendar_events')
@@ -617,10 +648,12 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                                 <span>
                                   {new Date(event.start_time).toLocaleTimeString([], { 
                                     hour: '2-digit', 
-                                    minute: '2-digit' 
+                                    minute: '2-digit',
+                                    hour12: true
                                   })} - {new Date(event.end_time).toLocaleTimeString([], { 
                                     hour: '2-digit', 
-                                    minute: '2-digit' 
+                                    minute: '2-digit',
+                                    hour12: true
                                   })}
                                 </span>
                               </div>
