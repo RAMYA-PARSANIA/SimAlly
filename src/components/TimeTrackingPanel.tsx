@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, Clock, Calendar, DollarSign, Plus, Filter, Download, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Play, Pause, Square, Clock, Calendar, DollarSign, BarChart3, Plus, Filter, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -8,34 +8,49 @@ import Button from './ui/Button';
 
 interface TimeEntry {
   id: string;
-  user_id: string;
-  task_name: string;
+  task_id: string;
+  project_id: string;
   description: string;
   start_time: string;
   end_time: string | null;
   duration_minutes: number | null;
   billable: boolean;
   hourly_rate: number;
-  created_at: string;
+  task?: { title: string };
+  project?: { name: string };
+}
+
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  project_id: string;
 }
 
 const TimeTrackingPanel: React.FC = () => {
   const { user } = useAuth();
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeTimer, setActiveTimer] = useState<TimeEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<string>('');
   const [taskName, setTaskName] = useState('');
   const [description, setDescription] = useState('');
   const [hourlyRate, setHourlyRate] = useState<number>(75);
   const [billable, setBillable] = useState(true);
   const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'month'>('today');
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const timerIntervalRef = useRef<number | null>(null);
+  const [timerInterval, setTimerInterval] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
       loadTimeEntries();
+      loadProjects();
       checkActiveTimer();
     }
   }, [user, filter]);
@@ -43,19 +58,23 @@ const TimeTrackingPanel: React.FC = () => {
   useEffect(() => {
     // Cleanup timer interval on unmount
     return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
+      if (timerInterval) {
+        clearInterval(timerInterval);
       }
     };
-  }, []);
+  }, [timerInterval]);
 
   const loadTimeEntries = async () => {
     if (!user) return;
 
     try {
       let query = supabase
-        .from('time_entries')
-        .select('*')
+        .from('time_tracking')
+        .select(`
+          *,
+          task:tasks(title),
+          project:projects(name)
+        `)
         .eq('user_id', user.id)
         .order('start_time', { ascending: false });
 
@@ -91,12 +110,31 @@ const TimeTrackingPanel: React.FC = () => {
     }
   };
 
+  const loadProjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('status', 'active')
+        .order('name');
+
+      if (error) {
+        console.error('Error loading projects:', error);
+        return;
+      }
+
+      setProjects(data || []);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    }
+  };
+
   const checkActiveTimer = async () => {
     if (!user) return;
 
     try {
       const { data, error } = await supabase
-        .from('time_entries')
+        .from('time_tracking')
         .select('*')
         .eq('user_id', user.id)
         .is('end_time', null)
@@ -121,7 +159,7 @@ const TimeTrackingPanel: React.FC = () => {
           setElapsedTime(prev => prev + 1);
         }, 1000);
         
-        timerIntervalRef.current = interval;
+        setTimerInterval(interval);
       }
     } catch (error) {
       console.error('Error checking active timer:', error);
@@ -129,15 +167,56 @@ const TimeTrackingPanel: React.FC = () => {
   };
 
   const startTimer = async () => {
-    if (!user || !description.trim() || !taskName.trim()) return;
+    if (!user || !description.trim() || !selectedProject) return;
 
     try {
-      // Create the time entry
+      // First, check if we need to create a task
+      let taskId = null;
+      
+      if (taskName.trim()) {
+        // Check if a task with this name already exists for the project
+        const { data: existingTasks, error: taskError } = await supabase
+          .from('tasks')
+          .select('id')
+          .eq('title', taskName.trim())
+          .eq('project_id', selectedProject)
+          .limit(1);
+          
+        if (taskError) {
+          console.error('Error checking existing tasks:', taskError);
+        }
+        
+        if (existingTasks && existingTasks.length > 0) {
+          // Use existing task
+          taskId = existingTasks[0].id;
+        } else {
+          // Create new task
+          const { data: newTask, error: createError } = await supabase
+            .from('tasks')
+            .insert({
+              title: taskName.trim(),
+              project_id: selectedProject,
+              created_by: user.id,
+              status: 'in_progress'
+            })
+            .select()
+            .single();
+            
+          if (createError) {
+            console.error('Error creating task:', createError);
+          } else {
+            taskId = newTask.id;
+          }
+        }
+      }
+
+      // Now create the time entry
       const { data, error } = await supabase
-        .from('time_entries')
+        .from('time_tracking')
         .insert({
           user_id: user.id,
-          task_name: taskName.trim(),
+          task_id: taskId,
+          project_id: selectedProject,
           description: description.trim(),
           start_time: new Date().toISOString(),
           billable,
@@ -155,6 +234,7 @@ const TimeTrackingPanel: React.FC = () => {
       setShowCreateModal(false);
       setDescription('');
       setTaskName('');
+      setSelectedProject('');
       
       // Start timer to update elapsed time
       setElapsedTime(0);
@@ -162,7 +242,7 @@ const TimeTrackingPanel: React.FC = () => {
         setElapsedTime(prev => prev + 1);
       }, 1000);
       
-      timerIntervalRef.current = interval;
+      setTimerInterval(interval);
       
       // Reload time entries
       loadTimeEntries();
@@ -180,7 +260,7 @@ const TimeTrackingPanel: React.FC = () => {
       const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
 
       const { error } = await supabase
-        .from('time_entries')
+        .from('time_tracking')
         .update({
           end_time: endTime.toISOString(),
           duration_minutes: durationMinutes
@@ -195,9 +275,9 @@ const TimeTrackingPanel: React.FC = () => {
       setActiveTimer(null);
       
       // Clear timer interval
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        setTimerInterval(null);
       }
       
       loadTimeEntries();
@@ -211,7 +291,7 @@ const TimeTrackingPanel: React.FC = () => {
 
     try {
       const { error } = await supabase
-        .from('time_entries')
+        .from('time_tracking')
         .delete()
         .eq('id', entryId);
 
@@ -263,10 +343,11 @@ const TimeTrackingPanel: React.FC = () => {
 
   const exportTimesheet = () => {
     const csvContent = [
-      ['Date', 'Task', 'Description', 'Duration', 'Billable', 'Rate', 'Amount'].join(','),
+      ['Date', 'Project', 'Task', 'Description', 'Duration', 'Billable', 'Rate', 'Amount'].join(','),
       ...timeEntries.map(entry => [
         new Date(entry.start_time).toLocaleDateString(),
-        entry.task_name,
+        entry.project?.name || 'No Project',
+        entry.task?.title || 'No Task',
         entry.description,
         formatDuration(entry.duration_minutes),
         entry.billable ? 'Yes' : 'No',
@@ -361,7 +442,7 @@ const TimeTrackingPanel: React.FC = () => {
           <GlassCard className="p-4" hover>
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
-                <DollarSign className="w-5 h-5 text-white" />
+                <BarChart3 className="w-5 h-5 text-white" />
               </div>
               <div>
                 <p className="text-sm text-secondary">Avg. Rate</p>
@@ -386,9 +467,6 @@ const TimeTrackingPanel: React.FC = () => {
               <div>
                 <p className="font-medium text-primary">{activeTimer.description}</p>
                 <div className="flex items-center space-x-4">
-                  <p className="text-sm text-secondary">
-                    Task: {activeTimer.task_name}
-                  </p>
                   <p className="text-sm text-secondary">
                     Started at {new Date(activeTimer.start_time).toLocaleTimeString()}
                   </p>
@@ -435,7 +513,12 @@ const TimeTrackingPanel: React.FC = () => {
                       </div>
                       
                       <div className="flex items-center space-x-4 text-sm text-secondary">
-                        <span>Task: {entry.task_name}</span>
+                        {entry.project && (
+                          <span>Project: {entry.project.name}</span>
+                        )}
+                        {entry.task && (
+                          <span>Task: {entry.task.title}</span>
+                        )}
                         <span>
                           {new Date(entry.start_time).toLocaleDateString()} • 
                           {new Date(entry.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -465,7 +548,7 @@ const TimeTrackingPanel: React.FC = () => {
                           size="sm"
                           className="text-red-400 hover:text-red-300"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          Delete
                         </Button>
                       </div>
                     </div>
@@ -508,31 +591,52 @@ const TimeTrackingPanel: React.FC = () => {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-primary mb-2">
-                      Task Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={taskName}
-                      onChange={(e) => setTaskName(e.target.value)}
-                      placeholder="What task are you working on?"
-                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-primary mb-2">
-                      Description <span className="text-red-500">*</span>
+                      Description
                     </label>
                     <input
                       type="text"
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
-                      placeholder="What are you working on specifically?"
+                      placeholder="What are you working on?"
                       className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                       autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Project <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedProject}
+                      onChange={(e) => setSelectedProject(e.target.value)}
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                      required
+                    >
+                      <option value="">Select a project</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Task <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={taskName}
+                      onChange={(e) => setTaskName(e.target.value)}
+                      placeholder="Enter task name"
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
                       required
                     />
+                    <p className="text-xs text-secondary mt-1">
+                      Enter a task name. If it doesn't exist, a new task will be created.
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -577,7 +681,7 @@ const TimeTrackingPanel: React.FC = () => {
                     onClick={startTimer}
                     variant="premium"
                     className="flex-1 flex items-center justify-center space-x-2"
-                    disabled={!description.trim() || !taskName.trim()}
+                    disabled={!description.trim() || !selectedProject || !taskName.trim()}
                   >
                     <Play className="w-4 h-4" />
                     <span>Start Timer</span>

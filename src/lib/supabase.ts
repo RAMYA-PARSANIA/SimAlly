@@ -92,10 +92,40 @@ export interface CalendarEvent {
   created_at: string;
 }
 
-export interface TimeEntry {
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  start_date: string;
+  end_date: string;
+  budget: number;
+  spent_budget: number;
+  progress_percentage: number;
+  project_manager_id: string;
+  department_id: string;
+  client_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  description?: string;
+  head_id?: string;
+  parent_department_id?: string;
+  budget?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimeTracking {
   id: string;
   user_id: string;
-  task_name: string;
+  task_id?: string;
+  project_id?: string;
   description: string;
   start_time: string;
   end_time?: string;
@@ -130,6 +160,60 @@ export interface FileAttachment {
   message_id?: string;
   is_public: boolean;
   download_count: number;
+  created_at: string;
+}
+
+export interface ProjectMilestone {
+  id: string;
+  project_id: string;
+  name: string;
+  description?: string;
+  due_date: string;
+  completed_date?: string;
+  status: 'pending' | 'completed' | 'overdue';
+  created_by: string;
+  created_at: string;
+}
+
+export interface TaskDependency {
+  id: string;
+  task_id: string;
+  depends_on_task_id: string;
+  dependency_type: 'finish_to_start' | 'start_to_start' | 'finish_to_finish' | 'start_to_finish';
+  created_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  task_id: string;
+  user_id: string;
+  content: string;
+  parent_comment_id?: string;
+  created_at: string;
+  updated_at: string;
+  user?: Profile;
+}
+
+export interface WorkspaceAnalytics {
+  id: string;
+  metric_name: string;
+  metric_value: number;
+  dimensions: any;
+  date_recorded: string;
+  created_at: string;
+}
+
+export interface MeetingRecording {
+  id: string;
+  meeting_room: string;
+  title?: string;
+  recording_url?: string;
+  transcript?: string;
+  duration_minutes?: number;
+  participants?: string[];
+  host_id?: string;
+  summary?: string;
+  action_items?: string[];
   created_at: string;
 }
 
@@ -212,7 +296,8 @@ export const workspaceAPI = {
           assignments:task_assignments(
             user_id,
             user:profiles(*)
-          )
+          ),
+          project:projects(name)
         `)
         .eq('created_by', userId);
 
@@ -240,7 +325,8 @@ export const workspaceAPI = {
             assignments:task_assignments(
               user_id,
               user:profiles(*)
-            )
+            ),
+            project:projects(name)
           `)
           .in('id', taskIds);
 
@@ -266,12 +352,42 @@ export const workspaceAPI = {
     }
   },
 
-  // Get time entries for user
-  async getUserTimeEntries(userId: string, period?: string): Promise<TimeEntry[]> {
+  // Get projects for user
+  async getUserProjects(userId: string): Promise<Project[]> {
+    try {
+      // Get projects where user is a member
+      const { data: memberProjects, error: memberError } = await supabase
+        .from('projects')
+        .select(`
+          *,
+          project_members!inner(user_id, role),
+          department:departments(name),
+          project_manager:profiles!project_manager_id(full_name)
+        `)
+        .eq('project_members.user_id', userId);
+
+      if (memberError) {
+        console.error('Error fetching member projects:', memberError);
+        return [];
+      }
+
+      return memberProjects || [];
+    } catch (error) {
+      console.error('Error in getUserProjects:', error);
+      return [];
+    }
+  },
+
+  // Get time tracking entries for user
+  async getUserTimeTracking(userId: string, period?: string): Promise<TimeTracking[]> {
     try {
       let query = supabase
-        .from('time_entries')
-        .select('*')
+        .from('time_tracking')
+        .select(`
+          *,
+          task:tasks(title),
+          project:projects(name)
+        `)
         .eq('user_id', userId)
         .order('start_time', { ascending: false });
 
@@ -300,13 +416,13 @@ export const workspaceAPI = {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching time entries:', error);
+        console.error('Error fetching time tracking:', error);
         return [];
       }
 
       return data || [];
     } catch (error) {
-      console.error('Error in getUserTimeEntries:', error);
+      console.error('Error in getUserTimeTracking:', error);
       return [];
     }
   },
@@ -379,16 +495,15 @@ export const workspaceAPI = {
       .subscribe();
   },
 
-  subscribeToTimeEntries(userId: string, callback: (payload: any) => void) {
+  subscribeToProjects(userId: string, callback: (payload: any) => void) {
     return supabase
-      .channel(`time_entries:${userId}`)
+      .channel(`projects:${userId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'time_entries',
-          filter: `user_id=eq.${userId}`,
+          table: 'projects',
         },
         callback
       )
@@ -404,6 +519,22 @@ export const workspaceAPI = {
           event: '*',
           schema: 'public',
           table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        callback
+      )
+      .subscribe();
+  },
+
+  subscribeToTimeTracking(userId: string, callback: (payload: any) => void) {
+    return supabase
+      .channel(`time_tracking:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'time_tracking',
           filter: `user_id=eq.${userId}`,
         },
         callback
