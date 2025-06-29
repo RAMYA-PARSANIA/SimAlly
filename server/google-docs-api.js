@@ -299,16 +299,42 @@ router.post('/create-slides', async (req, res) => {
       });
     }
     
-    // Step 2: Get the presentation to find placeholder IDs
+    // Step 2: Delete the default blank slide that was created automatically
+    // Get the current presentation to find the default slide
+    let currentPresentation = await slides.presentations.get({
+      presentationId,
+    });
+    
+    // Find and delete the default slide (usually the first one without our custom objectId)
+    const defaultSlide = currentPresentation.data.slides.find(slide => 
+      !slide.objectId.startsWith('slide_')
+    );
+    
+    if (defaultSlide) {
+      await slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: {
+          requests: [{
+            deleteObject: {
+              objectId: defaultSlide.objectId
+            }
+          }]
+        }
+      });
+    }
+    
+    // Step 3: Get the presentation again to find placeholder IDs after deletion
     const presentation = await slides.presentations.get({
       presentationId,
     });
     
-    // Step 3: Insert text into placeholders
+    // Step 4: Insert text into placeholders
     const textRequests = [];
     
+    // Find slides with our custom objectIds
     slidesContent.slides.forEach((slide, index) => {
-      const slideObject = presentation.data.slides[index + 1]; // +1 because index 0 is the title slide created by default
+      const slideObjectId = `slide_${index}`;
+      const slideObject = presentation.data.slides.find(s => s.objectId === slideObjectId);
       
       if (slideObject && slideObject.pageElements) {
         slideObject.pageElements.forEach((element) => {
