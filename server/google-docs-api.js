@@ -63,10 +63,14 @@ async function generateDocContent(prompt) {
       }
       
       Follow Google Docs API structure. Include proper formatting, headings, and organization.
-      Only respond with valid JSON.
+      Only respond with valid JSON - no markdown formatting or code blocks.
     `);
     
-    const responseText = result.response.text();
+    let responseText = result.response.text();
+    
+    // Clean up the response text - remove markdown code blocks if present
+    responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+    
     return JSON.parse(responseText);
   } catch (error) {
     console.error('Error generating doc content:', error);
@@ -85,29 +89,32 @@ async function generateSlidesContent(prompt) {
         "title": "Presentation Title",
         "slides": [
           {
-            "layoutId": "TITLE",
+            "layout": "TITLE",
             "elements": {
-              "title": "Slide Title",
-              "subtitle": "Optional subtitle"
+              "TITLE": "Slide Title",
+              "SUBTITLE": "Optional subtitle"
             }
           },
           {
-            "layoutId": "TITLE_AND_BODY",
+            "layout": 'TITLE_AND_BODY',
             "elements": {
-              "title": "Slide Title",
-              "body": "• Bullet point 1\\n• Bullet point 2\\n• Bullet point 3"
+              "TITLE": "Slide Title",
+              "BODY": "• Bullet point 1\\n• Bullet point 2\\n• Bullet point 3"
             }
           }
-          // More slides as needed
         ]
       }
       
-      Use appropriate slide layouts (TITLE, TITLE_AND_BODY, SECTION_HEADER, etc.)
-      Follow Google Slides API structure. Include proper formatting and organization.
-      Only respond with valid JSON.
+      Use placeholder types (TITLE, BODY, SUBTITLE, etc.) as keys in the "elements" object.
+      Use appropriate slide layouts from the Google Slides API (e.g., TITLE, TITLE_AND_BODY, SECTION_HEADER, BLANK).
+      Only respond with valid JSON - no markdown formatting or code blocks.
     `);
     
-    const responseText = result.response.text();
+    let responseText = result.response.text();
+    
+    // Clean up the response text - remove markdown code blocks if present
+    responseText = responseText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+    
     return JSON.parse(responseText);
   } catch (error) {
     console.error('Error generating slides content:', error);
@@ -204,7 +211,8 @@ router.post('/create-doc', async (req, res) => {
       document: {
         id: documentId,
         title: docContent.title,
-        url: fileInfo.data.webViewLink
+        url: fileInfo.data.webViewLink,
+        downloadUrl: `${process.env.BACKEND_URL || 'http://localhost:8000'}/api/google/docs/download-doc/${documentId}?userId=${userId}`
       }
     });
   } catch (error) {
@@ -257,63 +265,86 @@ router.post('/create-slides', async (req, res) => {
     
     const presentationId = createResponse.data.presentationId;
     
-    // Prepare requests to add slides
-    const requests = [];
+    // Step 1: Create all slides first
+    const createSlideRequests = [];
     
-    // Process slides
     slidesContent.slides.forEach((slide, index) => {
-      // Create a new slide
-      const createSlideRequest = {
+      createSlideRequests.push({
         createSlide: {
           objectId: `slide_${index}`,
           slideLayoutReference: {
-            predefinedLayout: slide.layoutId
+            predefinedLayout: slide.layout,
           },
-          placeholderIdMappings: []
-        }
-      };
-      requests.push(createSlideRequest);
-      
-      // Add content to slide based on layout
-      if (slide.layoutId === 'TITLE' || slide.layoutId === 'TITLE_AND_BODY' || slide.layoutId === 'SECTION_HEADER') {
-        if (slide.elements.title) {
-          requests.push({
-            insertText: {
-              objectId: `slide_${index}`,
-              insertionIndex: 0,
-              text: slide.elements.title
-            }
-          });
-        }
-        
-        if (slide.elements.subtitle) {
-          requests.push({
-            insertText: {
-              objectId: `slide_${index}`,
-              insertionIndex: 0,
-              text: slide.elements.subtitle
-            }
-          });
-        }
-        
-        if (slide.elements.body) {
-          requests.push({
-            insertText: {
-              objectId: `slide_${index}`,
-              insertionIndex: 0,
-              text: slide.elements.body
-            }
-          });
-        }
-      }
+        },
+      });
     });
     
-    // Update the presentation with content
-    if (requests.length > 0) {
+    // Create slides first
+    if (createSlideRequests.length > 0) {
       await slides.presentations.batchUpdate({
         presentationId,
         requestBody: {
-          requests
+          requests: createSlideRequests
+        }
+      });
+    }
+    
+    // Step 2: Get the presentation to find placeholder IDs
+    const presentation = await slides.presentations.get({
+      presentationId,
+    });
+    
+    // Step 3: Insert text into placeholders
+    const textRequests = [];
+    
+    slidesContent.slides.forEach((slide, index) => {
+      const slideObject = presentation.data.slides[index + 1]; // +1 because index 0 is the title slide created by default
+      
+      if (slideObject && slideObject.pageElements) {
+        slideObject.pageElements.forEach((element) => {
+          if (element.shape && element.shape.placeholder) {
+            const placeholderType = element.shape.placeholder.type;
+            
+            if (placeholderType === 'TITLE' && slide.elements.TITLE) {
+              textRequests.push({
+                insertText: {
+                  objectId: element.objectId,
+                  text: slide.elements.TITLE,
+                },
+              });
+            } else if (placeholderType === 'SUBTITLE' && slide.elements.SUBTITLE) {
+              textRequests.push({
+                insertText: {
+                  objectId: element.objectId,
+                  text: slide.elements.SUBTITLE,
+                },
+              });
+            } else if (placeholderType === 'BODY' && slide.elements.BODY) {
+              textRequests.push({
+                insertText: {
+                  objectId: element.objectId,
+                  text: slide.elements.BODY,
+                },
+              });
+            } else if (placeholderType === 'CENTERED_TITLE' && slide.elements.TITLE) {
+              textRequests.push({
+                insertText: {
+                  objectId: element.objectId,
+                  text: slide.elements.TITLE,
+                },
+              });
+            }
+          }
+        });
+      }
+    });
+    
+    // Update the presentation with text content
+    if (textRequests.length > 0) {
+      await slides.presentations.batchUpdate({
+        presentationId,
+        requestBody: {
+          requests: textRequests
         }
       });
     }
@@ -329,7 +360,8 @@ router.post('/create-slides', async (req, res) => {
       presentation: {
         id: presentationId,
         title: slidesContent.title,
-        url: fileInfo.data.webViewLink
+        url: fileInfo.data.webViewLink,
+        downloadUrl: `${process.env.BACKEND_URL || 'http://localhost:8000'}/api/google/docs/download-slides/${presentationId}?userId=${userId}`
       }
     });
   } catch (error) {
@@ -433,6 +465,122 @@ router.get('/slides', async (req, res) => {
   } catch (error) {
     console.error('Error fetching Google Slides:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch presentations' });
+  }
+});
+
+// Download a Google Slides presentation as PowerPoint
+router.get('/download-slides/:presentationId', async (req, res) => {
+  const { presentationId } = req.params;
+  const userId = req.query.userId;
+  
+  if (!userId || !presentationId) {
+    return res.status(400).json({ success: false, error: 'User ID and presentation ID are required' });
+  }
+  
+  try {
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving tokens:', tokensError || tokensData.error);
+      return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+    }
+    
+    // Set up OAuth client
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+    
+    // Create Google Drive client
+    const drive = google.drive({ version: 'v3', auth: oAuth2Client });
+    
+    // Get presentation metadata
+    const fileInfo = await drive.files.get({
+      fileId: presentationId,
+      fields: 'name'
+    });
+    
+    // Export as PowerPoint (.pptx)
+    const exportResponse = await drive.files.export({
+      fileId: presentationId,
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    }, { responseType: 'stream' });
+    
+    // Set response headers for download
+    const filename = `${fileInfo.data.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pptx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Pipe the stream to the response
+    exportResponse.data.pipe(res);
+    
+  } catch (error) {
+    console.error('Error downloading Google Slides presentation:', error);
+    res.status(500).json({ success: false, error: 'Failed to download presentation' });
+  }
+});
+
+// Download a Google Doc as Word document
+router.get('/download-doc/:documentId', async (req, res) => {
+  const { documentId } = req.params;
+  const userId = req.query.userId;
+  
+  if (!userId || !documentId) {
+    return res.status(400).json({ success: false, error: 'User ID and document ID are required' });
+  }
+  
+  try {
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      console.error('Error retrieving tokens:', tokensError || tokensData.error);
+      return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+    }
+    
+    // Set up OAuth client
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type,
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+    
+    // Create Google Drive client
+    const drive = google.drive({ version: 'v3', auth: oAuth2Client });
+    
+    // Get document metadata
+    const fileInfo = await drive.files.get({
+      fileId: documentId,
+      fields: 'name'
+    });
+    
+    // Export as Word document (.docx)
+    const exportResponse = await drive.files.export({
+      fileId: documentId,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    }, { responseType: 'stream' });
+    
+    // Set response headers for download
+    const filename = `${fileInfo.data.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.docx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Pipe the stream to the response
+    exportResponse.data.pipe(res);
+    
+  } catch (error) {
+    console.error('Error downloading Google Doc:', error);
+    res.status(500).json({ success: false, error: 'Failed to download document' });
   }
 });
 

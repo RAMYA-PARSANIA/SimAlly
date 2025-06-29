@@ -554,7 +554,14 @@ const AssistantPage: React.FC = () => {
           isUser ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/30' : 'border-gold-border'
         }`}>
           {/* Message content */}
-          <p className="text-primary whitespace-pre-wrap mb-2">{message.content}</p>
+          {isUser ? (
+            <p className="text-primary whitespace-pre-wrap mb-2">{message.content}</p>
+          ) : (
+            <div 
+              className="text-primary whitespace-pre-wrap mb-2"
+              dangerouslySetInnerHTML={{ __html: message.content }}
+            />
+          )}
 
           {/* Endpoint results */}
           {message.type === 'endpoint_result' && message.data && (
