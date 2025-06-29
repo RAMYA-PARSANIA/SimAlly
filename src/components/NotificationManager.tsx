@@ -51,6 +51,8 @@ const NotificationManager: React.FC = () => {
       const tomorrowStr = tomorrow.toISOString();
       const dayAfterTomorrowStr = dayAfterTomorrow.toISOString();
       
+      console.log(`Checking for tasks due between ${tomorrowStr} and ${dayAfterTomorrowStr}`);
+      
       // Get tasks due tomorrow
       const { data: dueTasks, error: taskError } = await supabase
         .from('tasks')
@@ -63,6 +65,8 @@ const NotificationManager: React.FC = () => {
       if (taskError) {
         console.error('Error checking for due tasks:', taskError);
       } else if (dueTasks && dueTasks.length > 0) {
+        console.log(`Found ${dueTasks.length} tasks due tomorrow:`, dueTasks);
+        
         // Create notifications for tasks due tomorrow
         const taskNotifications = dueTasks
           .filter(task => !notifiedItems.has(`task-${task.id}-tomorrow`))
@@ -94,6 +98,8 @@ const NotificationManager: React.FC = () => {
       const nowIso = now.toISOString();
       const oneHourLaterIso = oneHourLater.toISOString();
       
+      console.log(`Checking for reminders between ${nowIso} and ${oneHourLaterIso}`);
+      
       const { data: upcomingReminders, error: reminderError } = await supabase
         .from('calendar_events')
         .select('*')
@@ -105,6 +111,8 @@ const NotificationManager: React.FC = () => {
       if (reminderError) {
         console.error('Error checking for upcoming reminders:', reminderError);
       } else if (upcomingReminders && upcomingReminders.length > 0) {
+        console.log(`Found ${upcomingReminders.length} upcoming reminders:`, upcomingReminders);
+        
         // Create notifications for upcoming reminders
         const reminderNotifications = upcomingReminders
           .filter(reminder => !notifiedItems.has(`reminder-${reminder.id}`))
@@ -136,6 +144,8 @@ const NotificationManager: React.FC = () => {
       }
       
       // Check for events starting within the next hour
+      console.log(`Checking for events between ${nowIso} and ${oneHourLaterIso}`);
+      
       const { data: upcomingEvents, error: eventError } = await supabase
         .from('calendar_events')
         .select('*')
@@ -147,6 +157,8 @@ const NotificationManager: React.FC = () => {
       if (eventError) {
         console.error('Error checking for upcoming events:', eventError);
       } else if (upcomingEvents && upcomingEvents.length > 0) {
+        console.log(`Found ${upcomingEvents.length} upcoming events:`, upcomingEvents);
+        
         // Create notifications for upcoming events
         const eventNotifications = upcomingEvents
           .filter(event => !notifiedItems.has(`event-${event.id}`))
