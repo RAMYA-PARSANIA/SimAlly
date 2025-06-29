@@ -1,19 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Clock, CheckSquare } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { BarChart3, PieChart, TrendingUp, Users, Clock, DollarSign, Target, Activity, Calendar, FileText, Download, RefreshCw, CheckSquare, Plus, Bell, X, Info } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, type Task, type CalendarEvent } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import GlassCard from './ui/GlassCard';
 import Button from './ui/Button';
-const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const VITE_API_URL = import.meta.env.VITE_API_URL;
-const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
-const VITE_APP_URL = import.meta.env.VITE_APP_URL;
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 
 interface CalendarPanelProps {
   tasks: Task[];
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  due_date?: string;
+  created_by: string;
+  created_at: string;
+}
+
+interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  start_time: string;
+  end_time: string;
+  user_id: string;
+  task_id?: string;
+  created_at: string;
+  is_reminder?: boolean;
 }
 
 const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
@@ -22,6 +39,16 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showDateModal, setShowDateModal] = useState(false);
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
+  const [newEvent, setNewEvent] = useState({
+    title: '',
+    description: '',
+    startTime: '',
+    endTime: '',
+    isReminder: false
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -140,22 +167,99 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
     setShowDateModal(true);
   };
 
-  const getUpcomingTasks = () => {
-    const today = new Date();
-    const twoDaysFromNow = new Date(today);
-    twoDaysFromNow.setDate(today.getDate() + 2);
+  const handleAddEvent = () => {
+    if (!selectedDate) return;
     
-    return tasks.filter(task => {
-      if (!task.due_date || task.status === 'completed') return false;
+    // Set default times for the new event
+    const defaultStartTime = new Date(selectedDate);
+    defaultStartTime.setHours(9, 0, 0, 0);
+    
+    const defaultEndTime = new Date(selectedDate);
+    defaultEndTime.setHours(10, 0, 0, 0);
+    
+    setNewEvent({
+      title: '',
+      description: '',
+      startTime: defaultStartTime.toISOString().slice(0, 16),
+      endTime: defaultEndTime.toISOString().slice(0, 16),
+      isReminder: false
+    });
+    
+    setShowAddEventModal(true);
+  };
+
+  const handleCreateEvent = async () => {
+    if (!user || !newEvent.title || !newEvent.startTime || !newEvent.endTime) {
+      setError('Please fill in all required fields');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .insert({
+          title: newEvent.title,
+          description: newEvent.description || null,
+          start_time: newEvent.startTime,
+          end_time: newEvent.endTime,
+          user_id: user.id,
+          is_reminder: newEvent.isReminder
+        })
+        .select()
+        .single();
       
-      const dueDate = new Date(task.due_date);
-      return dueDate >= today && dueDate <= twoDaysFromNow;
-    }).sort((a, b) => new Date(a.due_date!).getTime() - new Date(b.due_date!).getTime());
+      if (error) {
+        throw error;
+      }
+      
+      // Reload events
+      await loadEvents();
+      
+      // Close modals
+      setShowAddEventModal(false);
+      
+      // Reset form
+      setNewEvent({
+        title: '',
+        description: '',
+        startTime: '',
+        endTime: '',
+        isReminder: false
+      });
+    } catch (error: any) {
+      console.error('Error creating event:', error);
+      setError(error.message || 'Failed to create event');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('Are you sure you want to delete this event?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventId);
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Reload events
+      await loadEvents();
+    } catch (error: any) {
+      console.error('Error deleting event:', error);
+      alert('Failed to delete event: ' + error.message);
+    }
   };
 
   const days = getDaysInMonth(currentDate);
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const upcomingTasks = getUpcomingTasks();
 
   return (
     <div className="flex-1 flex flex-col h-full">
@@ -173,7 +277,9 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 size="sm"
                 className="p-2"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
               </Button>
               
               <h3 className="text-lg font-semibold text-primary min-w-[200px] text-center">
@@ -186,7 +292,9 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 size="sm"
                 className="p-2"
               >
-                <ChevronRight className="w-4 h-4" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
               </Button>
             </div>
 
@@ -256,10 +364,18 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   {dayEvents.slice(0, 2).map((event) => (
                     <div
                       key={event.id}
-                      className="p-1 rounded text-xs bg-green-500/20 text-green-400 border border-green-500/30 truncate"
-                      title={`Event: ${event.title}`}
+                      className={`p-1 rounded text-xs ${
+                        event.is_reminder 
+                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' 
+                          : 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      } truncate`}
+                      title={`${event.is_reminder ? 'Reminder' : 'Event'}: ${event.title}`}
                     >
-                      <Clock className="w-3 h-3 inline mr-1" />
+                      {event.is_reminder ? (
+                        <Bell className="w-3 h-3 inline mr-1" />
+                      ) : (
+                        <Clock className="w-3 h-3 inline mr-1" />
+                      )}
                       {event.title}
                     </div>
                   ))}
@@ -274,37 +390,6 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
               </motion.div>
             );
           })}
-        </div>
-      </div>
-
-      {/* Upcoming Tasks Sidebar */}
-      <div className="w-80 glass-panel border-l silver-border p-4">
-        <h3 className="font-bold text-primary mb-4 flex items-center justify-between">
-          <span>Upcoming Tasks (Next 2 Days)</span>
-          <span className="text-sm text-secondary">{upcomingTasks.length} tasks</span>
-        </h3>
-        
-        <div className="space-y-3">
-          {upcomingTasks.map((task) => (
-            <GlassCard key={task.id} className="p-3" hover>
-              <div className="flex items-start space-x-3">
-                <CheckSquare className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-primary truncate">{task.title}</h4>
-                  <p className="text-xs text-secondary">
-                    Due: {formatDateForDisplay(task.due_date!)}
-                  </p>
-                </div>
-              </div>
-            </GlassCard>
-          ))}
-
-          {upcomingTasks.length === 0 && (
-            <div className="text-center py-8">
-              <CheckSquare className="w-8 h-8 text-secondary mx-auto mb-2 opacity-50" />
-              <p className="text-secondary text-sm">No upcoming tasks in the next 2 days</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -333,6 +418,18 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                 >
                   ×
                 </button>
+              </div>
+              
+              <div className="flex justify-end mb-4">
+                <Button
+                  onClick={handleAddEvent}
+                  variant="premium"
+                  size="sm"
+                  className="flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Event</span>
+                </Button>
               </div>
               
               {/* Tasks for this date */}
@@ -376,26 +473,51 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
               <div>
                 <h4 className="font-medium text-primary mb-3 flex items-center">
                   <Clock className="w-4 h-4 mr-2" />
-                  Events
+                  Events & Reminders
                 </h4>
                 <div className="space-y-2">
                   {getEventsForDate(selectedDate).length > 0 ? (
                     getEventsForDate(selectedDate).map(event => (
-                      <GlassCard key={event.id} className="p-3" hover>
-                        <h5 className="font-medium text-primary">{event.title}</h5>
-                        {event.description && (
-                          <p className="text-xs text-secondary mt-1">{event.description}</p>
-                        )}
-                        <div className="flex items-center space-x-2 mt-1 text-xs text-secondary">
-                          <span>
-                            {new Date(event.start_time).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })} - {new Date(event.end_time).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
-                          </span>
+                      <GlassCard key={event.id} className="p-3 group" hover>
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-3">
+                            <div className={`w-4 h-4 rounded-full mt-0.5 flex-shrink-0 ${
+                              event.is_reminder ? 'bg-yellow-500' : 'bg-green-500'
+                            }`} />
+                            <div className="flex-1">
+                              <h5 className="font-medium text-primary flex items-center">
+                                {event.title}
+                                {event.is_reminder && (
+                                  <span className="ml-2 text-xs bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full">
+                                    Reminder
+                                  </span>
+                                )}
+                              </h5>
+                              {event.description && (
+                                <p className="text-xs text-secondary mt-1">{event.description}</p>
+                              )}
+                              <div className="flex items-center space-x-2 mt-1 text-xs text-secondary">
+                                <span>
+                                  {new Date(event.start_time).toLocaleTimeString([], { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                  })} - {new Date(event.end_time).toLocaleTimeString([], { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                  })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteEvent(event.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-500"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
                       </GlassCard>
                     ))
@@ -411,6 +533,132 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
                   variant="secondary"
                 >
                   Close
+                </Button>
+              </div>
+            </GlassCard>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Add Event Modal */}
+      {showAddEventModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="w-full max-w-md"
+          >
+            <GlassCard className="p-6" goldBorder>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold gradient-gold-silver">
+                  {newEvent.isReminder ? 'Add Reminder' : 'Add Event'}
+                </h3>
+                <button
+                  onClick={() => setShowAddEventModal(false)}
+                  className="text-secondary hover:text-primary"
+                >
+                  ×
+                </button>
+              </div>
+              
+              {error && (
+                <div className="mb-4 p-3 glass-panel rounded-lg bg-red-500/10 border-red-500/30">
+                  <p className="text-red-400 text-sm flex items-center">
+                    <Info className="w-4 h-4 mr-2" />
+                    {error}
+                  </p>
+                </div>
+              )}
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newEvent.title}
+                    onChange={(e) => setNewEvent({...newEvent, title: e.target.value})}
+                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    placeholder="Enter event title"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-primary mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    value={newEvent.description}
+                    onChange={(e) => setNewEvent({...newEvent, description: e.target.value})}
+                    className="w-full glass-panel rounded-lg px-4 py-3 text-primary placeholder-secondary focus:outline-none focus:ring-2 focus:ring-yellow-500 resize-none"
+                    placeholder="Enter event description"
+                    rows={3}
+                  />
+                </div>
+                
+                <div className="flex items-center space-x-4">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      Start Time <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={newEvent.startTime}
+                      onChange={(e) => setNewEvent({...newEvent, startTime: e.target.value})}
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-primary mb-2">
+                      End Time <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={newEvent.endTime}
+                      onChange={(e) => setNewEvent({...newEvent, endTime: e.target.value})}
+                      className="w-full glass-panel rounded-lg px-4 py-3 text-primary focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="isReminder"
+                    checked={newEvent.isReminder}
+                    onChange={(e) => setNewEvent({...newEvent, isReminder: e.target.checked})}
+                    className="rounded border-gray-300 text-yellow-500 focus:ring-yellow-500"
+                  />
+                  <label htmlFor="isReminder" className="text-sm text-primary">
+                    This is a reminder
+                  </label>
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 mt-6">
+                <Button
+                  onClick={() => setShowAddEventModal(false)}
+                  variant="secondary"
+                  disabled={loading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleCreateEvent}
+                  variant="premium"
+                  disabled={loading || !newEvent.title || !newEvent.startTime || !newEvent.endTime}
+                >
+                  {loading ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Creating...</span>
+                    </div>
+                  ) : (
+                    'Create'
+                  )}
                 </Button>
               </div>
             </GlassCard>
