@@ -98,16 +98,16 @@ const GAME_CONFIGS = {
   mentalHealth: {
     persona_id: process.env.MENTAL_HEALTH_PERSONA_ID,
     replica_id: process.env.MENTAL_HEALTH_REPLICA_ID,
-    conversation_name: "Mental Health Professional",
-    conversational_context: "You are a compassionate mental health professional. Your role is to provide emotional support, guidance, and coping strategies for common mental health concerns. You should be empathetic, patient, and non-judgmental. Remember to emphasize that you're an AI and not a replacement for a licensed therapist. For serious concerns, encourage seeking professional help. Focus on active listening, validation, and providing evidence-based suggestions for managing stress, anxiety, depression, and other common challenges.",
-    custom_greeting: "Hello, I'm here to provide support and guidance for your emotional and mental wellbeing. While I'm not a replacement for a licensed therapist, I can offer a safe space to discuss your concerns and share helpful strategies. How are you feeling today?"
+    conversation_name: "Mental Health Support Session",
+    conversational_context: "You are a compassionate mental health support specialist conducting a private counseling session. Your role is to provide emotional support, guidance, and evidence-based coping strategies for mental health concerns. You should be empathetic, patient, and non-judgmental. This is a professional therapeutic environment, not a game. Remember to emphasize that you're an AI-powered support system and not a replacement for a licensed therapist. For serious concerns, encourage seeking professional help. Focus on active listening, validation, and providing helpful strategies for managing stress, anxiety, depression, and other mental health challenges.",
+    custom_greeting: "Hello, and welcome to your mental health support session. I'm here to provide professional guidance and support for your emotional and mental wellbeing. This is a safe, confidential space where we can discuss your concerns and explore helpful strategies together. While I'm an AI-powered support system and not a replacement for a licensed therapist, I'm here to listen and help. How are you feeling today, and what would you like to focus on in our session?"
   },
   legalAdvice: {
     persona_id: process.env.LEGAL_ADVICE_PERSONA_ID,
     replica_id: process.env.LEGAL_ADVICE_REPLICA_ID,
-    conversation_name: "Legal Advisor",
-    conversational_context: "You are a knowledgeable legal advisor specializing in business law. Your role is to provide general legal information and guidance on common business legal matters. You should be clear, precise, and professional. Always emphasize that you're providing general information, not legal advice, and that for specific legal matters, they should consult with a licensed attorney in their jurisdiction. Focus on explaining legal concepts, outlining potential options, and helping users understand basic legal frameworks for business operations, contracts, intellectual property, and compliance issues.",
-    custom_greeting: "Welcome. I'm here to provide general legal information for your business questions. While I can help explain legal concepts and outline potential considerations, please remember I'm not providing legal advice, and for specific matters, you should consult with a licensed attorney in your jurisdiction. How can I assist with your business legal questions today?"
+    conversation_name: "Legal Consultation Session",
+    conversational_context: "You are a knowledgeable legal advisor conducting a professional business law consultation. Your role is to provide general legal information and guidance on common business legal matters during this consultation session. You should be clear, precise, and professional. This is a formal legal consultation, not a game or casual interaction. Always emphasize that you're providing general legal information, not formal legal advice, and that for specific legal matters, they should consult with a licensed attorney in their jurisdiction. Focus on explaining legal concepts clearly, outlining potential options, and helping users understand basic legal frameworks for business operations, contracts, intellectual property, and compliance issues.",
+    custom_greeting: "Welcome to your legal consultation session. I'm here to provide general legal information and guidance for your business questions. This is a professional consultation where we can discuss legal concepts and explore your options. Please remember that I'm providing general legal information, not formal legal advice, and for specific legal matters, you should consult with a licensed attorney in your jurisdiction. What business legal matters would you like to discuss today?"
   }
 };
 
@@ -121,64 +121,96 @@ app.use('/api/google/docs', googleDocsRoutes);
 
 // Generic conversation creation endpoint
 const createConversation = async (gameType, userId) => {
-  const config = GAME_CONFIGS[gameType];
-  if (!config) {
-    throw new Error('Invalid game type');
-  }
-
-  const payload = {
-    replica_id: config.replica_id,
-    persona_id: config.persona_id,
-    callback_url: "https://yourwebsite.com/webhook",
-    conversation_name: config.conversation_name,
-    conversational_context: config.conversational_context,
-    custom_greeting: config.custom_greeting,
-    properties: {
-      max_call_duration: 3600,
-      participant_left_timeout: 60,
-      participant_absent_timeout: 300,
-      enable_recording: true,
-      enable_closed_captions: true,
-      apply_greenscreen: false,
-      language: "english",
-      recording_s3_bucket_name: "conversation-recordings",
-      recording_s3_bucket_region: "us-east-1",
-      aws_assume_role_arn: ""
+  try {
+    const config = GAME_CONFIGS[gameType];
+    if (!config) {
+      throw new Error(`Invalid game type: ${gameType}`);
     }
-  };
 
-  const response = await fetch('https://tavusapi.com/v2/conversations', {
-    method: 'POST',
-    headers: {
-      'x-api-key': TAVUS_API_KEY,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json();
-  //console.log(`Tavus API response for ${gameType}:`, response.status, data);
-
-  if (response.ok) {
-    const conversationId = data.conversation_id;
-    const conversationUrl = data.conversation_url;
+    // Validate required environment variables
+    if (!TAVUS_API_KEY) {
+      throw new Error('TAVUS_API_KEY environment variable is not set');
+    }
     
-    // Store conversation ID for this user
-    activeConversations.set(userId, {
-      conversation_id: conversationId,
-      game_type: gameType,
-      created_at: new Date().toISOString()
-    });
+    if (!config.replica_id) {
+      throw new Error(`Missing replica_id for ${gameType}. Check environment variable.`);
+    }
     
-    return {
-      success: true,
-      conversation_id: conversationId,
-      conversation_url: conversationUrl,
-      user_id: userId,
-      game_type: gameType
+    if (!config.persona_id) {
+      throw new Error(`Missing persona_id for ${gameType}. Check environment variable.`);
+    }
+
+    console.log(`[TAVUS] Creating ${gameType} conversation for user ${userId}`);
+    console.log(`[TAVUS] Using replica_id: ${config.replica_id}`);
+    console.log(`[TAVUS] Using persona_id: ${config.persona_id}`);
+
+    const payload = {
+      replica_id: config.replica_id,
+      persona_id: config.persona_id,
+      callback_url: "https://yourwebsite.com/webhook",
+      conversation_name: config.conversation_name,
+      conversational_context: config.conversational_context,
+      custom_greeting: config.custom_greeting,
+      properties: {
+        max_call_duration: gameType === 'mentalHealth' || gameType === 'legalAdvice' ? 5400 : 3600, // 90 minutes for professional services
+        participant_left_timeout: 120, // More time for professional services
+        participant_absent_timeout: 600, // 10 minutes for professional services
+        enable_recording: false, // Privacy for professional services
+        enable_closed_captions: true,
+        apply_greenscreen: false,
+        language: "english",
+        recording_s3_bucket_name: gameType === 'mentalHealth' || gameType === 'legalAdvice' ? "" : "conversation-recordings",
+        recording_s3_bucket_region: "us-east-1",
+        aws_assume_role_arn: ""
+      }
     };
-  } else {
-    throw new Error(data.error || 'Failed to create conversation');
+
+    console.log(`[TAVUS] Sending request to Tavus API...`);
+
+    const response = await fetch('https://tavusapi.com/v2/conversations', {
+      method: 'POST',
+      headers: {
+        'x-api-key': TAVUS_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    console.log(`[TAVUS] API response for ${gameType}:`, response.status, data);
+
+    if (response.ok) {
+      const conversationId = data.conversation_id;
+      const conversationUrl = data.conversation_url;
+      
+      // Store conversation ID for this user
+      activeConversations.set(userId, {
+        conversation_id: conversationId,
+        game_type: gameType,
+        created_at: new Date().toISOString()
+      });
+      
+      console.log(`[TAVUS] Successfully created ${gameType} conversation: ${conversationId}`);
+      
+      return {
+        success: true,
+        conversation_id: conversationId,
+        conversation_url: conversationUrl,
+        user_id: userId,
+        game_type: gameType
+      };
+    } else {
+      console.error(`[TAVUS] API Error for ${gameType}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        error: data.error || data.message || 'Unknown error',
+        data: data
+      });
+      throw new Error(`Tavus API Error (${response.status}): ${data.error || data.message || 'Failed to create conversation'}`);
+    }
+  } catch (error) {
+    console.error(`[TAVUS] Error in createConversation for ${gameType}:`, error.message);
+    throw error;
   }
 };
 

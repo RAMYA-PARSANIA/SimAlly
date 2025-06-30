@@ -10,6 +10,7 @@ const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
 interface TavusVideoCallProps {
   meetingUrl: string;
   onLeave: () => void;
+  gameType?: string;
 }
 
 const getOrCreateCallObject = () => {
@@ -20,7 +21,7 @@ const getOrCreateCallObject = () => {
   return window._dailyCallObject;
 };
 
-const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) => {
+const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave, gameType }) => {
   const callRef = useRef<any>(null);
   const [remoteParticipants, setRemoteParticipants] = useState<any>({});
   const [localParticipant, setLocalParticipant] = useState<any>(null);
@@ -132,14 +133,57 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
   };
 
   const getGameTheme = () => {
-    // Determine game theme based on URL or other context
-    // For now, we'll use a generic game theme that works for all games
-    return {
-      title: '🎮 GameMode',
-      loadingText: 'Summoning your game companion...',
-      waitingText: 'Prepare for an amazing gaming experience!',
-      participantName: 'Game Master'
-    };
+    // Determine theme based on game type
+    switch (gameType) {
+      case 'mentalHealth':
+        return {
+          title: '🧠 Mental Health Support',
+          loadingText: 'Connecting to your mental health support session...',
+          waitingText: 'Preparing a safe space for our conversation.',
+          participantName: 'Mental Health Specialist',
+          icon: '🧠'
+        };
+      case 'legalAdvice':
+        return {
+          title: '⚖️ Legal Consultation',
+          loadingText: 'Connecting to your legal consultation session...',
+          waitingText: 'Preparing your professional legal consultation.',
+          participantName: 'Legal Advisor',
+          icon: '⚖️'
+        };
+      case 'riddle':
+        return {
+          title: '🧩 Riddle Challenge',
+          loadingText: 'Summoning the Riddle Master...',
+          waitingText: 'Prepare for mind-bending puzzles!',
+          participantName: 'Riddle Master',
+          icon: '🧩'
+        };
+      case 'twentyQuestionsUserAsks':
+        return {
+          title: '🔍 20 Questions',
+          loadingText: 'Summoning the Mystery Keeper...',
+          waitingText: 'The mystery awaits your questions!',
+          participantName: 'Mystery Keeper',
+          icon: '🔍'
+        };
+      case 'twentyQuestionsAiAsks':
+        return {
+          title: '� Mind Reader',
+          loadingText: 'Summoning the Mind Reader...',
+          waitingText: 'Think of something... I\'ll try to guess!',
+          participantName: 'Mind Reader',
+          icon: '🎯'
+        };
+      default:
+        return {
+          title: '🎮 Interactive Session',
+          loadingText: 'Connecting to your session...',
+          waitingText: 'Prepare for an engaging experience!',
+          participantName: 'Assistant',
+          icon: '🎮'
+        };
+    }
   };
 
   const theme = getGameTheme();
@@ -166,7 +210,7 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
       <div className="min-h-screen bg-primary flex items-center justify-center">
         <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
           <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
-          <h3 className="text-xl font-bold text-primary mb-2">Connecting to Game...</h3>
+          <h3 className="text-xl font-bold text-primary mb-2">{theme.title}</h3>
           <p className="text-secondary">{theme.loadingText}</p>
         </div>
       </div>
@@ -272,7 +316,7 @@ const TavusVideoCall: React.FC<TavusVideoCallProps> = ({ meetingUrl, onLeave }) 
                 
                 <div className="text-center z-10">
                   <div className="animate-pulse w-20 h-20 bg-gradient-gold-silver rounded-full mx-auto mb-6 flex items-center justify-center">
-                    <span className="text-2xl">🎮</span>
+                    <span className="text-2xl">{theme.icon}</span>
                   </div>
                   <p className="text-primary font-medium text-lg mb-2">{theme.loadingText}</p>
                   <p className="text-secondary text-sm">{theme.waitingText}</p>

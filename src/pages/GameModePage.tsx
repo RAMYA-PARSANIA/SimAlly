@@ -198,6 +198,12 @@ const GameModePage: React.FC = () => {
             <TavusVideoCall 
               meetingUrl={conversationUrl} 
               onLeave={handleLeaveCall}
+              gameType={
+                currentGame === 'riddle' ? 'riddle' :
+                currentGame === 'twenty-questions-user-asks' ? 'twentyQuestionsUserAsks' :
+                currentGame === 'twenty-questions-ai-asks' ? 'twentyQuestionsAiAsks' :
+                undefined
+              }
             />
           </main>
         </div>

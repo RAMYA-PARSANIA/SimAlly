@@ -186,6 +186,7 @@ const ProfessionalServicesPage: React.FC = () => {
             <TavusVideoCall 
               meetingUrl={conversationUrl} 
               onLeave={handleLeaveCall}
+              gameType={currentService === 'mental-health' ? 'mentalHealth' : currentService === 'legal-advice' ? 'legalAdvice' : undefined}
             />
           </main>
         </div>
@@ -194,11 +195,14 @@ const ProfessionalServicesPage: React.FC = () => {
   }
 
   if (isLoading) {
+    const service = professionalServices.find(s => s.id === currentService);
+    const serviceTitle = service?.title || 'Professional Service';
+    
     return (
       <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="glass-panel p-8 rounded-xl flex flex-col items-center">
           <Loader2 className="w-10 h-10 animate-spin mb-4 text-secondary" />
-          <p className="text-lg font-semibold text-primary">Connecting to professional service...</p>
+          <p className="text-lg font-semibold text-primary">Connecting to {serviceTitle.toLowerCase()}...</p>
         </div>
       </div>
     );
