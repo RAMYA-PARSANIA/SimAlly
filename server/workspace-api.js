@@ -43,7 +43,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      //console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -1040,9 +1040,9 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Workspace API server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/workspace/health`);
-  console.log(`CORS configured for: ${FRONTEND_URL}`);
+  //console.log(`Workspace API server running on http://localhost:${PORT}`);
+  //console.log(`Health check: http://localhost:${PORT}/api/workspace/health`);
+  //console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
 
 module.exports = app;

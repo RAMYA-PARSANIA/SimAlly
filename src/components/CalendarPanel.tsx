@@ -76,7 +76,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
       const startDateStr = startOfMonth.toISOString().split('T')[0];
       const endDateStr = endOfMonth.toISOString().split('T')[0];
       
-      console.log(`Loading events from ${startDateStr} to ${endDateStr}`);
+      //console.log(`Loading events from ${startDateStr} to ${endDateStr}`);
       
       // Query events using date range that includes the full last day
       const { data, error } = await supabase
@@ -92,7 +92,7 @@ const CalendarPanel: React.FC<CalendarPanelProps> = ({ tasks }) => {
         return;
       }
 
-      console.log(`Loaded ${data?.length || 0} events`);
+      //console.log(`Loaded ${data?.length || 0} events`);
       setEvents(data || []);
     } catch (error) {
       console.error('Error loading events:', error);

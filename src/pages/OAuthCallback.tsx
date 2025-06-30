@@ -6,12 +6,12 @@ const OAuthCallback: React.FC = () => {
     const code = urlParams.get('code');
     const error = urlParams.get('error');
 
-    console.log('OAuth callback received:', { code, error });
+    //console.log('OAuth callback received:', { code, error });
 
     if (code) {
       // For server-side callback, the server will handle the OAuth flow
       // and send a message back to the parent window
-      console.log('Authorization code received, processing...');
+      //console.log('Authorization code received, processing...');
       
       // Show a message to the user
       const messageElement = document.getElementById('message');

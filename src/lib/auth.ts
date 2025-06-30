@@ -57,7 +57,7 @@ class AuthService {
         const data = await response.json();
         if (data.success) {
           this.sessionKey = data.sessionId;
-          console.log('AI session initialized securely');
+          //console.log('AI session initialized securely');
         }
       } catch (error) {
         console.warn('Failed to initialize AI session:', error);
@@ -133,7 +133,7 @@ class AuthService {
         
         // If session is expired, clear it
         if (now > expiryTime) {
-          console.log('Session expired, logging out');
+          //console.log('Session expired, logging out');
           this.signOut();
         }
       }
@@ -190,7 +190,7 @@ class AuthService {
     const inactiveTime = Date.now() - this.lastActivity;
     
     if (inactiveTime >= this.inactivityThreshold) {
-      console.log('User inactive for too long, logging out');
+      //console.log('User inactive for too long, logging out');
       this.updateUserStatus('offline');
       this.signOut();
     }
@@ -222,7 +222,7 @@ class AuthService {
 
   async signUp(username: string, password: string, fullName: string): Promise<{ error?: string }> {
     try {
-      console.log('Attempting to register user:', username);
+      //console.log('Attempting to register user:', username);
       
       const { data, error } = await supabase.rpc('register_user', {
         p_username: username,
@@ -230,7 +230,7 @@ class AuthService {
         p_full_name: fullName
       });
 
-      console.log('Registration response:', { data, error });
+      //console.log('Registration response:', { data, error });
 
       if (error) {
         console.error('Registration error:', error);
@@ -249,7 +249,7 @@ class AuthService {
         user: data.user
       };
 
-      console.log('Registration successful, saving session:', session);
+      //console.log('Registration successful, saving session:', session);
       this.saveSession(session);
       
       // Update user status to online
@@ -318,7 +318,7 @@ class AuthService {
                 p_user_id: this.currentSession.user.id
               });
               
-              console.log('Gmail tokens revoked on logout');
+              //console.log('Gmail tokens revoked on logout');
             }
           } catch (error) {
             console.warn('Failed to check/revoke Gmail tokens on logout:', error);

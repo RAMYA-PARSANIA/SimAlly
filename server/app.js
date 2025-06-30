@@ -35,7 +35,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      //console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -157,7 +157,7 @@ const createConversation = async (gameType, userId) => {
   });
 
   const data = await response.json();
-  console.log(`Tavus API response for ${gameType}:`, response.status, data);
+  //console.log(`Tavus API response for ${gameType}:`, response.status, data);
 
   if (response.ok) {
     const conversationId = data.conversation_id;
@@ -288,14 +288,14 @@ app.post('/api/end-conversation', async (req, res) => {
     };
     
     // End the conversation
-    console.log('Ending conversation:', conversationId);
+    //console.log('Ending conversation:', conversationId);
     const endResponse = await fetch(`https://tavusapi.com/v2/conversations/${conversationId}/end`, {
       method: 'POST',
       headers
     });
     
     // Delete the conversation
-    console.log('Deleting conversation:', conversationId);
+    //console.log('Deleting conversation:', conversationId);
     const deleteResponse = await fetch(`https://tavusapi.com/v2/conversations/${conversationId}`, {
       method: 'DELETE',
       headers
@@ -336,7 +336,7 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log(`CORS configured for: ${FRONTEND_URL}`);
+  //console.log(`Server running on http://localhost:${PORT}`);
+  //console.log(`Health check: http://localhost:${PORT}/api/health`);
+  //console.log(`CORS configured for: ${FRONTEND_URL}`);
 });

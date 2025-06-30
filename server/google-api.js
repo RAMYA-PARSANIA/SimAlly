@@ -63,7 +63,7 @@ router.get('/auth-url', async (req, res) => {
     const userId = req.query.userId || null;
     const sessionId = userId || generateSessionId();
     
-    console.log(`[${Date.now()}] Generated session ID: ${sessionId} (userId: ${userId || 'none'})`);
+    //console.log(`[${Date.now()}] Generated session ID: ${sessionId} (userId: ${userId || 'none'})`);
     
     // Store session ID in state parameter for OAuth flow
     const authUrl = oAuth2Client.generateAuthUrl({
@@ -83,7 +83,7 @@ router.get('/auth-url', async (req, res) => {
 // OAuth callback
 router.get('/callback', async (req, res) => {
   const { code, state } = req.query;
-  console.log(`[${Date.now()}] Google OAuth callback triggered with code: ${code ? 'present' : 'missing'}, state: ${state || 'missing'}`);
+  //console.log(`[${Date.now()}] Google OAuth callback triggered with code: ${code ? 'present' : 'missing'}, state: ${state || 'missing'}`);
 
   if (!code) {
     console.error(`[${Date.now()}] No code received in callback`);
@@ -92,15 +92,15 @@ router.get('/callback', async (req, res) => {
 
   try {
     const oAuth2Client = createOAuthClient();
-    console.log(`[${Date.now()}] OAuth client created successfully`);
+    //console.log(`[${Date.now()}] OAuth client created successfully`);
 
     // Get tokens with error handling
     let tokens;
     try {
-      console.log(`[${Date.now()}] Attempting to exchange code for tokens`);
+      //console.log(`[${Date.now()}] Attempting to exchange code for tokens`);
       const tokenResponse = await oAuth2Client.getToken(code);
       tokens = tokenResponse.tokens;
-      console.log(`[${Date.now()}] Tokens received:`, tokens);
+      //console.log(`[${Date.now()}] Tokens received:`, tokens);
     } catch (tokenError) {
       console.error(`[${Date.now()}] Error getting tokens:`, tokenError);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
@@ -141,7 +141,7 @@ router.get('/callback', async (req, res) => {
         return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
       }
       
-      console.log(`[${Date.now()}] Tokens stored successfully in Supabase for user ${userId}`);
+      //console.log(`[${Date.now()}] Tokens stored successfully in Supabase for user ${userId}`);
     } catch (storageError) {
       console.error(`[${Date.now()}] Error storing tokens:`, storageError);
       return res.redirect(`${FRONTEND_URL}/dashboard?google_error=true`);
@@ -151,7 +151,7 @@ router.get('/callback', async (req, res) => {
     tokenStore.set(userId, tokens);
 
     // Redirect back to frontend
-    console.log(`[${Date.now()}] Redirecting to frontend with success`);
+    //console.log(`[${Date.now()}] Redirecting to frontend with success`);
     res.redirect(`${FRONTEND_URL}/dashboard?google_connected=true`);
   } catch (error) {
     console.error(`[${Date.now()}] Error in callback:`, error);
@@ -164,10 +164,10 @@ router.get('/status', async (req, res) => {
   // Try to get user ID from query
   const userId = req.query.userId;
   
-  console.log(`[${Date.now()}] Checking Google connection status for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Checking Google connection status for user ID: ${userId}`);
 
   if (!userId) {
-    console.log(`[${Date.now()}] No user ID provided`);
+    //console.log(`[${Date.now()}] No user ID provided`);
     return res.json({ success: true, connected: false });
   }
 
@@ -198,10 +198,10 @@ router.get('/status', async (req, res) => {
       // Check if token is expired
       const expiresAt = new Date(tokensData.expires_at);
       const isExpired = expiresAt < new Date();
-      console.log(`[${Date.now()}] Token expiry status for user ID: ${userId}: ${isExpired}`);
+      //console.log(`[${Date.now()}] Token expiry status for user ID: ${userId}: ${isExpired}`);
       
       if (isExpired && !tokensData.refresh_token) {
-        console.log(`[${Date.now()}] Token expired and no refresh token available for user ID: ${userId}`);
+        //console.log(`[${Date.now()}] Token expired and no refresh token available for user ID: ${userId}`);
         
         // Revoke expired tokens
         await supabase.rpc('revoke_gmail_tokens', {
@@ -214,7 +214,7 @@ router.get('/status', async (req, res) => {
       // If we have a refresh token and the token is expired, we should refresh it
       // This would be implemented in a production environment
       
-      console.log(`[${Date.now()}] Google connection status: connected for user ID: ${userId}`);
+      //console.log(`[${Date.now()}] Google connection status: connected for user ID: ${userId}`);
       return res.json({ 
         success: true, 
         connected: true,
@@ -222,7 +222,7 @@ router.get('/status', async (req, res) => {
         expiresAt: tokensData.expires_at
       });
     } else {
-      console.log(`[${Date.now()}] No tokens found for user ID: ${userId}`);
+      //console.log(`[${Date.now()}] No tokens found for user ID: ${userId}`);
       return res.json({ success: true, connected: false });
     }
   } catch (err) {
@@ -235,7 +235,7 @@ router.get('/status', async (req, res) => {
 router.post('/disconnect', async (req, res) => {
   const userId = req.body.userId;
   
-  console.log(`[${Date.now()}] Disconnecting Google for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Disconnecting Google for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -255,9 +255,9 @@ router.post('/disconnect', async (req, res) => {
     // Also remove from memory cache
     if (tokenStore.has(userId)) {
       tokenStore.delete(userId);
-      console.log(`[${Date.now()}] Deleted tokens from memory for user ID: ${userId}`);
+      //console.log(`[${Date.now()}] Deleted tokens from memory for user ID: ${userId}`);
     } else {
-      console.log(`[${Date.now()}] No tokens found in memory for user ID: ${userId}`);
+      //console.log(`[${Date.now()}] No tokens found in memory for user ID: ${userId}`);
     }
     
     res.json({ success: true, message: 'Google account disconnected' });
@@ -272,7 +272,7 @@ router.get('/gmail/messages', async (req, res) => {
   const userId = req.query.userId;
   const { maxResults = 10, query = '' } = req.query;
   
-  console.log(`[${Date.now()}] Fetching Gmail messages for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Fetching Gmail messages for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -344,7 +344,7 @@ router.get('/gmail/email/:emailId', async (req, res) => {
   const userId = req.query.userId;
   const { emailId } = req.params;
   
-  console.log(`[${Date.now()}] Fetching email content for user ID: ${userId}, email ID: ${emailId}`);
+  //console.log(`[${Date.now()}] Fetching email content for user ID: ${userId}, email ID: ${emailId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -461,7 +461,7 @@ router.post('/gmail/delete-emails', async (req, res) => {
   const userId = req.body.userId;
   const { messageIds } = req.body;
   
-  console.log(`[${Date.now()}] Deleting emails for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Deleting emails for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -525,7 +525,7 @@ router.post('/meetings/create', async (req, res) => {
   const userId = req.body.userId;
   const { title, description, startTime, duration, attendees } = req.body;
   
-  console.log(`[${Date.now()}] Creating meeting for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Creating meeting for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -651,7 +651,7 @@ router.post('/meetings/create', async (req, res) => {
 router.get('/meetings', async (req, res) => {
   const userId = req.query.userId;
   
-  console.log(`[${Date.now()}] Fetching meetings for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Fetching meetings for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -709,7 +709,7 @@ router.get('/meetings/:meetingId', async (req, res) => {
   const userId = req.query.userId;
   const { meetingId } = req.params;
   
-  console.log(`[${Date.now()}] Fetching meeting ${meetingId} for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Fetching meeting ${meetingId} for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });
@@ -756,7 +756,7 @@ router.delete('/meetings/:meetingId', async (req, res) => {
   const userId = req.query.userId;
   const { meetingId } = req.params;
   
-  console.log(`[${Date.now()}] Deleting meeting ${meetingId} for user ID: ${userId}`);
+  //console.log(`[${Date.now()}] Deleting meeting ${meetingId} for user ID: ${userId}`);
   
   if (!userId) {
     return res.status(400).json({ success: false, error: 'User ID is required' });

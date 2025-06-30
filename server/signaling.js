@@ -31,7 +31,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      //console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -110,9 +110,9 @@ app.get('/', (req, res) => {
 const PORT = process.env.SIGNALING_PORT || 5000;
 
 server.listen(PORT, () => {
-  console.log(`Signaling server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/signaling/health`);
-  console.log(`CORS configured for: ${FRONTEND_URL}`);
+  //console.log(`Signaling server running on port ${PORT}`);
+  //console.log(`Health check: http://localhost:${PORT}/api/signaling/health`);
+  //console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
 
 module.exports = { app, server };

@@ -49,7 +49,7 @@ const WorkspacePage: React.FC = () => {
       
       // Subscribe to real-time messages for this channel
       const subscription = workspaceAPI.subscribeToChannel(activeChannel.id, (payload) => {
-        console.log('Real-time message update:', payload);
+        //console.log('Real-time message update:', payload);
         if (payload.eventType === 'INSERT') {
           // Fetch the complete message with sender info
           loadMessages(activeChannel.id);
@@ -67,13 +67,13 @@ const WorkspacePage: React.FC = () => {
 
     // Subscribe to real-time task updates
     const taskSubscription = workspaceAPI.subscribeToTasks(user.id, (payload) => {
-      console.log('Real-time task update:', payload);
+      //console.log('Real-time task update:', payload);
       loadTasks();
     });
 
     // Subscribe to real-time channel updates
     const channelSubscription = workspaceAPI.subscribeToChannels(user.id, (payload) => {
-      console.log('Real-time channel update:', payload);
+      //console.log('Real-time channel update:', payload);
       loadChannels();
     });
 

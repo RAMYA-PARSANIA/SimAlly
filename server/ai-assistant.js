@@ -59,7 +59,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
+      //console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -392,6 +392,40 @@ const WEBAPP_ENDPOINTS = {
     implementation: 'executeListGoogleSlides'
   },
 
+  // Google Meetings
+  create_google_meeting: {
+    endpoint: '/api/google/meetings/create',
+    method: 'POST',
+    description: 'Create a Google Meet meeting',
+    parameters: ['userId', 'title?', 'description?', 'startTime?', 'duration?', 'attendees?'],
+    example: 'Create a meeting for tomorrow at 2pm about project review',
+    implementation: 'executeCreateGoogleMeeting'
+  },
+  list_google_meetings: {
+    endpoint: '/api/google/meetings',
+    method: 'GET',
+    description: 'List user\'s scheduled meetings',
+    parameters: ['userId'],
+    example: 'Show my upcoming meetings',
+    implementation: 'executeListGoogleMeetings'
+  },
+  get_google_meeting: {
+    endpoint: '/api/google/meetings/:meetingId',
+    method: 'GET',
+    description: 'Get details of a specific meeting',
+    parameters: ['userId', 'meetingId'],
+    example: 'Show details for meeting abc123',
+    implementation: 'executeGetGoogleMeeting'
+  },
+  delete_google_meeting: {
+    endpoint: '/api/google/meetings/:meetingId',
+    method: 'DELETE',
+    description: 'Cancel/delete a meeting',
+    parameters: ['userId', 'meetingId'],
+    example: 'Cancel meeting abc123',
+    implementation: 'executeDeleteGoogleMeeting'
+  },
+
   // Chat Processing
   chat_process_message: {
     endpoint: '/api/chat/process-message',
@@ -410,6 +444,24 @@ const WEBAPP_ENDPOINTS = {
     parameters: ['message'],
     example: 'What is the weather like? How do I cook pasta? Explain quantum physics',
     implementation: 'executeGeneralQuery'
+  },
+
+  // Professional Services
+  professional_mental_health: {
+    endpoint: '/api/create-mental-health-conversation',
+    method: 'POST',
+    description: 'Start AI-powered mental health support conversation',
+    parameters: ['userId?'],
+    example: 'I need mental health support',
+    implementation: 'executeProfessionalMentalHealth'
+  },
+  professional_legal_advice: {
+    endpoint: '/api/create-legal-advice-conversation',
+    method: 'POST',
+    description: 'Start AI-powered legal consultation conversation',
+    parameters: ['userId?'],
+    example: 'I need legal advice',
+    implementation: 'executeProfessionalLegalAdvice'
   }
 };
 
@@ -436,7 +488,7 @@ app.post('/api/init-session', async (req, res) => {
       history: []
     });
     
-    console.log(`AI session initialized for user: ${userId}`);
+    //console.log(`AI session initialized for user: ${userId}`);
     
     res.json({
       success: true,
@@ -530,7 +582,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
 
-    console.log(`Processing message: "${message}" for user: ${userId}`);
+    //console.log(`Processing message: "${message}" for user: ${userId}`);
 
     // Create comprehensive prompt with all endpoints
     const endpointsList = Object.entries(WEBAPP_ENDPOINTS)
@@ -583,17 +635,26 @@ INSTRUCTIONS:
    - Workspace features (channels, messages, tasks, assignments)
    - Calendar management (events, scheduling)
    - Meeting tools (create rooms, notes, summaries)
+   - Google Meetings (create, list, view details, cancel meetings with Google Meet integration)
    - Document generation (AI-powered content creation)
-   - Google Docs and Slides creation and management
+   - Google Docs and Slides creation and management with AI-generated content and images
+   - Professional services (mental health support, legal consultation)
    - Game modes (riddles, 20 questions)
    - General conversation and knowledge
 
 6. For document and presentation requests:
-   - Use create_google_doc for document creation
-   - Use create_google_slides for presentation creation
+   - Use create_google_doc for document creation with AI-generated content and images
+   - Use create_google_slides for presentation creation with AI-generated content and images
    - Use list_google_docs to show user's documents
    - Use list_google_slides to show user's presentations
    - Extract detailed information about what the user wants to create
+
+7. For meeting requests:
+   - Use create_google_meeting to schedule new meetings with Google Meet links
+   - Use list_google_meetings to show upcoming meetings
+   - Use get_google_meeting to show details of a specific meeting
+   - Use delete_google_meeting to cancel meetings
+   - Be smart about extracting meeting details like title, time, duration, attendees
 
 CONTEXT: ${JSON.stringify(context)}
 USER MESSAGE: "${message}"
@@ -603,7 +664,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
     const result = await model.generateContent(systemPrompt);
     const aiResponse = result.response.text();
 
-    console.log('AI Response:', aiResponse);
+    //console.log('AI Response:', aiResponse);
 
     // Parse AI response
     let parsedResponse;
@@ -791,9 +852,25 @@ async function executeEndpointFunction(endpoint, parameters, userId, req = null)
     case 'executeListGoogleSlides':
       return await executeListGoogleSlides(parameters.userId);
 
+    // Google Meetings functions
+    case 'executeCreateGoogleMeeting':
+      return await executeCreateGoogleMeeting(parameters);
+    case 'executeListGoogleMeetings':
+      return await executeListGoogleMeetings(parameters.userId);
+    case 'executeGetGoogleMeeting':
+      return await executeGetGoogleMeeting(parameters);
+    case 'executeDeleteGoogleMeeting':
+      return await executeDeleteGoogleMeeting(parameters);
+
     // Chat functions
     case 'executeChatProcessMessage':
       return await executeChatProcessMessage(parameters);
+
+    // Professional Services functions
+    case 'executeProfessionalMentalHealth':
+      return await executeProfessionalMentalHealth(parameters);
+    case 'executeProfessionalLegalAdvice':
+      return await executeProfessionalLegalAdvice(parameters);
 
     // General query
     case 'executeGeneralQuery':
@@ -933,7 +1010,7 @@ async function executeGmailDisconnect(userId) {
 // Enhanced Gmail Get Emails function with Supabase token storage
 async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   try {
-    console.log(`Getting emails for userId: ${userId}, query: ${query}`);
+    //console.log(`Getting emails for userId: ${userId}, query: ${query}`);
     
     if (!userId) {
       console.error('No userId provided');
@@ -1542,14 +1619,14 @@ async function executeCreateGoogleDoc(parameters) {
       })
     });
     
-    console.log('Google Docs API response status:', response.status);
+    //console.log('Google Docs API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('Google Docs API response data:', data);
+    //console.log('Google Docs API response data:', data);
     
     if (data.success && data.document) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1610,14 +1687,14 @@ async function executeCreateGoogleSlides(parameters) {
       })
     });
     
-    console.log('Google Slides API response status:', response.status);
+    //console.log('Google Slides API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    console.log('Google Slides API response data:', data);
+    //console.log('Google Slides API response data:', data);
     
     if (data.success && data.presentation) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1687,6 +1764,217 @@ async function executeListGoogleSlides(userId) {
   } catch (error) {
     console.error('Error listing Google Slides:', error);
     return { success: false, error: 'Failed to list Google Slides' };
+  }
+}
+
+// Google Meetings Functions
+async function executeCreateGoogleMeeting(parameters) {
+  try {
+    const { userId, title, description, startTime, duration, attendees } = parameters;
+    
+    if (!userId) {
+      return { success: false, error: 'User ID is required' };
+    }
+    
+    // Prepare meeting data
+    const meetingData = {
+      userId
+    };
+    
+    if (title) meetingData.title = title;
+    if (description) meetingData.description = description;
+    if (startTime) meetingData.startTime = startTime;
+    if (duration) meetingData.duration = duration;
+    if (attendees) meetingData.attendees = attendees;
+    
+    // Make API call to create Google Meeting
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/meetings/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(meetingData)
+    });
+    
+    //console.log('Google Meetings API response status:', response.status);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    //console.log('Google Meetings API response data:', data);
+    
+    if (data.success && data.meeting) {
+      // Format a user-friendly response with actual HTML links for clickability
+      const startDateTime = new Date(data.meeting.startTime).toLocaleString();
+      const endDateTime = new Date(data.meeting.endTime).toLocaleString();
+      
+      const userMessage = `✅ **Meeting Created Successfully!**
+
+📅 **${data.meeting.title || 'New Meeting'}**
+🕒 **Start:** ${startDateTime}
+🕕 **End:** ${endDateTime}
+
+🔗 **Join Meeting:** <a href="${data.meeting.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Google Meet</a>
+
+Your meeting has been scheduled and invitations will be sent to attendees if any were specified.`;
+      
+      return {
+        success: true,
+        userMessage,
+        meeting: data.meeting
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error creating Google Meeting:', error);
+    return { 
+      success: false, 
+      error: 'Failed to create Google Meeting',
+      details: error.message,
+      userMessage: `❌ **Error Creating Meeting**
+
+I encountered an error while trying to create your meeting: ${error.message}
+
+Please try again or check your Google account connection.`
+    };
+  }
+}
+
+async function executeListGoogleMeetings(userId) {
+  try {
+    if (!userId) {
+      return { success: false, error: 'User ID is required' };
+    }
+    
+    // Make API call to list meetings
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/meetings?userId=${userId}`);
+    const data = await response.json();
+    
+    if (data.success && data.meetings) {
+      if (data.meetings.length === 0) {
+        return {
+          success: true,
+          userMessage: "📅 **No Meetings Found**\n\nYou don't have any scheduled meetings at the moment."
+        };
+      }
+      
+      let userMessage = `📅 **Your Upcoming Meetings**\n\n`;
+      
+      data.meetings.slice(0, 5).forEach((meeting, index) => {
+        const startDateTime = new Date(meeting.startTime).toLocaleString();
+        userMessage += `${index + 1}. **${meeting.title}**\n`;
+        userMessage += `   🕒 ${startDateTime}\n`;
+        if (meeting.description) {
+          userMessage += `   📝 ${meeting.description}\n`;
+        }
+        userMessage += `   🔗 <a href="${meeting.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Join Meeting</a>\n\n`;
+      });
+      
+      if (data.meetings.length > 5) {
+        userMessage += `... and ${data.meetings.length - 5} more meetings.`;
+      }
+      
+      return {
+        success: true,
+        userMessage,
+        meetings: data.meetings
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error listing Google Meetings:', error);
+    return { 
+      success: false, 
+      error: 'Failed to list meetings',
+      userMessage: "❌ **Error Loading Meetings**\n\nCould not retrieve your meetings. Please try again later."
+    };
+  }
+}
+
+async function executeGetGoogleMeeting(parameters) {
+  try {
+    const { userId, meetingId } = parameters;
+    
+    if (!userId || !meetingId) {
+      return { success: false, error: 'User ID and meeting ID are required' };
+    }
+    
+    // Make API call to get meeting details
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/meetings/${meetingId}?userId=${userId}`);
+    const data = await response.json();
+    
+    if (data.success && data.meeting) {
+      const meeting = data.meeting;
+      const startDateTime = new Date(meeting.startTime).toLocaleString();
+      const endDateTime = new Date(meeting.endTime).toLocaleString();
+      
+      let userMessage = `📅 **Meeting Details**\n\n`;
+      userMessage += `**${meeting.title}**\n`;
+      userMessage += `🕒 **Start:** ${startDateTime}\n`;
+      userMessage += `🕕 **End:** ${endDateTime}\n`;
+      
+      if (meeting.description) {
+        userMessage += `📝 **Description:** ${meeting.description}\n`;
+      }
+      
+      if (meeting.attendees && meeting.attendees.length > 0) {
+        userMessage += `👥 **Attendees:** ${meeting.attendees.join(', ')}\n`;
+      }
+      
+      userMessage += `\n🔗 **Join Meeting:** <a href="${meeting.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Google Meet</a>`;
+      
+      return {
+        success: true,
+        userMessage,
+        meeting: data.meeting
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error getting Google Meeting:', error);
+    return { 
+      success: false, 
+      error: 'Failed to get meeting details',
+      userMessage: "❌ **Error Loading Meeting**\n\nCould not retrieve meeting details. Please try again later."
+    };
+  }
+}
+
+async function executeDeleteGoogleMeeting(parameters) {
+  try {
+    const { userId, meetingId } = parameters;
+    
+    if (!userId || !meetingId) {
+      return { success: false, error: 'User ID and meeting ID are required' };
+    }
+    
+    // Make API call to delete meeting
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/google/meetings/${meetingId}?userId=${userId}`, {
+      method: 'DELETE'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      return {
+        success: true,
+        userMessage: "✅ **Meeting Cancelled**\n\nThe meeting has been successfully cancelled and removed from your calendar."
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error deleting Google Meeting:', error);
+    return { 
+      success: false, 
+      error: 'Failed to cancel meeting',
+      userMessage: "❌ **Error Cancelling Meeting**\n\nCould not cancel the meeting. Please try again later."
+    };
   }
 }
 
@@ -2200,6 +2488,116 @@ async function executeGeneralQuery(message) {
   }
 }
 
+// Professional Services Functions
+async function executeProfessionalMentalHealth(parameters) {
+  try {
+    const { userId } = parameters;
+    
+    // Make API call to create mental health conversation
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/create-mental-health-conversation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId || null
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      const userMessage = `🧠 **Mental Health Support Session Started**
+
+💬 **Professional AI Counselor Connected**
+
+Your private, confidential mental health support session is now ready. You can speak openly about your feelings, stress, anxiety, or any mental health concerns.
+
+🔗 **Join Session:** [Click here to start your session](${data.conversation_url})
+
+**Important Reminders:**
+• This AI provides supportive guidance but does not replace professional therapy
+• In crisis situations, please contact emergency services or a human counselor
+• Your conversation is private and confidential
+• You can end the session at any time
+
+Take your time and feel comfortable sharing what's on your mind.`;
+
+      return {
+        success: true,
+        userMessage,
+        conversation_url: data.conversation_url,
+        conversation_id: data.conversation_id,
+        user_id: data.user_id
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error creating mental health conversation:', error);
+    return { 
+      success: false, 
+      error: 'Failed to start mental health session',
+      userMessage: "❌ **Error Starting Mental Health Session**\n\nCould not connect to the mental health support service. Please try again later or contact support if the issue persists."
+    };
+  }
+}
+
+async function executeProfessionalLegalAdvice(parameters) {
+  try {
+    const { userId } = parameters;
+    
+    // Make API call to create legal advice conversation
+    const response = await fetch(`${process.env.VITE_API_URL || 'http://localhost:8000'}/api/create-legal-advice-conversation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId || null
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      const userMessage = `⚖️ **Legal Consultation Session Started**
+
+👩‍💼 **AI Legal Advisor Connected**
+
+Your legal consultation session is now ready. You can discuss business matters, contracts, legal questions, or seek general legal guidance.
+
+🔗 **Join Session:** [Click here to start your consultation](${data.conversation_url})
+
+**Important Legal Disclaimers:**
+• This AI provides general legal information, not legal advice
+• For serious legal matters, consult with a licensed attorney
+• Information shared is for educational purposes only
+• This does not create an attorney-client relationship
+• Laws vary by jurisdiction and specific circumstances matter
+
+Feel free to share your legal questions or concerns.`;
+
+      return {
+        success: true,
+        userMessage,
+        conversation_url: data.conversation_url,
+        conversation_id: data.conversation_id,
+        user_id: data.user_id
+      };
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error creating legal advice conversation:', error);
+    return { 
+      success: false, 
+      error: 'Failed to start legal consultation',
+      userMessage: "❌ **Error Starting Legal Consultation**\n\nCould not connect to the legal advisory service. Please try again later or contact support if the issue persists."
+    };
+  }
+}
+
 // Session cleanup job
 function cleanupInactiveSessions() {
   const now = new Date();
@@ -2210,7 +2608,7 @@ function cleanupInactiveSessions() {
     const inactiveDuration = now - lastActivity;
     
     if (inactiveDuration > inactiveThreshold) {
-      console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId}`);
+      //console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId}`);
       activeSessions.delete(sessionId);
     }
   }
@@ -2241,9 +2639,9 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`AI Assistant server running on http://localhost:${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  console.log(`CORS configured for: ${FRONTEND_URL}`);
+  //console.log(`AI Assistant server running on http://localhost:${PORT}`);
+  //console.log(`Health check: http://localhost:${PORT}/api/health`);
+  //console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
 
 module.exports = app;

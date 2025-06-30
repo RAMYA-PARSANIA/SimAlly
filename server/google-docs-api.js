@@ -70,7 +70,7 @@ async function generateImages(prompt, count = 2, drive = null) {
 
     for (let i = 0; i < imagePrompts.length; i++) {
       try {
-        console.log(`Generating image ${i + 1} with prompt: ${imagePrompts[i]}`);
+        //console.log(`Generating image ${i + 1} with prompt: ${imagePrompts[i]}`);
         
         const response = await imageGenAI.models.generateContent({
           model: "gemini-2.0-flash-preview-image-generation",
@@ -131,7 +131,7 @@ async function generateImages(prompt, count = 2, drive = null) {
                   driveId: uploadResponse.data.id
                 });
                 
-                console.log(`Image ${i + 1} uploaded to Drive: ${publicUrl}`);
+                //console.log(`Image ${i + 1} uploaded to Drive: ${publicUrl}`);
               } catch (uploadError) {
                 console.error(`Error uploading image ${i + 1} to Drive:`, uploadError);
                 // Skip this image if upload fails
@@ -154,7 +154,7 @@ async function generateImages(prompt, count = 2, drive = null) {
       }
     }
     
-    console.log(`Successfully generated ${images.length} images`);
+    //console.log(`Successfully generated ${images.length} images`);
     return images;
   } catch (error) {
     console.error('Error in image generation:', error);
@@ -814,7 +814,7 @@ async function applyPresentationStyling(slides, presentationId) {
     }
     
   } catch (error) {
-    console.log('Note: Using default styling - presentation created successfully');
+    //console.log('Note: Using default styling - presentation created successfully');
   }
 }
 
@@ -887,7 +887,7 @@ async function applyDocumentStyling(docs, documentId) {
       });
     }
   } catch (error) {
-    console.log('Note: Using default document styling - document created successfully');
+    //console.log('Note: Using default document styling - document created successfully');
   }
 }
 
