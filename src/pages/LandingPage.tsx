@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut, MessageSquare, CheckSquare, Calendar, Mail, Brain, FileText, Settings, Target, Video, Presentation, Stethoscope, Scale } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthModal from '../components/AuthModal';
 import GlassCard from '../components/ui/GlassCard';
@@ -16,6 +17,7 @@ import useScrollReveal from '../hooks/useScrollReveal';
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthenticated, signOut } = useAuth();
+  const { isDark } = useTheme();
   const [authModal, setAuthModal] = useState<{ isOpen: boolean; mode: 'signin' | 'signup' }>({
     isOpen: false,
     mode: 'signin'
@@ -186,6 +188,21 @@ const LandingPage: React.FC = () => {
             </div>
             
             <div className="flex items-center space-x-4">
+              {/* Bolt Badge */}
+              <a 
+                href="https://bolt.new/" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center"
+                title="Built with Bolt"
+              >
+                <img 
+                  src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
+                  alt="Built with Bolt" 
+                  className="w-8 h-8 transition-transform hover:scale-110"
+                />
+              </a>
+              
               <ThemeToggle />
               {isAuthenticated ? (
                 <>
@@ -546,6 +563,23 @@ const LandingPage: React.FC = () => {
           </Button>
         </div>
       )}
+
+      {/* Bolt Badge - Bottom Right */}
+      <div className="fixed bottom-8 left-8 z-50">
+        <a 
+          href="https://bolt.new/" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="block transition-transform hover:scale-110"
+          title="Built with Bolt"
+        >
+          <img 
+            src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
+            alt="Built with Bolt" 
+            className="w-12 h-12"
+          />
+        </a>
+      </div>
 
       <AuthModal
         isOpen={authModal.isOpen}
