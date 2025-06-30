@@ -474,10 +474,10 @@ const LandingPage: React.FC = () => {
                 color: 'from-blue-500 to-cyan-500'
               },
               {
-                title: 'Enterprise Security',
-                description: 'Bank-level encryption and privacy protection for all your data',
-                icon: Shield,
-                color: 'from-cyan-500 to-green-500'
+                title: 'Entertainment & Wellness',
+                description: 'Interactive games and professional services for mental well-being',
+                icon: Gamepad2,
+                color: 'from-green-500 to-yellow-500'
               }
             ].map((tech, index) => (
               <GlassCard key={index} className="p-8 text-center" hover>
