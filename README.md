@@ -127,7 +127,7 @@ simally-webapp/
 
 ## License
 
-This project is proprietary and confidential.
+MIT License.
 
 ## Acknowledgements
 
