@@ -199,7 +199,7 @@ const LandingPage: React.FC = () => {
                 <img 
                   src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
                   alt="Built with Bolt" 
-                  className="w-8 h-8 transition-transform hover:scale-110"
+                  className="w-10 h-10 transition-transform hover:scale-110"
                 />
               </a>
               
