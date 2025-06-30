@@ -9,7 +9,6 @@ SimAlly is a comprehensive AI-powered productivity and collaboration platform th
 - Kanban board for visual task management
 - Calendar integration with events and reminders
 - Project management with milestones and progress tracking
-- Time tracking and reporting
 
 ### 🤖 AI Assistant
 - Professional productivity support
