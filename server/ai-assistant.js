@@ -436,7 +436,7 @@ app.post('/api/init-session', async (req, res) => {
       history: []
     });
     
-    console.log(`AI session initialized for user: ${userId} with enhanced security`);
+    console.log(`AI session initialized for user: ${userId}`);
     
     res.json({
       success: true,

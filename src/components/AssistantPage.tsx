@@ -619,28 +619,7 @@ const AssistantPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
-      {/* Security Notice */}
-      {securityNotice && (
-        <div className="glass-panel border-b silver-border bg-green-500/10 border-green-500/30">
-          <div className="max-w-7xl mx-auto container-padding">
-            <div className="flex items-center justify-between py-3">
-              <div className="flex items-center space-x-3">
-                <Shield className="w-5 h-5 text-green-400" />
-                <div>
-                  <p className="text-green-400 font-medium text-sm">Enhanced Security Active</p>
-                  <p className="text-green-300 text-xs">All sensitive data is encrypted. Google tokens are session-specific and automatically expire.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSecurityNotice(false)}
-                className="text-green-400 hover:text-green-300"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* Header */}
       <header className="glass-panel border-0 border-b silver-border">
@@ -660,7 +639,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Complete workspace & productivity assistant with enhanced security
+                  Complete workspace & productivity assistant
                 </p>
               </div>
             </div>
@@ -689,25 +668,13 @@ const AssistantPage: React.FC = () => {
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
-              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your Secure AI Assistant</h3>
+              <h3 className="text-xl font-bold text-primary mb-4">Welcome to Your AI Assistant</h3>
               <p className="text-secondary mb-6 max-w-2xl mx-auto">
                 I can help you with workspace tasks, calendar events, meetings, document generation, games, and general questions. 
                 {!isGoogleConnected && ' Connect your Google account from the Dashboard to unlock Gmail and Google Meet features.'}
               </p>
               
-              {/* Security Features */}
-              <div className="mb-8 p-4 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30 max-w-2xl mx-auto">
-                <h4 className="font-bold text-blue-400 mb-2 flex items-center justify-center">
-                  <Shield className="w-4 h-4 mr-2" />
-                  Security Features
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-blue-300">
-                  <div>✓ End-to-end encryption</div>
-                  <div>✓ Session-specific tokens</div>
-                  <div>✓ Automatic token expiration</div>
-                  <div>✓ Secure data isolation</div>
-                </div>
-              </div>
+              
               
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
@@ -787,7 +754,7 @@ const AssistantPage: React.FC = () => {
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
                       <Shield className="w-3 h-3 text-green-500" />
-                      <span>All features available - Google connected securely</span>
+                      <span>All features available - Google connected</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">
