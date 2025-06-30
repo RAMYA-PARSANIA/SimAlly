@@ -5,18 +5,16 @@ import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
-
-const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const VITE_API_URL = import.meta.env.VITE_API_URL;
-const VITE_MEDIA_API_URL = import.meta.env.VITE_MEDIA_API_URL;
-const VITE_WORKSPACE_API_URL = import.meta.env.VITE_WORKSPACE_API_URL;
-const VITE_APP_URL = import.meta.env.VITE_APP_URL;
-const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL;
+import AnimatedBackground from '../components/ui/AnimatedBackground';
+import useScrollReveal from '../hooks/useScrollReveal';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, signOut, loading, isGoogleConnected, connectGoogle, disconnectGoogle } = useAuth();
   const [googleConnecting, setGoogleConnecting] = useState(false);
+
+  // Initialize scroll reveal animations
+  useScrollReveal();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -112,10 +110,10 @@ const Dashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-primary flex items-center justify-center">
-        <div className="glass-panel rounded-2xl p-8 max-w-md mx-auto text-center">
+      <div className="min-h-screen bg-primary flex items-center justify-center page-enter">
+        <div className="glass-card-enhanced rounded-2xl p-8 max-w-md mx-auto text-center animate-fadeInScale">
           <div className="animate-spin w-8 h-8 border-2 border-gold-text border-t-transparent rounded-full mx-auto mb-4"></div>
-          <h3 className="text-xl font-bold text-primary mb-2">Loading Dashboard...</h3>
+          <h3 className="text-xl font-bold text-primary mb-2 gradient-gold-silver">Loading Dashboard...</h3>
           <p className="text-secondary">Setting up your workspace</p>
         </div>
       </div>
@@ -127,13 +125,18 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-primary">
+    <div className="min-h-screen bg-primary page-enter">
+      {/* Animated Background */}
+      <div className="fixed inset-0 pointer-events-none">
+        <AnimatedBackground variant="grid" />
+      </div>
+      
       {/* Header */}
-      <header className="glass-panel border-0 border-b silver-border">
+      <header className="glass-panel border-0 border-b silver-border relative z-10">
         <div className="max-w-7xl mx-auto container-padding">
           <div className="flex justify-between items-center py-6">
-            <div className="flex items-center space-x-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-gold-silver flex items-center justify-center">
+            <div className="flex items-center space-x-4 reveal-left">
+              <div className="w-12 h-12 rounded-full bg-gradient-gold-silver flex items-center justify-center animate-pulse-slow">
                 <User className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -146,14 +149,14 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 reveal-right">
               {/* Google Connection Status */}
               {isGoogleConnected ? (
                 <Button
                   onClick={handleGoogleDisconnect}
                   variant="secondary"
                   size="sm"
-                  className="flex items-center space-x-2"
+                  className="flex items-center space-x-2 hover-lift"
                 >
                   <Google className="w-4 h-4" />
                   <span>Disconnect Google</span>
@@ -163,7 +166,7 @@ const Dashboard: React.FC = () => {
                   onClick={handleGoogleConnect}
                   variant="secondary"
                   size="sm"
-                  className="flex items-center space-x-2"
+                  className="flex items-center space-x-2 hover-lift"
                   disabled={googleConnecting}
                 >
                   <Google className="w-4 h-4" />
@@ -175,7 +178,7 @@ const Dashboard: React.FC = () => {
               
               <button
                 onClick={handleLogout}
-                className="flex glass-panel border-white p-2 rounded-lg glass-panel-hover space-x-2"
+                className="flex glass-panel border-white p-2 rounded-lg glass-panel-hover space-x-2 hover-lift"
               >
                 <LogOut className="w-5 h-6 text-primary" />
                 <span>Logout</span>
@@ -186,10 +189,10 @@ const Dashboard: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="section-spacing container-padding">
+      <main className="section-spacing container-padding relative z-10">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h1 className="text-4xl md:text-5xl font-bold gradient-gold-silver mb-6">
+          <div className="text-center mb-16 reveal">
+            <h1 className="text-4xl md:text-5xl font-bold gradient-gold-silver mb-6 ">
               Your Professional Dashboard
             </h1>
             <p className="text-lg text-secondary max-w-2xl mx-auto">
@@ -197,19 +200,23 @@ const Dashboard: React.FC = () => {
             </p>
           </div>
 
+          {/* Section Divider */}
+          <div className="section-divider mb-16"></div>
+
           {/* Feature Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
-            {features.map((feature) => (
+          {/* Feature Cards Grid - First row with 3 cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto mb-8">
+            {features.slice(0, 3).map((feature) => (
               <GlassCard
                 key={feature.id}
-                className={`p-8 cursor-pointer group ${
+                className={`p-8 cursor-pointer group h-full ${
                   feature.requiresGoogle && !isGoogleConnected ? 'opacity-70' : ''
                 }`}
                 hover
                 goldBorder
                 onClick={() => handleFeatureClick(feature.route, feature.requiresGoogle)}
               >
-                <div className="text-center">
+                <div className="text-center h-full flex flex-col">
                   <div className={`w-16 h-16 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mx-auto mb-6`}>
                     <feature.icon className="w-8 h-8 text-white" />
                   </div>
@@ -217,10 +224,50 @@ const Dashboard: React.FC = () => {
                   <h3 className="text-xl font-bold text-primary mb-4 group-hover:gold-text transition-colors">
                     {feature.title}
                   </h3>
-                  <p className="text-secondary leading-relaxed mb-6 text-sm">
+                  <p className="text-secondary leading-relaxed mb-6 text-sm flex-grow">
                     {feature.description}
                   </p>
-                  <div className="flex items-center justify-center gradient-gold-silver font-semibold text-sm">
+                  <div className="flex items-center justify-center gradient-gold-silver font-semibold text-sm mt-auto">
+                    <span>Access {feature.title}</span>
+                    <svg className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                  
+                  {feature.requiresGoogle && !isGoogleConnected && (
+                    <div className="mt-4 text-xs text-yellow-500 bg-yellow-500/10 p-2 rounded-lg">
+                      Requires Google connection
+                    </div>
+                  )}
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+
+          {/* Feature Cards Grid - Second row with 2 cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto mb-16">
+            {features.slice(3, 5).map((feature) => (
+              <GlassCard
+                key={feature.id}
+                className={`p-8 cursor-pointer group h-full ${
+                  feature.requiresGoogle && !isGoogleConnected ? 'opacity-70' : ''
+                }`}
+                hover
+                goldBorder
+                onClick={() => handleFeatureClick(feature.route, feature.requiresGoogle)}
+              >
+                <div className="text-center h-full flex flex-col">
+                  <div className={`w-16 h-16 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mx-auto mb-6`}>
+                    <feature.icon className="w-8 h-8 text-white" />
+                  </div>
+                  
+                  <h3 className="text-xl font-bold text-primary mb-4 group-hover:gold-text transition-colors">
+                    {feature.title}
+                  </h3>
+                  <p className="text-secondary leading-relaxed mb-6 text-sm flex-grow">
+                    {feature.description}
+                  </p>
+                  <div className="flex items-center justify-center gradient-gold-silver font-semibold text-sm mt-auto">
                     <span>Access {feature.title}</span>
                     <svg className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -241,5 +288,4 @@ const Dashboard: React.FC = () => {
     </div>
   );
 }
-
 export default Dashboard;

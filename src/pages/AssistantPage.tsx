@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare, Shield } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare, Shield, Presentation } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -54,12 +54,32 @@ const AssistantPage: React.FC = () => {
   const [selectedEmailForModal, setSelectedEmailForModal] = useState<GmailEmail | null>(null);
   const [loadingEmailBody, setLoadingEmailBody] = useState(false);
   const [securityNotice, setSecurityNotice] = useState(true);
+  const [contentHeight, setContentHeight] = useState('calc(100vh - 180px)'); // Default height
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputBarRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    
+    // Calculate and set content height based on input bar height
+    if (inputBarRef.current && messagesContainerRef.current) {
+      const inputBarHeight = inputBarRef.current.offsetHeight;
+      const headerHeight = 73; // Approximate header height
+      setContentHeight(`calc(100vh - ${headerHeight + inputBarHeight}px)`);
+      messagesContainerRef.current.style.height = contentHeight;
+    }
+  }, [messages, contentHeight]);
+
+  // Update content height when input changes (to handle auto-growing textarea)
+  useEffect(() => {
+    if (inputBarRef.current && messagesContainerRef.current) {
+      const inputBarHeight = inputBarRef.current.offsetHeight;
+      const headerHeight = 73; // Approximate header height
+      setContentHeight(`calc(100vh - ${headerHeight + inputBarHeight}px)`);
+    }
+  }, [inputMessage]);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
@@ -226,10 +246,7 @@ const AssistantPage: React.FC = () => {
       
       try {
         const response = await fetch(`${VITE_AI_API_URL}/api/gmail/email/${email.id}?userId=${user?.id}`, {
-          credentials: 'include',
-          // headers: {
-          //   'Origin': window.location.origin
-          // }
+          credentials: 'include'
         });
         
         if (response.ok) {
@@ -449,36 +466,28 @@ const AssistantPage: React.FC = () => {
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-medium text-green-400 flex items-center">
               <FileText className="w-4 h-4 mr-2" />
-              {data.document.title || 'Generated Document'}
+              Generated Document
             </h4>
-            {data.document.content && (
-              <Button
-                onClick={() => {
-                  const blob = new Blob([data.document.content], { type: 'text/html' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'document.html';
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                variant="ghost"
-                size="sm"
-              >
-                <Download className="w-4 h-4" />
-              </Button>
-            )}
+            <Button
+              onClick={() => window.open(data.document.url, '_blank')}
+              variant="ghost"
+              size="sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </Button>
           </div>
-          {data.document.content ? (
-            <div 
-              className="prose prose-sm max-w-none text-secondary"
-              dangerouslySetInnerHTML={{ __html: data.document.content.substring(0, 500) + '...' }}
-            />
-          ) : (
-            <div className="text-sm text-secondary">
-              Document created successfully. Check the message above for links to view and download.
-            </div>
-          )}
+          <p className="text-sm text-secondary mb-3">
+            {data.document.title}
+          </p>
+          <Button
+            onClick={() => window.open(data.document.url, '_blank')}
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Open Document</span>
+          </Button>
         </div>
       );
     }
@@ -486,16 +495,32 @@ const AssistantPage: React.FC = () => {
     // Presentation generation
     if (data.presentation) {
       return (
-        <div className="glass-panel p-4 rounded-lg bg-purple-500/10 border-purple-500/30">
+        <div className="glass-panel p-4 rounded-lg bg-orange-500/10 border-orange-500/30">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-purple-400 flex items-center">
-              <FileText className="w-4 h-4 mr-2" />
-              {data.presentation.title || 'Generated Presentation'}
+            <h4 className="font-medium text-orange-400 flex items-center">
+              <Presentation className="w-4 h-4 mr-2" />
+              Generated Presentation
             </h4>
+            <Button
+              onClick={() => window.open(data.presentation.url, '_blank')}
+              variant="ghost"
+              size="sm"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </Button>
           </div>
-          <div className="text-sm text-secondary">
-            Presentation created successfully. Check the message above for links to view and download.
-          </div>
+          <p className="text-sm text-secondary mb-3">
+            {data.presentation.title}
+          </p>
+          <Button
+            onClick={() => window.open(data.presentation.url, '_blank')}
+            variant="secondary"
+            size="sm"
+            className="flex items-center space-x-2"
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span>Open Presentation</span>
+          </Button>
         </div>
       );
     }
@@ -579,14 +604,7 @@ const AssistantPage: React.FC = () => {
           isUser ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 border-blue-500/30' : 'border-gold-border'
         }`}>
           {/* Message content */}
-          {isUser ? (
-            <p className="text-primary whitespace-pre-wrap mb-2">{message.content}</p>
-          ) : (
-            <div 
-              className="text-primary whitespace-pre-wrap mb-2"
-              dangerouslySetInnerHTML={{ __html: message.content }}
-            />
-          )}
+          <p className="text-primary whitespace-pre-wrap mb-2">{message.content}</p>
 
           {/* Endpoint results */}
           {message.type === 'endpoint_result' && message.data && (
@@ -618,7 +636,6 @@ const AssistantPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
-      
 
       {/* Header */}
       <header className="glass-panel border-0 border-b silver-border">
@@ -660,10 +677,13 @@ const AssistantPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      {/* Main Content - Adjusted to accommodate fixed input bar */}
+      <div 
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto"
+        style={{ height: contentHeight, paddingBottom: '1rem' }}
+      >
+        <div className="max-w-6xl mx-auto w-full p-6 space-y-6">
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
@@ -694,9 +714,9 @@ const AssistantPage: React.FC = () => {
                   { icon: CheckSquare, text: 'Create a task for tomorrow', disabled: false },
                   { icon: Calendar, text: 'Schedule a meeting for 2pm', disabled: false },
                   { icon: Video, text: 'Create a meeting room', disabled: !isGoogleConnected },
-                  { icon: FileText, text: 'Generate a project proposal', disabled: false },
+                  { icon: FileText, text: 'Generate a project proposal document', disabled: !isGoogleConnected },
+                  { icon: Presentation, text: 'Create a marketing presentation', disabled: !isGoogleConnected },
                   { icon: Gamepad2, text: 'Start a riddle game', disabled: false },
-                  { icon: Search, text: 'Search emails about "project"', disabled: !isGoogleConnected },
                   { icon: MessageSquare, text: 'What is quantum computing?', disabled: false },
                 ].map((action, index) => (
                   <button
@@ -743,11 +763,17 @@ const AssistantPage: React.FC = () => {
             </motion.div>
           )}
 
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="py-4" />
         </div>
+      </div>
 
-        {/* Input */}
-        <div className="glass-panel border-t silver-border p-6">
+      {/* Fixed Input Bar */}
+      <div 
+        ref={inputBarRef}
+        className="fixed bottom-0 left-0 right-0 glass-panel border-t silver-border p-6 z-10 shadow-lg"
+        style={{ backdropFilter: 'blur(12px)' }}
+      >
+        <div className="max-w-6xl mx-auto">
           <div className="flex items-end space-x-4">
             <div className="flex-1">
               <textarea
@@ -770,7 +796,7 @@ const AssistantPage: React.FC = () => {
                   ) : (
                     <span className="flex items-center space-x-1">
                       <AlertCircle className="w-3 h-3 text-yellow-500" />
-                      <span>Connect Google from Dashboard for email and meeting features</span>
+                      <span>Connect Google from Dashboard for email and document features</span>
                     </span>
                   )}
                 </div>
