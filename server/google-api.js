@@ -5,6 +5,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 dotenv.config();
 
@@ -15,6 +16,10 @@ const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
 );
+
+// Initialize Gemini AI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // Google OAuth configuration
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID;
@@ -516,6 +521,156 @@ router.post('/gmail/delete-emails', async (req, res) => {
   } catch (error) {
     console.error('Error deleting emails:', error);
     res.status(500).json({ success: false, error: 'Failed to delete emails' });
+  }
+});
+
+// Summarize emails
+router.post('/gmail/summarize-emails', async (req, res) => {
+  const userId = req.body.userId;
+  const { messageIds } = req.body;
+  
+  if (!userId) {
+    return res.status(400).json({ success: false, error: 'User ID is required' });
+  }
+  
+  if (!messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+    return res.status(400).json({ success: false, error: 'No message IDs provided' });
+  }
+  
+  try {
+    // Get tokens from Supabase
+    const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
+      p_user_id: userId
+    });
+    
+    if (tokensError || !tokensData.success) {
+      return res.status(401).json({ success: false, error: 'Not authenticated with Google' });
+    }
+    
+    // Set up OAuth client with tokens
+    const oAuth2Client = createOAuthClient();
+    oAuth2Client.setCredentials({
+      access_token: tokensData.access_token,
+      refresh_token: tokensData.refresh_token,
+      token_type: tokensData.token_type || 'Bearer',
+      expiry_date: new Date(tokensData.expires_at).getTime()
+    });
+    
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    
+    const emails = [];
+    
+    // Fetch all emails
+    for (const messageId of messageIds) {
+      try {
+        const emailData = await gmail.users.messages.get({
+          userId: 'me',
+          id: messageId,
+          format: 'full'
+        });
+
+        const headers = emailData.data.payload.headers;
+        const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
+        
+        // Extract body content
+        let body = '';
+        
+        const extractBody = (part) => {
+          if (part.mimeType === 'text/plain' && part.body && part.body.data) {
+            return Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.mimeType === 'text/html' && part.body && part.body.data) {
+            const htmlContent = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            return htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          } else if (part.parts) {
+            for (const subPart of part.parts) {
+              const result = extractBody(subPart);
+              if (result) return result;
+            }
+          }
+          return '';
+        };
+
+        if (emailData.data.payload.mimeType === 'text/plain' && emailData.data.payload.body && emailData.data.payload.body.data) {
+          body = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
+        } else if (emailData.data.payload.mimeType === 'text/html' && emailData.data.payload.body && emailData.data.payload.body.data) {
+          const htmlContent = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
+          body = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+        } else if (emailData.data.payload.parts) {
+          body = extractBody(emailData.data.payload);
+        }
+
+        // Fallback to snippet if body is empty
+        if (!body || body.length < 50) {
+          body = emailData.data.snippet || '';
+        }
+
+        emails.push({
+          from,
+          subject,
+          snippet: emailData.data.snippet || '',
+          body: body.substring(0, 1500) // Limit for AI processing
+        });
+      } catch (error) {
+        console.error(`Failed to fetch email ${messageId}:`, error);
+        emails.push({
+          from: 'Unknown',
+          subject: 'Error fetching email',
+          snippet: 'Failed to retrieve email content',
+          body: ''
+        });
+      }
+    }
+
+    // Generate AI summary
+    const emailText = emails.map((email, index) => {
+      const content = email.body && email.body.length > 50 ? email.body : email.snippet;
+      return `Email ${index + 1}:
+From: ${email.from}
+Subject: ${email.subject}
+Content: ${content}`;
+    }).join('\n\n---\n\n');
+
+    const prompt = `Please provide a comprehensive summary of these ${emails.length} emails. Include:
+
+1. **Key Topics**: Main themes and subjects discussed
+2. **Important Information**: Critical details, dates, numbers, or decisions
+3. **Action Items**: Any tasks, deadlines, or follow-ups mentioned
+4. **Senders**: Who sent what and their main points
+
+Emails to summarize:
+
+${emailText}
+
+Format your response clearly with headings and bullet points for easy reading.`;
+
+    const result = await model.generateContent(prompt);
+    const summary = result.response.text();
+
+    const userMessage = `📧 **Email Summary (${emails.length} emails)**
+
+${summary}
+
+---
+*Summary generated from ${emails.length} email(s)*`;
+
+    res.json({
+      success: true,
+      summary,
+      userMessage,
+      emailCount: emails.length,
+      processedEmails: emails.map(e => ({
+        from: e.from,
+        subject: e.subject
+      }))
+    });
+  } catch (error) {
+    console.error('Error summarizing emails:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to summarize emails',
+      userMessage: '❌ Failed to summarize emails. Please try again.'
+    });
   }
 });
 

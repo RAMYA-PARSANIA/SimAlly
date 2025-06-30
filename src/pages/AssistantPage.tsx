@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare, Shield, Presentation } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Loader2, Mail, MailOpen, Trash2, CheckSquare, Calendar, Download, RefreshCw, ExternalLink, Check, X, AlertCircle, Inbox, Users, FileText, Zap, ChevronDown, ChevronUp, Eye, Search, Video, Gamepad2, MessageSquare, Shield, Presentation, Sparkles } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
+import ReactMarkdown from 'react-markdown';
 
 const VITE_AI_API_URL = import.meta.env.VITE_AI_API_URL;
 const VITE_API_URL = import.meta.env.VITE_API_URL;
@@ -158,6 +159,60 @@ const AssistantPage: React.FC = () => {
     } else {
       setSelectedEmails(new Set());
       setShowEmailActions(false);
+    }
+  };
+
+  const handleSummarizeSelectedEmails = async () => {
+    if (!user || selectedEmails.size === 0) return;
+
+    try {
+      const response = await fetch(`${VITE_AI_API_URL}/api/gmail/summarize-emails`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          userId: user.id,
+          messageIds: Array.from(selectedEmails)
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Clear selection
+          setSelectedEmails(new Set());
+          setShowEmailActions(false);
+          
+          // Add summary message to chat
+          const summaryMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: data.userMessage || data.summary,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, summaryMessage]);
+        } else {
+          const errorMessage: ChatMessage = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: data.userMessage || `❌ Failed to summarize emails: ${data.error}`,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      }
+    } catch (error) {
+      console.error('Error summarizing emails:', error);
+      const errorMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '❌ Error summarizing emails. Please try again.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -314,15 +369,27 @@ const AssistantPage: React.FC = () => {
           </div>
 
           {showEmailActions && (
-            <Button
-              onClick={handleDeleteSelectedEmails}
-              variant="secondary"
-              size="sm"
-              className="flex items-center space-x-2 bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
-            >
-              <Trash2 className="w-4 h-4 text-red-400" />
-              <span className="text-red-400">Delete Selected</span>
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                onClick={handleSummarizeSelectedEmails}
+                variant="secondary"
+                size="sm"
+                className="flex items-center space-x-2 bg-blue-500/20 border-blue-500/50 hover:bg-blue-500/30"
+              >
+                <Sparkles className="w-4 h-4 text-blue-400" />
+                <span className="text-blue-400">Summarize Selected</span>
+              </Button>
+              
+              <Button
+                onClick={handleDeleteSelectedEmails}
+                variant="secondary"
+                size="sm"
+                className="flex items-center space-x-2 bg-red-500/20 border-red-500/50 hover:bg-red-500/30"
+              >
+                <Trash2 className="w-4 h-4 text-red-400" />
+                <span className="text-red-400">Delete Selected</span>
+              </Button>
+            </div>
           )}
         </div>
 
@@ -591,6 +658,33 @@ const AssistantPage: React.FC = () => {
                 className="break-words whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{ __html: message.content }}
               />
+            ) : (!isUser && (
+              message.content.includes('**') || 
+              message.content.includes('##') || 
+              message.content.includes('###') || 
+              message.content.includes('- ') ||
+              message.content.includes('1. ') ||
+              message.content.includes('📧 **Email Summary')
+            )) ? (
+              <div className="markdown-summary w-full overflow-hidden break-words">
+                <ReactMarkdown
+                  components={{
+                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-3 text-yellow-400 break-words" {...props} />,
+                    h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 text-yellow-300 break-words" {...props} />,
+                    h3: ({node, ...props}) => <h3 className="text-md font-bold mb-2 text-yellow-200 break-words" {...props} />,
+                    ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1" {...props} />,
+                    ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1" {...props} />,
+                    li: ({node, ...props}) => <li className="mb-1 text-primary" {...props} />,
+                    p: ({node, ...props}) => <p className="mb-2 break-words text-primary leading-relaxed" {...props} />,
+                    strong: ({node, ...props}) => <strong className="font-bold text-yellow-300" {...props} />,
+                    code: ({node, ...props}) => <code className="bg-yellow-500/10 px-1 rounded text-sm font-mono break-words text-yellow-200" {...props} />,
+                    pre: ({node, ...props}) => <pre className="bg-yellow-500/10 p-3 rounded my-2 overflow-x-auto max-w-full" {...props} />,
+                    hr: ({node, ...props}) => <hr className="border-yellow-500/30 my-3" {...props} />,
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              </div>
             ) : (
               <p className="whitespace-pre-wrap">{message.content}</p>
             )}

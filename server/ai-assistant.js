@@ -1290,21 +1290,48 @@ async function executeGmailDeleteEmails(userId, messageIds) {
 
 async function executeGmailSummarize(userId, messageIds) {
   try {
-    if (!userId || !messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-      return { success: false, error: 'User ID and message IDs are required' };
+    console.log(`[GMAIL_SUMMARIZE] Starting summarization for userId: ${userId}, messageIds:`, messageIds);
+    
+    if (!userId) {
+      console.error('[GMAIL_SUMMARIZE] Validation failed: No userId provided');
+      return { success: false, error: 'User ID is required' };
     }
     
+    // If no messageIds provided, get recent emails first
+    if (!messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      console.log('[GMAIL_SUMMARIZE] No messageIds provided, fetching recent emails...');
+      
+      const recentEmailsResult = await executeGmailGetEmails(userId, '', 10);
+      if (!recentEmailsResult.success || !recentEmailsResult.emails || recentEmailsResult.emails.length === 0) {
+        console.error('[GMAIL_SUMMARIZE] Failed to get recent emails or no emails found');
+        return { 
+          success: false, 
+          error: 'No emails found to summarize',
+          userMessage: '📧 No emails found to summarize. Try connecting your Gmail account first.'
+        };
+      }
+      
+      messageIds = recentEmailsResult.emails.map(email => email.id);
+      console.log(`[GMAIL_SUMMARIZE] Using ${messageIds.length} recent email IDs for summarization`);
+    }
+    
+    console.log(`[GMAIL_SUMMARIZE] Processing ${messageIds.length} emails for user ${userId}`);
+    
     // Get tokens from Supabase
+    console.log('[GMAIL_SUMMARIZE] Fetching Gmail tokens from Supabase...');
     const { data: tokensData, error: tokensError } = await supabase.rpc('get_gmail_tokens', {
       p_user_id: userId
     });
     
     if (tokensError || !tokensData.success) {
-      console.error('Error retrieving Gmail tokens:', tokensError || tokensData.error);
+      console.error('[GMAIL_SUMMARIZE] Error retrieving Gmail tokens:', tokensError || tokensData.error);
       return { success: false, error: 'Not authenticated with Google' };
     }
     
+    console.log('[GMAIL_SUMMARIZE] Gmail tokens retrieved successfully');
+    
     // Set up OAuth client with tokens
+    console.log('[GMAIL_SUMMARIZE] Setting up OAuth client...');
     const oAuth2Client = new OAuth2Client(
       process.env.GMAIL_CLIENT_ID,
       process.env.GMAIL_CLIENT_SECRET,
@@ -1318,10 +1345,16 @@ async function executeGmailSummarize(userId, messageIds) {
       expiry_date: new Date(tokensData.expires_at).getTime()
     });
     
+    console.log('[GMAIL_SUMMARIZE] OAuth client configured, initializing Gmail API...');
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     
     const emails = [];
-    for (const messageId of messageIds) {
+    console.log(`[GMAIL_SUMMARIZE] Starting to fetch ${messageIds.length} emails...`);
+    
+    for (let i = 0; i < messageIds.length; i++) {
+      const messageId = messageIds[i];
+      console.log(`[GMAIL_SUMMARIZE] Fetching email ${i + 1}/${messageIds.length}, ID: ${messageId}`);
+      
       try {
         const emailData = await gmail.users.messages.get({
           userId: 'me',
@@ -1329,34 +1362,148 @@ async function executeGmailSummarize(userId, messageIds) {
           format: 'full'
         });
 
+        console.log(`[GMAIL_SUMMARIZE] Email ${messageId} fetched successfully`);
+
         const headers = emailData.data.payload.headers;
         const from = headers.find(h => h.name === 'From')?.value || 'Unknown';
         const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
         
+        console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - From: ${from}, Subject: ${subject}`);
+        
+        // Extract full body content
+        let body = '';
+        
+        // Function to extract body parts recursively
+        const extractBody = (part) => {
+          if (part.mimeType === 'text/plain' && part.body && part.body.data) {
+            return Buffer.from(part.body.data, 'base64').toString('utf-8');
+          } else if (part.mimeType === 'text/html' && part.body && part.body.data) {
+            const htmlContent = Buffer.from(part.body.data, 'base64').toString('utf-8');
+            // Strip HTML tags and clean up whitespace
+            return htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          } else if (part.parts) {
+            for (const subPart of part.parts) {
+              const result = extractBody(subPart);
+              if (result) return result;
+            }
+          }
+          return '';
+        };
+
+        // Try to get the full body content
+        if (emailData.data.payload.mimeType === 'text/plain' && emailData.data.payload.body && emailData.data.payload.body.data) {
+          body = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
+          console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - Extracted plain text body (${body.length} chars)`);
+        } else if (emailData.data.payload.mimeType === 'text/html' && emailData.data.payload.body && emailData.data.payload.body.data) {
+          const htmlContent = Buffer.from(emailData.data.payload.body.data, 'base64').toString('utf-8');
+          body = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - Extracted HTML body (${body.length} chars)`);
+        } else if (emailData.data.payload.parts) {
+          body = extractBody(emailData.data.payload);
+          console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - Extracted multipart body (${body.length} chars)`);
+        }
+
+        // Fallback to snippet if body is empty or too short
+        if (!body || body.length < 50) {
+          body = emailData.data.snippet || '';
+          console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - Using snippet as fallback (${body.length} chars)`);
+        }
+
+        // Limit body length for AI processing (keep first 1500 chars to avoid token limits)
+        const processableBody = body.substring(0, 1500);
+        console.log(`[GMAIL_SUMMARIZE] Email ${messageId} - Final processable body length: ${processableBody.length} chars`);
+        
         emails.push({
           from,
           subject,
-          snippet: emailData.data.snippet || ''
+          snippet: emailData.data.snippet || '',
+          body: processableBody
         });
+        
+        console.log(`[GMAIL_SUMMARIZE] Email ${messageId} processed successfully`);
       } catch (error) {
-        console.error(`Failed to fetch email ${messageId}:`, error);
+        console.error(`[GMAIL_SUMMARIZE] Failed to fetch email ${messageId}:`, error.message);
+        console.error(`[GMAIL_SUMMARIZE] Error details for ${messageId}:`, error);
+        // Still add a placeholder to maintain array consistency
+        emails.push({
+          from: 'Unknown',
+          subject: 'Error fetching email',
+          snippet: 'Failed to retrieve email content',
+          body: ''
+        });
       }
     }
 
-    // Generate AI summary
-    const emailText = emails.map(email => 
-      `From: ${email.from}\nSubject: ${email.subject}\nContent: ${email.snippet}`
-    ).join('\n\n');
+    console.log(`[GMAIL_SUMMARIZE] Finished fetching emails. Successfully processed: ${emails.filter(e => e.body).length}/${emails.length}`);
 
-    const prompt = `Summarize these emails concisely, highlighting key topics, important information, and any action items:\n\n${emailText}`;
-    
+    // Check if we have any valid emails to summarize
+    if (emails.length === 0) {
+      console.error('[GMAIL_SUMMARIZE] No emails could be retrieved for summarization');
+      return { success: false, error: 'No emails could be retrieved for summarization' };
+    }
+
+    // Generate AI summary using both body and snippet for better context
+    console.log('[GMAIL_SUMMARIZE] Preparing email text for AI summarization...');
+    const emailText = emails.map((email, index) => {
+      const content = email.body && email.body.length > 50 ? email.body : email.snippet;
+      return `Email ${index + 1}:
+From: ${email.from}
+Subject: ${email.subject}
+Content: ${content}`;
+    }).join('\n\n---\n\n');
+
+    console.log(`[GMAIL_SUMMARIZE] Total email text length for AI: ${emailText.length} characters`);
+
+    const prompt = `Please provide a comprehensive summary of these ${emails.length} emails. Include:
+
+1. **Key Topics**: Main themes and subjects discussed
+2. **Important Information**: Critical details, dates, numbers, or decisions
+3. **Action Items**: Any tasks, deadlines, or follow-ups mentioned
+4. **Senders**: Who sent what and their main points
+
+Emails to summarize:
+
+${emailText}
+
+Format your response clearly with headings and bullet points for easy reading.`;
+
+    console.log('[GMAIL_SUMMARIZE] Sending request to AI model...');
     const result = await model.generateContent(prompt);
     const summary = result.response.text();
+    console.log(`[GMAIL_SUMMARIZE] AI summary generated successfully (${summary.length} characters)`);
 
-    return { success: true, summary, emailCount: emails.length };
+    // Format a user-friendly response
+    const userMessage = `📧 **Email Summary (${emails.length} emails)**
+
+${summary}
+
+---
+*Summary generated from ${emails.length} email(s)*`;
+
+    console.log('[GMAIL_SUMMARIZE] Summarization completed successfully');
+    return { 
+      success: true, 
+      summary, 
+      userMessage,
+      emailCount: emails.length,
+      processedEmails: emails.map(e => ({
+        from: e.from,
+        subject: e.subject
+      }))
+    };
   } catch (error) {
-    console.error('Error summarizing emails:', error);
-    return { success: false, error: 'Failed to summarize emails' };
+    console.error('[GMAIL_SUMMARIZE] Error summarizing emails:', error);
+    console.error('[GMAIL_SUMMARIZE] Error stack:', error.stack);
+    return { 
+      success: false, 
+      error: 'Failed to summarize emails',
+      details: error.message,
+      userMessage: `❌ **Error Summarizing Emails**
+
+I encountered an error while trying to summarize your emails: ${error.message}
+
+Please try again or check your email selection.`
+    };
   }
 }
 
