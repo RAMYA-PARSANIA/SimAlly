@@ -13,6 +13,8 @@ import EnhancedHero from '../components/ui/EnhancedHero';
 import StatsShowcase from '../components/ui/StatsShowcase';
 import AnimatedBackground from '../components/ui/AnimatedBackground';
 import useScrollReveal from '../hooks/useScrollReveal';
+import logoDark from '../../public/logo(dark).svg';
+import logoLight from '../../public/logo(light).svg';
 
 const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -182,26 +184,20 @@ const LandingPage: React.FC = () => {
       <header className="fixed top-0 w-full z-40 glass-panel border-0 border-b silver-border">
         <div className="max-w-7xl mx-auto container-padding">
           <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-3">
-              <Sparkles className="w-7 h-7 gold-text" />
-              <h1 className="text-2xl font-bold gradient-gold-silver">SimAlly</h1>
+            <div
+              className="flex items-center space-x-3 cursor-pointer"
+              onClick={() => navigate('/')}
+            >
+              <img
+                src={isDark ? logoDark : logoLight}
+                alt="SimAlly Logo"
+                className="w-10 h-10"
+              />
+              <h1 className="text-3xl font-bold gradient-gold-silver">SimAlly</h1>
             </div>
             
             <div className="flex items-center space-x-4">
-              {/* Bolt Badge */}
-              <a 
-                href="https://bolt.new/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center"
-                title="Built with Bolt"
-              >
-                <img 
-                  src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
-                  alt="Built with Bolt" 
-                  className="w-8 h-8 transition-transform hover:scale-110"
-                />
-              </a>
+              
               
               <ThemeToggle />
               {isAuthenticated ? (
@@ -565,21 +561,7 @@ const LandingPage: React.FC = () => {
       )}
 
       {/* Bolt Badge - Bottom Right */}
-      <div className="fixed bottom-8 right-8 z-50">
-        <a 
-          href="https://bolt.new/" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="block transition-transform hover:scale-110"
-          title="Built with Bolt"
-        >
-          <img 
-            src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
-            alt="Built with Bolt" 
-            className="w-12 h-12"
-          />
-        </a>
-      </div>
+      
 
       <AuthModal
         isOpen={authModal.isOpen}

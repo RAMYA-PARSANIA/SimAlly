@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import Button from './Button';
 import AnimatedBackground from './AnimatedBackground';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface EnhancedHeroProps {
   title: string;
@@ -19,6 +20,7 @@ const EnhancedHero: React.FC<EnhancedHeroProps> = ({
   onCtaClick
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     // Trigger animations after component mounts
@@ -63,18 +65,49 @@ const EnhancedHero: React.FC<EnhancedHeroProps> = ({
           {/* CTA Button with Special Animation */}
           <div className={`transition-all duration-1000 delay-900 ${isVisible ? 'animate-fadeInScale' : 'opacity-0'}`}>
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-              <Button
-                onClick={onCtaClick}
-                variant="premium"
-                size="lg"
-                className="inline-flex items-center space-x-2 group relative overflow-hidden"
-              >
-                <span className="relative z-10">{ctaText}</span>
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200 relative z-10" />
+              {/* Left Spacer Div */}
+              {/* Logo Image */}
+              <div className="flex-grow flex justify-center">
+                <img 
+                  src={isDark ? "/logotext_poweredby_360w.svg" : "/logotext_poweredby_360b.svg"} 
+                  alt="Powered by Logo" 
+                  className="w-[10rem] h-auto max-w-[12rem]"
+                />
+              </div>
+
+              {/* CTA Button */}
+              <div className="flex-shrink-0 ">
                 
-                {/* Button hover effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 opacity-20" />
-              </Button>
+                <Button
+                  onClick={onCtaClick}
+                  variant="premium"
+                  size="lg"
+                  className="inline-flex items-center space-x-2 group relative overflow-hidden"
+                >
+                  <span className="relative z-10">{ctaText}</span>
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200 relative z-10" />
+                  
+                  {/* Button hover effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700 opacity-20" />
+                </Button>
+              </div>
+
+              {/* Bolt Badge */}
+              <div className="flex-grow flex justify-center">
+                <a 
+                  href="https://bolt.new/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center p-4"
+                  title="Built with Bolt"
+                >
+                  <img 
+                    src={isDark ? "/white_circle_360x360.svg" : "/black_circle_360x360.svg"} 
+                    alt="Built with Bolt" 
+                    className="w-[6rem] h-[6rem] max-w-[8rem] max-h-[8rem] transition-transform hover:scale-110"
+                  />
+                </a>
+              </div>
             </div>
           </div>
         </div>
