@@ -54,32 +54,13 @@ const AssistantPage: React.FC = () => {
   const [selectedEmailForModal, setSelectedEmailForModal] = useState<GmailEmail | null>(null);
   const [loadingEmailBody, setLoadingEmailBody] = useState(false);
   const [securityNotice, setSecurityNotice] = useState(true);
-  const [contentHeight, setContentHeight] = useState('calc(100vh - 180px)'); // Default height
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const inputBarRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Scroll to bottom when messages change
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    
-    // Calculate and set content height based on input bar height
-    if (inputBarRef.current && messagesContainerRef.current) {
-      const inputBarHeight = inputBarRef.current.offsetHeight;
-      const headerHeight = 73; // Approximate header height
-      setContentHeight(`calc(100vh - ${headerHeight + inputBarHeight}px)`);
-      messagesContainerRef.current.style.height = contentHeight;
-    }
-  }, [messages, contentHeight]);
-
-  // Update content height when input changes (to handle auto-growing textarea)
-  useEffect(() => {
-    if (inputBarRef.current && messagesContainerRef.current) {
-      const inputBarHeight = inputBarRef.current.offsetHeight;
-      const headerHeight = 73; // Approximate header height
-      setContentHeight(`calc(100vh - ${headerHeight + inputBarHeight}px)`);
-    }
-  }, [inputMessage]);
+  }, [messages]);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || isLoading) return;
@@ -645,7 +626,6 @@ const AssistantPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-primary flex flex-col">
-
       {/* Header */}
       <header className="glass-panel border-0 border-b silver-border">
         <div className="max-w-7xl mx-auto container-padding">
@@ -664,7 +644,7 @@ const AssistantPage: React.FC = () => {
                   AI Assistant
                 </h1>
                 <p className="text-xs text-secondary">
-                  Complete workspace & productivity assistant 
+                  Complete workspace & productivity assistant
                 </p>
               </div>
             </div>
@@ -686,13 +666,9 @@ const AssistantPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content - Adjusted to accommodate fixed input bar */}
-      <div 
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto"
-        style={{ height: contentHeight, paddingBottom: '1rem' }}
-      >
-        <div className="max-w-6xl mx-auto w-full p-6 space-y-6">
+      {/* Main Content - Fixed height with scrollable area */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="max-w-6xl mx-auto space-y-6 pb-24"> {/* Added padding at the bottom */}
           {messages.length === 0 && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-secondary mx-auto mb-6 opacity-50" />
@@ -701,8 +677,6 @@ const AssistantPage: React.FC = () => {
                 I can help you with workspace tasks, calendar events, meetings, document generation, games, and general questions. 
                 {!isGoogleConnected && ' Connect your Google account from the Dashboard to unlock Gmail and Google Meet features.'}
               </p>
-              
-              
               
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
@@ -760,16 +734,12 @@ const AssistantPage: React.FC = () => {
             </motion.div>
           )}
 
-          <div ref={messagesEndRef} className="py-4" />
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Fixed Input Bar */}
-      <div 
-        ref={inputBarRef}
-        className="fixed bottom-0 left-0 right-0 glass-panel border-t silver-border p-6 z-10 shadow-lg"
-        style={{ backdropFilter: 'blur(12px)' }}
-      >
+      {/* Input - Fixed at bottom */}
+      <div className="glass-panel border-t silver-border p-6 fixed bottom-0 left-0 right-0 z-10">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-end space-x-4">
             <div className="flex-1">
@@ -788,7 +758,7 @@ const AssistantPage: React.FC = () => {
                     <span className="flex items-center space-x-1">
                       <Check className="w-3 h-3 text-green-500" />
                       <Shield className="w-3 h-3 text-green-500" />
-                      <span>All features available - Google connected </span>
+                      <span>All features available - Google connected</span>
                     </span>
                   ) : (
                     <span className="flex items-center space-x-1">
