@@ -69,6 +69,7 @@ const Dashboard: React.FC = () => {
       description: 'Professional productivity support with Gmail management and intelligent assistance for your daily workflow.',
       route: '/assistant',
       color: 'from-blue-500 to-cyan-500',
+      requiresGoogle: true,
     },
     {
       id: 'meetings',
@@ -195,15 +196,16 @@ const Dashboard: React.FC = () => {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16 reveal relative flex items-center justify-between gap-2 sm:gap-4">
             {/* Left Logo */}
+            
             <a
               href="https://bolt.new"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 hover:scale-110 transition-transform duration-200 flex-shrink-0"
+              className="w-16 h-8 sm:w-20 sm:h-10 md:w-24 md:h-12 hover:scale-110 transition-transform duration-200 flex-shrink-0"
             >
               <img
-                src={isDark ? '/white_circle_360x360.svg' : '/black_circle_360x360.svg'}
-                alt="Bolt Logo"
+                src={isDark ? '/logotext_poweredby_360w.svg' : '/logotext_poweredby_360b.svg'}
+                alt="Powered by Bolt"
                 className="w-full h-full object-contain"
               />
             </a>
@@ -223,11 +225,11 @@ const Dashboard: React.FC = () => {
               href="https://bolt.new"
               target="_blank"
               rel="noopener noreferrer"
-              className="w-16 h-8 sm:w-20 sm:h-10 md:w-24 md:h-12 hover:scale-110 transition-transform duration-200 flex-shrink-0"
+              className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 hover:scale-110 transition-transform duration-200 flex-shrink-0"
             >
               <img
-                src={isDark ? '/logotext_poweredby_360w.svg' : '/logotext_poweredby_360b.svg'}
-                alt="Powered by Bolt"
+                src={isDark ? '/white_circle_360x360.svg' : '/black_circle_360x360.svg'}
+                alt="Bolt Logo"
                 className="w-full h-full object-contain"
               />
             </a>

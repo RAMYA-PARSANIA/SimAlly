@@ -1782,13 +1782,13 @@ async function executeCreateGoogleDoc(parameters) {
     
     if (data.success && data.document) {
       // Format a user-friendly response with actual HTML links for clickability
-      const userMessage = `✅ **Document Created Successfully!**
+      const userMessage = `Document Created Successfully!
 
-📄 **${data.document.title}**
+📄 ${data.document.title}
 
-🔗 **View/Edit Online:** <a href="${data.document.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Docs</a>
+🔗 View/Edit Online:** <a href="${data.document.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Docs</a>
 
-💾 **Download:** <a href="${data.document.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as Word (.docx)</a>
+💾 Download:** <a href="${data.document.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as Word (.docx)</a>
 
 Your document has been created and saved to your Google Drive. You can view and edit it online, or download it as a Word document to use offline.`;
       
@@ -1850,13 +1850,13 @@ async function executeCreateGoogleSlides(parameters) {
     
     if (data.success && data.presentation) {
       // Format a user-friendly response with actual HTML links for clickability
-      const userMessage = `✅ **Presentation Created Successfully!**
+      const userMessage = `Presentation Created Successfully!
 
-📊 **${data.presentation.title}**
+📊 ${data.presentation.title}
 
-🔗 **View/Edit Online:** <a href="${data.presentation.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Slides</a>
+🔗 View/Edit Online: <a href="${data.presentation.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open in Google Slides</a>
 
-💾 **Download:** <a href="${data.presentation.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as PowerPoint (.pptx)</a>
+💾 Download: <a href="${data.presentation.downloadUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Download as PowerPoint (.pptx)</a>
 
 Your presentation has been created and saved to your Google Drive. You can view and edit it online, or download it as a PowerPoint file to use offline.`;
       
@@ -1965,13 +1965,13 @@ async function executeCreateGoogleMeeting(parameters) {
       const startDateTime = new Date(data.meeting.startTime).toLocaleString();
       const endDateTime = new Date(data.meeting.endTime).toLocaleString();
       
-      const userMessage = `✅ **Meeting Created Successfully!**
+      const userMessage = ` Meeting Created Successfully!
 
-📅 **${data.meeting.title || 'New Meeting'}**
-🕒 **Start:** ${startDateTime}
-🕕 **End:** ${endDateTime}
+📅 ${data.meeting.title || 'New Meeting'}
+🕒 Start: ${startDateTime}
+🕕 End: ${endDateTime}
 
-🔗 **Join Meeting:** <a href="${data.meeting.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Google Meet</a>
+🔗 Join Meeting: <a href="${data.meeting.url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Google Meet</a>
 
 Your meeting has been scheduled and invitations will be sent to attendees if any were specified.`;
       
@@ -2118,7 +2118,7 @@ async function executeDeleteGoogleMeeting(parameters) {
     if (data.success) {
       return {
         success: true,
-        userMessage: "✅ **Meeting Cancelled**\n\nThe meeting has been successfully cancelled and removed from your calendar."
+        userMessage: "Meeting Cancelled\n\nThe meeting has been successfully cancelled and removed from your calendar."
       };
     }
     
@@ -2128,7 +2128,7 @@ async function executeDeleteGoogleMeeting(parameters) {
     return { 
       success: false, 
       error: 'Failed to cancel meeting',
-      userMessage: "❌ **Error Cancelling Meeting**\n\nCould not cancel the meeting. Please try again later."
+      userMessage: "❌ Error Cancelling Meeting**\n\nCould not cancel the meeting. Please try again later."
     };
   }
 }
@@ -2445,12 +2445,12 @@ async function executeMeetingCreateRoom(parameters) {
     // For now, return a mock response
     const meetingUrl = `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`;
     
-    const userMessage = `✅ **Meeting Room Created Successfully!**
+    const userMessage = `Meeting Room Created Successfully!
 
-🏠 **Room Name:** ${roomName}
-👤 **Creator:** ${displayName}
+🏠 Room Name: ${roomName}
+👤 Creator: ${displayName}
 
-🔗 **Join Meeting Room:** <a href="${meetingUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Meeting Room</a>
+🔗 Join Meeting Room: <a href="${meetingUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Meeting Room</a>
 
 Your meeting room is ready! Share the link with participants to join.`;
     
