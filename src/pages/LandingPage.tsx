@@ -565,7 +565,7 @@ const LandingPage: React.FC = () => {
       )}
 
       {/* Bolt Badge - Bottom Right */}
-      <div className="fixed bottom-8 left-8 z-50">
+      <div className="fixed bottom-8 right-8 z-50">
         <a 
           href="https://bolt.new/" 
           target="_blank" 
