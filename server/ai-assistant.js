@@ -59,7 +59,7 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost')) {
       callback(null, true);
     } else {
-      //console.log('CORS blocked origin:', origin);
+      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -488,7 +488,7 @@ app.post('/api/init-session', async (req, res) => {
       history: []
     });
     
-    //console.log(`AI session initialized for user: ${userId}`);
+    console.log(`AI session initialized for user: ${userId}`);
     
     res.json({
       success: true,
@@ -582,7 +582,7 @@ app.post('/api/chat/agent-process', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Message is required' });
     }
 
-    //console.log(`Processing message: "${message}" for user: ${userId}`);
+    console.log(`Processing message: "${message}" for user: ${userId}`);
 
     // Create comprehensive prompt with all endpoints
     const endpointsList = Object.entries(WEBAPP_ENDPOINTS)
@@ -656,6 +656,11 @@ INSTRUCTIONS:
    - Use delete_google_meeting to cancel meetings
    - Be smart about extracting meeting details like title, time, duration, attendees
 
+8. For professional services:
+   - Use professional_mental_health for mental health support, counseling, emotional guidance
+   - Use professional_legal_advice for legal questions, business advice, contract help
+   - These create secure video consultation sessions with AI professionals
+
 CONTEXT: ${JSON.stringify(context)}
 USER MESSAGE: "${message}"
 
@@ -664,7 +669,7 @@ Analyze the message and respond with the appropriate JSON format. Be intelligent
     const result = await model.generateContent(systemPrompt);
     const aiResponse = result.response.text();
 
-    //console.log('AI Response:', aiResponse);
+    console.log('AI Response:', aiResponse);
 
     // Parse AI response
     let parsedResponse;
@@ -1010,7 +1015,7 @@ async function executeGmailDisconnect(userId) {
 // Enhanced Gmail Get Emails function with Supabase token storage
 async function executeGmailGetEmails(userId, query = '', maxResults = 10) {
   try {
-    //console.log(`Getting emails for userId: ${userId}, query: ${query}`);
+    console.log(`Getting emails for userId: ${userId}, query: ${query}`);
     
     if (!userId) {
       console.error('No userId provided');
@@ -1619,14 +1624,14 @@ async function executeCreateGoogleDoc(parameters) {
       })
     });
     
-    //console.log('Google Docs API response status:', response.status);
+    console.log('Google Docs API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    //console.log('Google Docs API response data:', data);
+    console.log('Google Docs API response data:', data);
     
     if (data.success && data.document) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1687,14 +1692,14 @@ async function executeCreateGoogleSlides(parameters) {
       })
     });
     
-    //console.log('Google Slides API response status:', response.status);
+    console.log('Google Slides API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    //console.log('Google Slides API response data:', data);
+    console.log('Google Slides API response data:', data);
     
     if (data.success && data.presentation) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -1776,15 +1781,18 @@ async function executeCreateGoogleMeeting(parameters) {
       return { success: false, error: 'User ID is required' };
     }
     
+    // Default startTime to 1 hour from now if not provided
+    const defaultStartTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    
     // Prepare meeting data
     const meetingData = {
-      userId
+      userId,
+      startTime: startTime || defaultStartTime,
+      duration: duration || 60
     };
     
     if (title) meetingData.title = title;
     if (description) meetingData.description = description;
-    if (startTime) meetingData.startTime = startTime;
-    if (duration) meetingData.duration = duration;
     if (attendees) meetingData.attendees = attendees;
     
     // Make API call to create Google Meeting
@@ -1796,14 +1804,14 @@ async function executeCreateGoogleMeeting(parameters) {
       body: JSON.stringify(meetingData)
     });
     
-    //console.log('Google Meetings API response status:', response.status);
+    console.log('Google Meetings API response status:', response.status);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    //console.log('Google Meetings API response data:', data);
+    console.log('Google Meetings API response data:', data);
     
     if (data.success && data.meeting) {
       // Format a user-friendly response with actual HTML links for clickability
@@ -2288,16 +2296,36 @@ async function executeMeetingCreateRoom(parameters) {
     
     // This would integrate with your meeting service
     // For now, return a mock response
+    const meetingUrl = `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`;
+    
+    const userMessage = `✅ **Meeting Room Created Successfully!**
+
+🏠 **Room Name:** ${roomName}
+👤 **Creator:** ${displayName}
+
+🔗 **Join Meeting Room:** <a href="${meetingUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Meeting Room</a>
+
+Your meeting room is ready! Share the link with participants to join.`;
+    
     return {
       success: true,
+      userMessage,
       room: {
         name: roomName,
-        url: `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`,
+        url: meetingUrl,
         creator: displayName
       }
     };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { 
+      success: false, 
+      error: error.message,
+      userMessage: `❌ **Error Creating Meeting Room**
+
+I encountered an error while trying to create the meeting room: ${error.message}
+
+Please try again with a different room name.`
+    };
   }
 }
 
@@ -2305,16 +2333,36 @@ async function executeMeetingJoinRoom(parameters) {
   try {
     const { roomName, displayName } = parameters;
     
+    const meetingUrl = `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`;
+    
+    const userMessage = `🚪 **Joining Meeting Room**
+
+🏠 **Room Name:** ${roomName}
+👤 **Participant:** ${displayName}
+
+🔗 **Join Meeting Room:** <a href="${meetingUrl}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Open Meeting Room</a>
+
+Click the link above to join the meeting room now!`;
+    
     return {
       success: true,
+      userMessage,
       room: {
         name: roomName,
-        url: `${FRONTEND_URL}/meetings?room=${encodeURIComponent(roomName)}`,
+        url: meetingUrl,
         participant: displayName
       }
     };
   } catch (error) {
-    return { success: false, error: error.message };
+    return { 
+      success: false, 
+      error: error.message,
+      userMessage: `❌ **Error Joining Meeting Room**
+
+I encountered an error while trying to join the meeting room: ${error.message}
+
+Please check the room name and try again.`
+    };
   }
 }
 
@@ -2513,7 +2561,7 @@ async function executeProfessionalMentalHealth(parameters) {
 
 Your private, confidential mental health support session is now ready. You can speak openly about your feelings, stress, anxiety, or any mental health concerns.
 
-🔗 **Join Session:** [Click here to start your session](${data.conversation_url})
+🔗 **Join Session:** <a href="${data.conversation_url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Click here to start your session</a>
 
 **Important Reminders:**
 • This AI provides supportive guidance but does not replace professional therapy
@@ -2567,7 +2615,7 @@ async function executeProfessionalLegalAdvice(parameters) {
 
 Your legal consultation session is now ready. You can discuss business matters, contracts, legal questions, or seek general legal guidance.
 
-🔗 **Join Session:** [Click here to start your consultation](${data.conversation_url})
+🔗 **Join Session:** <a href="${data.conversation_url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Click here to start your consultation</a>
 
 **Important Legal Disclaimers:**
 • This AI provides general legal information, not legal advice
@@ -2608,7 +2656,7 @@ function cleanupInactiveSessions() {
     const inactiveDuration = now - lastActivity;
     
     if (inactiveDuration > inactiveThreshold) {
-      //console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId}`);
+      console.log(`Cleaning up inactive session ${sessionId} for user ${session.userId}`);
       activeSessions.delete(sessionId);
     }
   }
@@ -2639,9 +2687,9 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  //console.log(`AI Assistant server running on http://localhost:${PORT}`);
-  //console.log(`Health check: http://localhost:${PORT}/api/health`);
-  //console.log(`CORS configured for: ${FRONTEND_URL}`);
+  console.log(`AI Assistant server running on http://localhost:${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`CORS configured for: ${FRONTEND_URL}`);
 });
 
 module.exports = app;
