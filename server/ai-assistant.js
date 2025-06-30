@@ -450,7 +450,7 @@ const WEBAPP_ENDPOINTS = {
   professional_mental_health: {
     endpoint: '/api/create-mental-health-conversation',
     method: 'POST',
-    description: 'Start AI-powered mental health support conversation',
+    description: 'Start AI-powered mental health or emotional support conversation',
     parameters: ['userId?'],
     example: 'I need mental health support',
     implementation: 'executeProfessionalMentalHealth'
@@ -638,7 +638,7 @@ INSTRUCTIONS:
    - Google Meetings (create, list, view details, cancel meetings with Google Meet integration)
    - Document generation (AI-powered content creation)
    - Google Docs and Slides creation and management with AI-generated content and images
-   - Professional services (mental health support, legal consultation)
+   - Professional services (mental health or emotional support, legal consultation)
    - Game modes (riddles, 20 questions)
    - General conversation and knowledge
 
@@ -657,7 +657,7 @@ INSTRUCTIONS:
    - Be smart about extracting meeting details like title, time, duration, attendees
 
 8. For professional services:
-   - Use professional_mental_health for mental health support, counseling, emotional guidance
+   - Use professional_mental_health for mental health or emotional support, counseling, emotional guidance
    - Use professional_legal_advice for legal questions, business advice, contract help
    - These create secure video consultation sessions with AI professionals
 
@@ -2555,11 +2555,11 @@ async function executeProfessionalMentalHealth(parameters) {
     const data = await response.json();
     
     if (data.success) {
-      const userMessage = `🧠 **Mental Health Support Session Started**
+      const userMessage = `🧠 **Emotional Support Session Started**
 
 💬 **Professional AI Counselor Connected**
 
-Your private, confidential mental health support session is now ready. You can speak openly about your feelings, stress, anxiety, or any mental health concerns.
+Your private, confidential emotional support session is now ready. You can speak openly about your feelings, stress, anxiety, or any mental health concerns.
 
 🔗 **Join Session:** <a href="${data.conversation_url}" target="_blank" rel="noopener noreferrer" style="color: #10b981; text-decoration: underline;">Click here to start your session</a>
 
@@ -2582,11 +2582,11 @@ Take your time and feel comfortable sharing what's on your mind.`;
     
     return data;
   } catch (error) {
-    console.error('Error creating mental health conversation:', error);
+    console.error('Error creating emotional conversation:', error);
     return { 
       success: false, 
-      error: 'Failed to start mental health session',
-      userMessage: "❌ **Error Starting Mental Health Session**\n\nCould not connect to the mental health support service. Please try again later or contact support if the issue persists."
+      error: 'Failed to start emotional support session',
+      userMessage: "❌ **Error Starting Emotional Support Session**\n\nCould not connect to the Emotional support service. Please try again later or contact support if the issue persists."
     };
   }
 }

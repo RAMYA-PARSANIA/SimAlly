@@ -35,7 +35,7 @@ const ProfessionalServicesPage: React.FC = () => {
     {
       id: 'mental-health',
       icon: Stethoscope,
-      title: 'Mental Health Support',
+      title: 'Emotional Support',
       description: 'Speak with an AI-powered mental health professional for emotional support and guidance',
       color: 'from-green-500 via-teal-500 to-cyan-500',
       endpoint: '/api/create-mental-health-conversation'

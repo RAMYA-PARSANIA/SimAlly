@@ -7,10 +7,12 @@ import GlassCard from '../components/ui/GlassCard';
 import Button from '../components/ui/Button';
 import AnimatedBackground from '../components/ui/AnimatedBackground';
 import useScrollReveal from '../hooks/useScrollReveal';
+import { useTheme } from '../contexts/ThemeContext';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, signOut, loading, isGoogleConnected, connectGoogle, disconnectGoogle } = useAuth();
+  const { isDark } = useTheme();
   const [googleConnecting, setGoogleConnecting] = useState(false);
 
   // Initialize scroll reveal animations
@@ -89,7 +91,7 @@ const Dashboard: React.FC = () => {
       id: 'professional-services',
       icon: Stethoscope,
       title: 'Professional Services',
-      description: 'Access mental health support and legal advice through AI-powered video consultations.',
+      description: 'Access emotional support and legal advice through AI-powered video consultations.',
       route: '/professional-services',
       color: 'from-red-500 to-orange-500',
     },
@@ -125,7 +127,7 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-primary page-enter">
+    <div className="min-h-screen bg-primary page-enter relative">
       {/* Animated Background */}
       <div className="fixed inset-0 pointer-events-none">
         <AnimatedBackground variant="grid" />
@@ -190,14 +192,45 @@ const Dashboard: React.FC = () => {
 
       {/* Main Content */}
       <main className="section-spacing container-padding relative z-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16 reveal">
-            <h1 className="text-4xl md:text-5xl font-bold gradient-gold-silver mb-6 ">
-              Your Professional Dashboard
-            </h1>
-            <p className="text-lg text-secondary max-w-2xl mx-auto">
-              Choose from specialized AI modes, each designed to excel in specific professional domains.
-            </p>
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-16 reveal relative flex items-center justify-between gap-2 sm:gap-4">
+            {/* Left Logo */}
+            <a
+              href="https://bolt.new"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 hover:scale-110 transition-transform duration-200 flex-shrink-0"
+            >
+              <img
+                src={isDark ? '/white_circle_360x360.svg' : '/black_circle_360x360.svg'}
+                alt="Bolt Logo"
+                className="w-full h-full object-contain"
+              />
+            </a>
+
+            {/* Center Title */}
+            <div className="flex-1">
+              <h1 className="text-4xl md:text-5xl font-bold gradient-gold-silver mb-6">
+                Your Professional Dashboard
+              </h1>
+              <p className="text-lg text-secondary max-w-2xl mx-auto">
+                Choose from specialized AI modes, each designed to excel in specific professional domains.
+              </p>
+            </div>
+
+            {/* Right Badge */}
+            <a
+              href="https://bolt.new"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-16 h-8 sm:w-20 sm:h-10 md:w-24 md:h-12 hover:scale-110 transition-transform duration-200 flex-shrink-0"
+            >
+              <img
+                src={isDark ? '/logotext_poweredby_360w.svg' : '/logotext_poweredby_360b.svg'}
+                alt="Powered by Bolt"
+                className="w-full h-full object-contain"
+              />
+            </a>
           </div>
 
           {/* Section Divider */}

@@ -108,9 +108,9 @@ const LandingPage: React.FC = () => {
     {
       icon: Stethoscope,
       title: 'Professional Services',
-      description: 'Access mental health support and legal advice through AI-powered video consultations with professional guidance.',
+      description: 'Access emotional support and legal advice through AI-powered video consultations with professional guidance.',
       color: 'from-red-500 to-orange-500',
-      highlights: ['Mental Health Support', 'Legal Consultation', 'Professional Guidance', 'Secure Video Sessions']
+      highlights: ['Emotional Support', 'Legal Consultation', 'Professional Guidance', 'Secure Video Sessions']
     }
   ];
 
