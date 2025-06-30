@@ -693,19 +693,7 @@ const AssistantPage: React.FC = () => {
                 {!isGoogleConnected && ' Connect your Google account from the Dashboard to unlock Gmail and Google Meet features.'}
               </p>
               
-              {/* Security Features */}
-              <div className="mb-8 p-4 glass-panel rounded-lg bg-blue-500/10 border-blue-500/30 max-w-2xl mx-auto">
-                <h4 className="font-bold text-blue-400 mb-2 flex items-center justify-center">
-                  <Shield className="w-4 h-4 mr-2" />
-                  Security Features
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-blue-300">
-                  <div>✓ End-to-end encryption</div>
-                  <div>✓ Session-specific tokens</div>
-                  <div>✓ Automatic token expiration</div>
-                  <div>✓ Secure data isolation</div>
-                </div>
-              </div>
+              
               
               {/* Quick Actions */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
