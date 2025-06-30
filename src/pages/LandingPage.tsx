@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut, MessageSquare, CheckSquare, Calendar, Mail, Brain, FileText, Settings, Target } from 'lucide-react';
+import { Bot, Gamepad2, Sparkles, ArrowRight, Users, Shield, Zap, LogOut, MessageSquare, CheckSquare, Calendar, Mail, Brain, FileText, Settings, Target, Video, Presentation, Stethoscope, Scale } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 import AuthModal from '../components/AuthModal';
@@ -75,8 +75,8 @@ const LandingPage: React.FC = () => {
   const mainFeatures = [
     {
       icon: Users,
-      title: 'Workspace',
-      description: 'Collaborate seamlessly with AI-powered chat, automatic task detection, calendar integration, and intelligent project management tools.',
+      title: 'Collaborative Workspace',
+      description: 'Seamlessly collaborate with AI-powered chat, automatic task detection, calendar integration, and intelligent project management tools.',
       color: 'from-purple-500 to-blue-500',
       highlights: ['AI Task Detection', 'Real-time Chat', 'Calendar Integration', 'Project Management']
     },
@@ -88,12 +88,26 @@ const LandingPage: React.FC = () => {
       highlights: ['Gmail Integration', 'Document Generation', 'Smart Insights', 'Productivity Tools']
     },
     {
+      icon: Video,
+      title: 'Video Meetings',
+      description: 'Schedule and join Google Meet video conferences directly from the platform with calendar integration and meeting management.',
+      color: 'from-cyan-500 to-teal-500',
+      highlights: ['Google Meet Integration', 'Calendar Sync', 'Meeting Scheduling', 'Participant Management']
+    },
+    {
       icon: Gamepad2,
       title: 'Interactive Games',
       description: 'Engage your mind with AI-powered riddles, classic guessing games, and intelligent entertainment for cognitive enhancement.',
       color: 'from-green-500 to-yellow-500',
       highlights: ['AI Riddles', '20 Questions', 'Mind Games', 'Cognitive Training']
     },
+    {
+      icon: Stethoscope,
+      title: 'Professional Services',
+      description: 'Access mental health support and legal advice through AI-powered video consultations with professional guidance.',
+      color: 'from-red-500 to-orange-500',
+      highlights: ['Mental Health Support', 'Legal Consultation', 'Professional Guidance', 'Secure Video Sessions']
+    }
   ];
 
   const additionalFeatures = [
@@ -126,6 +140,16 @@ const LandingPage: React.FC = () => {
       icon: FileText,
       title: 'Document Generation',
       description: 'Create professional documents with AI assistance',
+    },
+    {
+      icon: Presentation,
+      title: 'Presentation Creation',
+      description: 'Generate professional slides with AI-powered content',
+    },
+    {
+      icon: Scale,
+      title: 'Legal Assistance',
+      description: 'Get professional legal guidance for business matters',
     },
   ];
 
@@ -209,8 +233,8 @@ const LandingPage: React.FC = () => {
       {/* Enhanced Hero Section */}
       <EnhancedHero
         title="SimAlly"
-        subtitle="The Future of AI Productivity"
-        description="SimAlly combines advanced AI assistance, collaborative workspaces, and engaging interactive experiences into one seamless platform. From managing your Gmail and generating documents to playing mind-enhancing games, SimAlly is your complete digital companion for professional and personal growth."
+        subtitle="Your Complete AI Productivity Suite"
+        description="SimAlly combines advanced AI assistance, collaborative workspaces, video meetings, document generation, and engaging interactive experiences into one seamless platform. From managing your Gmail and creating presentations to accessing professional services and playing mind-enhancing games, SimAlly is your complete digital companion for professional and personal growth."
         ctaText={isAuthenticated ? 'Access Dashboard' : 'Start Your Journey'}
         onCtaClick={handleGetStarted}
       />
@@ -276,7 +300,7 @@ const LandingPage: React.FC = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16 reveal">
             <h2 className="text-3xl md:text-4xl font-bold gradient-gold-silver mb-6">
-              Three Powerful Modes, Infinite Possibilities
+              Five Powerful Modes, Infinite Possibilities
             </h2>
             <p className="text-lg text-secondary max-w-3xl mx-auto">
               Each mode is meticulously designed to excel in specific domains, providing you with 
@@ -284,9 +308,41 @@ const LandingPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
-            {mainFeatures.map((feature, index) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto mb-16">
+            {mainFeatures.slice(0, 3).map((feature, index) => (
               <GlassCard key={index} className={`p-8 h-full reveal delay-${index + 1}`} hover goldBorder>
+                <div className="flex flex-col h-full">
+                  <div className="flex items-start space-x-6 mb-6">
+                    <div className={`w-16 h-16 rounded-xl bg-gradient-to-r ${feature.color} flex items-center justify-center flex-shrink-0`}>
+                      <feature.icon className="w-8 h-8 text-white" />
+                    </div>
+                    
+                    <div className="flex-1">
+                      <h3 className="text-2xl font-bold text-primary mb-3">
+                        {feature.title}
+                      </h3>
+                      <p className="text-secondary leading-relaxed mb-4">
+                        {feature.description}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 mt-auto">
+                    {feature.highlights.map((highlight, idx) => (
+                      <div key={idx} className="flex items-center space-x-2 text-sm">
+                        <div className="w-2 h-2 rounded-full bg-gradient-gold-silver"></div>
+                        <span className="text-primary font-medium">{highlight}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            {mainFeatures.slice(3, 5).map((feature, index) => (
+              <GlassCard key={index} className={`p-8 h-full reveal delay-${index + 4}`} hover goldBorder>
                 <div className="flex flex-col h-full">
                   <div className="flex items-start space-x-6 mb-6">
                     <div className={`w-16 h-16 rounded-xl bg-gradient-to-r ${feature.color} flex items-center justify-center flex-shrink-0`}>
@@ -340,7 +396,7 @@ const LandingPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto stagger-children">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto stagger-children">
             {additionalFeatures.map((feature, index) => (
               <div key={index} className="glass-card-enhanced p-6 text-center animate-cardHover group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
